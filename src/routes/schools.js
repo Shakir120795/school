@@ -150,6 +150,26 @@ router.get(
   })
 );
 
+// Activate / suspend a member's access to THIS school (admin action).
+router.patch(
+  "/:schoolId/users/:membershipId",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const { status } = req.body || {};
+    if (!["ACTIVE", "SUSPENDED"].includes(status)) {
+      return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
+    }
+    const target = await prisma.schoolMembership.findFirst({
+      where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+    });
+    if (!target) return res.status(404).json({ error: "MEMBERSHIP_NOT_FOUND" });
+    if (target.id === req.membership.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_STATUS" });
+    const membership = await prisma.schoolMembership.update({ where: { id: target.id }, data: { status } });
+    return res.json({ membership });
+  })
+);
+
 // --- Students -------------------------------------------------------------------
 router.post(
   "/:schoolId/students",

@@ -1,78 +1,150 @@
 <script setup>
-import { onMounted, ref } from "vue";
-import { api, session } from "../api.js";
+import { computed, onMounted, ref } from "vue";
+import { api, session, currentUser } from "../api.js";
 
 const sid = session.schoolId;
+const user = currentUser();
 const children = ref([]);
 const teachers = ref([]);
+const inbox = ref([]);
+const unread = ref(0);
 const whatsapp = ref(true);
 const msg = ref("");
 
+const COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2"];
+const initials = (name) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+
+function attPct(child) {
+  const days = child.attendances || [];
+  if (!days.length) return null;
+  const ok = days.filter((a) => ["PRESENT", "LATE"].includes(a.status)).length;
+  return Math.round((ok / days.length) * 100);
+}
+function ringStyle(p) {
+  const c = 2 * Math.PI * 30;
+  return { c, off: c - (c * (p ?? 0)) / 100 };
+}
+function stripDays(child) {
+  // Last 14 attendance records, oldest → newest, as colored dots.
+  return (child.attendances || []).slice(0, 14).reverse();
+}
+const dotClass = (s) =>
+  s === "PRESENT" ? "bg-emerald-500" : s === "LATE" ? "bg-amber-500" : s === "ABSENT" ? "bg-rose-500" : "bg-slate-300";
+const todayStatus = (child) => (child.attendances || [])[0] || null;
+
 async function load() {
-  const [c, t] = await Promise.all([
+  const [c, t, n] = await Promise.all([
     api(`/schools/${sid}/my-children`),
     api(`/schools/${sid}/teachers`),
+    api(`/schools/${sid}/my-notifications`),
   ]);
   children.value = c.json.children || [];
   teachers.value = t.json.teachers || [];
+  if (n.status === 200) {
+    inbox.value = n.json.notifications.slice(0, 3);
+    unread.value = n.json.unread;
+  }
 }
-onMounted(load);
-
-async function saveConsent() {
+async function savePref() {
   const r = await api(`/schools/${sid}/my-consents`, {
     method: "PUT",
     body: { channel: "WHATSAPP", optedIn: whatsapp.value },
   });
-  msg.value = r.status === 200 ? "Preference saved." : `Error: ${r.json.error}`;
+  msg.value = r.status < 300 ? "Preference saved." : "Could not save preference.";
 }
-function attBadge(s) {
-  return { PRESENT: "bg-green-100 text-green-700", LATE: "bg-amber-100 text-amber-700", ABSENT: "bg-red-100 text-red-700", ON_LEAVE: "bg-blue-100 text-blue-700" }[s] || "bg-slate-100 text-slate-600";
-}
+onMounted(load);
 </script>
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-3">My Children</h1>
-    <p v-if="msg" class="card mb-3 !py-2 text-sm">{{ msg }}</p>
+    <div class="rounded-3xl bg-gradient-to-r from-[#0a2436] to-[#0b8457] text-white p-5 mb-4 shadow">
+      <div class="text-sm text-white/70">Welcome,</div>
+      <h1 class="text-2xl font-extrabold">{{ user?.fullName }}</h1>
+      <div class="flex flex-wrap gap-2 mt-3">
+        <span class="chip bg-white/15 text-white">{{ children.length }} child{{ children.length === 1 ? "" : "ren" }} linked</span>
+        <router-link to="/notifications" class="chip bg-white text-emerald-800 font-bold">🔔 {{ unread }} new notification{{ unread === 1 ? "" : "s" }}</router-link>
+      </div>
+    </div>
 
     <div v-if="!children.length" class="card text-slate-500 text-sm mb-4">
       No children are linked to your account yet. Ask the school office to link your guardian profile.
     </div>
 
-    <div v-for="child in children" :key="child.id" class="card mb-4">
-      <div class="flex items-center gap-2">
-        <div class="font-semibold text-lg">{{ child.fullName }}</div>
-        <span class="badge bg-slate-100 text-slate-600">Adm {{ child.admissionNo }}</span>
-        <span v-if="child.classroom" class="badge bg-brand-50 text-brand-700">Class {{ child.classroom.name }}-{{ child.classroom.section }}</span>
-      </div>
-      <div class="font-medium mt-3 mb-1 text-sm">Recent attendance</div>
-      <div v-if="!child.attendances?.length" class="text-sm text-slate-500">No attendance records yet.</div>
-      <div class="flex flex-wrap gap-2">
-        <span v-for="a in (child.attendances || []).slice(0, 14)" :key="a.id" class="badge" :class="attBadge(a.status)">
-          {{ String(a.localDate).slice(0, 10) }} · {{ a.status }}
-        </span>
-      </div>
-    </div>
-
-    <div class="card mb-4">
-      <div class="font-semibold mb-2">Teachers (school-approved directory)</div>
-      <div v-for="t in teachers" :key="t.id" class="py-2 border-b border-slate-100 last:border-0">
-        <div class="font-medium">{{ t.displayName }}</div>
-        <div class="text-sm text-slate-500">
-          <span v-for="a in t.classAssignments" :key="a.id" class="mr-2">{{ a.subject?.name }} — Class {{ a.classroom?.name }}-{{ a.classroom?.section }}</span>
-          <span v-if="t.inchargeAssignments?.length" class="text-brand-700">Class incharge</span>
+    <div class="grid md:grid-cols-2 gap-4 items-start mb-4">
+      <div v-for="(child, i) in children" :key="child.id" class="card">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="avatar w-12 h-12 text-lg" :style="{ background: COLORS[i % COLORS.length] }">{{ initials(child.fullName) }}</div>
+          <div class="min-w-0">
+            <div class="font-extrabold text-lg leading-tight truncate">{{ child.fullName }}</div>
+            <div class="text-xs text-slate-500">Adm {{ child.admissionNo }} · Class {{ child.classroom?.name }}<span v-if="child.classroom?.section">-{{ child.classroom.section }}</span></div>
+          </div>
+          <span v-if="todayStatus(child)" class="chip ml-auto"
+            :class="todayStatus(child).status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' : todayStatus(child).status === 'LATE' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'">
+            Today: {{ todayStatus(child).status }}
+          </span>
         </div>
-        <div v-if="t.approvedContactChannel" class="text-xs text-slate-400">Contact: {{ t.approvedContactChannel }}</div>
+
+        <div class="flex items-center gap-4">
+          <svg class="w-[76px] h-[76px]" viewBox="0 0 76 76">
+            <circle cx="38" cy="38" r="30" fill="none" stroke="#e2e8f0" stroke-width="8" />
+            <circle cx="38" cy="38" r="30" fill="none" :stroke="COLORS[i % COLORS.length]" stroke-width="8" stroke-linecap="round"
+              :stroke-dasharray="ringStyle(attPct(child)).c" :stroke-dashoffset="ringStyle(attPct(child)).off" transform="rotate(-90 38 38)" />
+            <text x="38" y="42" text-anchor="middle" font-size="14" font-weight="800" class="fill-slate-800">{{ attPct(child) ?? "–" }}%</text>
+          </svg>
+          <div class="flex-1">
+            <div class="text-xs font-semibold text-slate-500 mb-1.5">Attendance (recent school days)</div>
+            <div class="flex gap-1.5 flex-wrap">
+              <span v-for="d in stripDays(child)" :key="d.id" class="w-3.5 h-3.5 rounded-full" :class="dotClass(d.status)"
+                :title="`${new Date(d.localDate).toLocaleDateString()} · ${d.status}`"></span>
+              <span v-if="!stripDays(child).length" class="text-sm text-slate-400">No records yet</span>
+            </div>
+            <div class="flex gap-3 mt-2 text-[11px] text-slate-500">
+              <span><span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1"></span>Present</span>
+              <span><span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1"></span>Late</span>
+              <span><span class="inline-block w-2 h-2 rounded-full bg-rose-500 mr-1"></span>Absent</span>
+            </div>
+          </div>
+        </div>
       </div>
-      <div v-if="!teachers.length" class="text-sm text-slate-500">No teacher profiles published yet.</div>
     </div>
 
-    <div class="card">
-      <div class="font-semibold mb-2">Communication preferences</div>
-      <label class="flex items-center gap-2 text-sm">
-        <input type="checkbox" v-model="whatsapp" /> Receive school notices on WhatsApp
-      </label>
-      <button class="btn btn-primary mt-3" @click="saveConsent">Save preference</button>
+    <div class="grid md:grid-cols-2 gap-4 items-start">
+      <div class="card">
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-bold">🔔 Latest from school</h3>
+          <router-link to="/notifications" class="text-sm text-brand-700 font-semibold">Open inbox →</router-link>
+        </div>
+        <div v-if="!inbox.length" class="text-sm text-slate-500">No notifications yet.</div>
+        <div v-for="n in inbox" :key="n.recipientId" class="py-2 border-b border-slate-100 last:border-0">
+          <div class="text-sm font-semibold">{{ n.notice.title }} <span v-if="!n.read" class="chip bg-brand-600 text-white ml-1">NEW</span></div>
+          <p class="text-sm text-slate-500 line-clamp-2">{{ n.notice.body }}</p>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div class="card">
+          <h3 class="font-bold mb-2">🧑‍🏫 Teachers</h3>
+          <div v-if="!teachers.length" class="text-sm text-slate-500">No teacher contacts published yet.</div>
+          <div v-for="t in teachers" :key="t.id" class="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
+            <div class="avatar w-9 h-9 text-xs" style="background:#2563eb">{{ initials(t.displayName) }}</div>
+            <div class="text-sm">
+              <div class="font-semibold">{{ t.displayName }} <span v-if="t.inchargeAssignments?.length" class="chip bg-emerald-100 text-emerald-700 ml-1">Class incharge</span></div>
+              <div class="text-slate-500 text-xs"><span v-for="a in t.classAssignments" :key="a.id" class="mr-2">{{ a.subject?.name }} — Class {{ a.classroom?.name }}-{{ a.classroom?.section }}</span></div>
+              <div v-if="t.approvedContactChannel" class="text-slate-400 text-xs">Contact: {{ t.approvedContactChannel }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="font-bold mb-2">Communication preferences</h3>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" v-model="whatsapp" class="w-4 h-4 accent-emerald-600" />
+            Also receive school notices on WhatsApp (when enabled by the school)
+          </label>
+          <button type="button" class="btn btn-primary mt-3 !py-2" @click="savePref">Save preference</button>
+          <p v-if="msg" class="text-xs text-brand-700 mt-2">{{ msg }}</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>

@@ -10,6 +10,7 @@ const routes = [
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
+  { path: "/team", component: () => import("./views/Team.vue") },
   { path: "/settings", component: () => import("./views/Settings.vue") },
   { path: "/:pathMatch(.*)*", redirect: "/" },
 ];

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api, session, myRole } from "../api.js";
 
 const sid = session.schoolId;
@@ -12,6 +12,23 @@ const corrections = ref([]);
 const audits = ref([]);
 const msg = ref("");
 const canDecide = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(role);
+const classes = ref([]);
+const classFilter = ref("");
+const summary = computed(() => {
+  const list = tab.value === "students" ? rows.value : staffRows.value;
+  return {
+    present: list.filter((r) => r.status === "PRESENT").length,
+    late: list.filter((r) => r.status === "LATE").length,
+    absent: list.filter((r) => r.status === "ABSENT").length,
+    flagged: list.filter((r) => r.reviewFlag).length,
+    total: list.length,
+  };
+});
+const visibleRows = computed(() =>
+  tab.value === "students" && classFilter.value
+    ? rows.value.filter((r) => r.student?.classroomId === classFilter.value)
+    : rows.value
+);
 
 async function load() {
   const [a, b] = await Promise.all([
@@ -20,6 +37,10 @@ async function load() {
   ]);
   rows.value = a.json.attendance || [];
   staffRows.value = b.json.attendance || [];
+  if (!classes.value.length) {
+    const c = await api(`/schools/${sid}/classrooms`);
+    classes.value = c.json.classrooms || [];
+  }
   if (canDecide) {
     const au = await api(`/schools/${sid}/attendance/audit`);
     audits.value = (au.json.audit || []).slice(0, 10);
@@ -63,20 +84,32 @@ function statusBadge(s) {
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-3">Attendance</h1>
+    <h1 class="text-2xl font-extrabold mb-3">Attendance register</h1>
     <p v-if="msg" class="card mb-3 !py-2 text-sm">{{ msg }}</p>
     <div class="flex flex-wrap gap-2 items-center mb-4">
       <input type="date" v-model="date" class="input !w-auto" @change="load" />
       <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students ({{ rows.length }})</button>
       <button class="btn" :class="tab === 'staff' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'staff'">Staff ({{ staffRows.length }})</button>
       <button class="btn btn-ghost" @click="load">Refresh</button>
+      <select v-if="tab === 'students'" v-model="classFilter" class="input !w-auto">
+        <option value="">All classes</option>
+        <option v-for="c in classes" :key="c.id" :value="c.id">Class {{ c.name }}<span v-if="c.section">-{{ c.section }}</span></option>
+      </select>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold">{{ summary.total }}</div><div class="text-[11px] font-semibold text-slate-500">MARKED</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-emerald-600">{{ summary.present }}</div><div class="text-[11px] font-semibold text-slate-500">PRESENT</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-amber-600">{{ summary.late }}</div><div class="text-[11px] font-semibold text-slate-500">LATE</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-rose-600">{{ summary.absent }}</div><div class="text-[11px] font-semibold text-slate-500">ABSENT</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-orange-500">{{ summary.flagged }}</div><div class="text-[11px] font-semibold text-slate-500">FLAGGED ⚠</div></div>
     </div>
 
     <div v-if="tab === 'students'" class="card !p-0 overflow-x-auto">
       <table class="w-full text-sm">
         <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Student</th><th class="p-3">Status</th><th class="p-3">Entry</th><th class="p-3">Exit</th><th class="p-3">Flags</th></tr></thead>
         <tbody>
-          <tr v-for="r in rows" :key="r.id" class="border-b last:border-0">
+          <tr v-for="r in visibleRows" :key="r.id" class="border-b last:border-0">
             <td class="p-3 font-medium">{{ r.student?.fullName }} <span class="text-slate-400">({{ r.student?.admissionNo }})</span></td>
             <td class="p-3"><span class="badge" :class="statusBadge(r.status)">{{ r.status }}</span></td>
             <td class="p-3">{{ fmt(r.entryAt) }}</td><td class="p-3">{{ fmt(r.exitAt) }}</td>

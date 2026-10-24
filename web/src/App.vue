@@ -31,6 +31,7 @@ const NAV = [
   { to: "/parent", label: "My Children", icon: "🏠", roles: ["PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["PARENT"] },
   { to: "/notifications", label: "Notifications", icon: "🔔", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"], badge: true },
+  { to: "/team", label: "Team & Access", icon: "🔐", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
   { to: "/settings", label: "Settings", icon: "⚙", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
@@ -50,7 +51,7 @@ function switchSchool(id) {
   <div v-if="isLogin"><router-view /></div>
   <div v-else class="min-h-screen md:flex">
     <!-- Desktop sidebar -->
-    <aside class="hidden md:flex md:w-64 md:flex-col bg-ink-900 text-white p-5 gap-1">
+    <aside class="hidden md:flex md:w-64 md:flex-col bg-gradient-to-b from-[#0a2436] via-[#0b2e3f] to-[#07332a] text-white p-5 gap-1">
       <div class="mb-6">
         <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="School logo" class="w-10 h-10 rounded-lg object-contain bg-white mb-2" />
         <div class="text-lg font-bold">{{ schoolInfo?.name || "Smart School" }}</div>
@@ -69,7 +70,7 @@ function switchSchool(id) {
     </aside>
 
     <!-- Mobile top bar -->
-    <header class="md:hidden sticky top-0 z-20 bg-ink-900 text-white px-4 py-3 flex items-center gap-3">
+    <header class="md:hidden sticky top-0 z-20 bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 flex items-center gap-3 shadow">
       <div class="font-bold">Smart School</div>
       <div class="ml-auto text-xs">{{ user?.fullName }} · {{ role }}</div>
       <button class="text-sm underline" @click="logout">Logout</button>

@@ -80,6 +80,31 @@ router.get(
   })
 );
 
+router.get(
+  "/schools/:schoolId/holidays",
+  requireAuth,
+  requireSchool(STAFF_READ),
+  asyncRoute(async (req, res) => {
+    const holidays = await prisma.holiday.findMany({
+      where: { schoolId: req.params.schoolId },
+      orderBy: { localDate: "asc" },
+    });
+    return res.json({
+      holidays: holidays.map((h) => ({ id: h.id, name: h.name, localDate: h.localDate.toISOString().slice(0, 10) })),
+    });
+  })
+);
+
+router.delete(
+  "/schools/:schoolId/holidays/:holidayId",
+  requireAuth,
+  requireSchool(ADMIN_ROLES),
+  asyncRoute(async (req, res) => {
+    await prisma.holiday.deleteMany({ where: { id: req.params.holidayId, schoolId: req.params.schoolId } });
+    return res.json({ ok: true });
+  })
+);
+
 router.post(
   "/schools/:schoolId/holidays",
   requireAuth,
