@@ -1,5 +1,6 @@
 import express from "express";
 import authRoutes from "./routes/auth.js";
+import parentAuthRoutes from "./routes/parentAuth.js";
 import schoolRoutes from "./routes/schools.js";
 import attendanceRoutes from "./routes/attendance.js";
 import noticeRoutes from "./routes/notices.js";
@@ -43,6 +44,7 @@ export function createApp() {
   app.get("/health", (req, res) => res.json({ ok: true, service: "smart-school-api", phase: 2 }));
 
   app.use("/auth", authRoutes);
+  app.use("/auth", parentAuthRoutes); // /auth/parent-otp/*
   app.use("/schools", schoolRoutes);
   app.use("/", attendanceRoutes); // /attendance/scan + /schools/:id/attendance/*
   app.use("/", noticeRoutes); // /schools/:id/notices/*

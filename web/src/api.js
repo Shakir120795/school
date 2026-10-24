@@ -72,6 +72,17 @@ export async function login(email, password) {
   return r;
 }
 
+export async function loginWithOtp(phone, code) {
+  const r = await raw("/auth/parent-otp/verify", { method: "POST", body: { phone, code }, school: false });
+  if (r.status === 200) {
+    session.setTokens(r.json.accessToken, r.json.refreshToken);
+    localStorage.setItem("ss_user", JSON.stringify(r.json.user));
+    localStorage.setItem("ss_memberships", JSON.stringify(r.json.memberships || []));
+    if (r.json.memberships?.length) session.setSchool(r.json.memberships[0].schoolId);
+  }
+  return r;
+}
+
 export function currentUser() {
   try { return JSON.parse(localStorage.getItem("ss_user") || "null"); } catch { return null; }
 }

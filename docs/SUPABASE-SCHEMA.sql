@@ -1005,3 +1005,17 @@ ADD COLUMN     "email" TEXT,
 ADD COLUMN     "logoUrl" TEXT,
 ADD COLUMN     "phone" TEXT;
 
+
+-- Phase 9 (25 Oct 2026): parent OTP login challenges. Run this block in
+-- the Supabase SQL Editor if the schema was applied before Phase 9.
+CREATE TABLE IF NOT EXISTS "OtpLoginChallenge" (
+    "id" TEXT NOT NULL,
+    "phone" TEXT NOT NULL,
+    "codeHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "consumedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "OtpLoginChallenge_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "OtpLoginChallenge_phone_createdAt_idx" ON "OtpLoginChallenge"("phone", "createdAt");

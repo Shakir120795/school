@@ -855,6 +855,21 @@ model AuditLog {
 
 // Phase 2: refresh-token sessions. Only the HASH of the refresh token is stored;
 // logout / password change revokes by setting revokedAt.
+// Parent OTP login (Phase 9): the school whitelists a guardian's mobile
+// number simply by saving it on the Guardian record. The parent proves
+// number ownership with a one-time code; only the hash is stored.
+model OtpLoginChallenge {
+  id         String    @id @default(cuid())
+  phone      String // normalized (digits, last 10 kept for IN numbers)
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
 model AuthSession {
   id               String    @id @default(cuid())
   userId           String
