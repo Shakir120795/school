@@ -8,6 +8,10 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/schools",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/schools/(.*)",
       "destination": "/api/index.js"
     },
