@@ -5,6 +5,7 @@ import attendanceRoutes from "./routes/attendance.js";
 import noticeRoutes from "./routes/notices.js";
 import webhookRoutes from "./routes/webhooks.js";
 import pushRoutes from "./routes/push.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { errorHandler } from "./utils/http.js";
 
 export function createApp() {
@@ -26,6 +27,15 @@ export function createApp() {
   // WhatsApp webhook needs the RAW body for HMAC signature verification.
   app.use("/webhooks", express.raw({ type: "*/*", limit: "1mb" }), webhookRoutes);
   app.use(express.json({ limit: "1mb" }));
+  // Baseline security headers.
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+  // Global API budget: generous for a school day, stops runaway abuse.
+  app.use(rateLimit({ name: "api", limit: Number(process.env.RATE_LIMIT_API_PER_MIN || 600), windowMs: 60_000 }));
 
   app.get("/health", (req, res) => res.json({ ok: true, service: "smart-school-api", phase: 2 }));
 

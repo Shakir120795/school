@@ -79,7 +79,20 @@ router.get(
   asyncRoute(async (req, res) => {
     const where = { schoolId: req.params.schoolId };
     if (req.membership.role === "TEACHER") where.senderMembershipId = req.membership.id;
-    if (req.membership.role === "PARENT") where.status = { in: ["SENT", "SENDING"] };
+    if (req.membership.role === "PARENT") {
+      // Parents see school-wide parent broadcasts plus notices where they
+      // are an actual recipient — never other classes' targeted notices.
+      where.status = { in: ["SENT", "SENDING"] };
+      const guardians = await prisma.guardian.findMany({
+        where: { schoolId: req.params.schoolId, userId: req.user.id },
+        select: { id: true },
+      });
+      const gids = guardians.map((g) => g.id);
+      where.OR = [
+        { audienceType: { in: ["ALL_PARENTS", "ALL_PARENTS_AND_TEACHERS"] } },
+        { recipients: { some: { recipientType: "GUARDIAN", recipientRef: { in: gids } } } },
+      ];
+    }
     const notices = await prisma.notice.findMany({ where, orderBy: { createdAt: "desc" }, take: 200 });
     return res.json({ notices });
   })
@@ -134,10 +147,24 @@ router.get(
   requireAuth,
   requireSchool(READERS),
   asyncRoute(async (req, res) => {
-    const recipients = await prisma.noticeRecipient.findMany({
-      where: { schoolId: req.params.schoolId, noticeId: req.params.noticeId },
-      include: { deliveries: true },
-    });
+    const where = { schoolId: req.params.schoolId, noticeId: req.params.noticeId };
+    if (req.membership.role === "PARENT") {
+      // A parent may only ever see their OWN recipient/delivery rows.
+      const guardians = await prisma.guardian.findMany({
+        where: { schoolId: req.params.schoolId, userId: req.user.id },
+        select: { id: true },
+      });
+      where.recipientType = "GUARDIAN";
+      where.recipientRef = { in: guardians.map((g) => g.id) };
+    }
+    if (req.membership.role === "TEACHER") {
+      const own = await prisma.notice.findFirst({
+        where: { id: req.params.noticeId, schoolId: req.params.schoolId, senderMembershipId: req.membership.id },
+        select: { id: true },
+      });
+      if (!own) return res.status(403).json({ error: "NOT_YOUR_NOTICE" });
+    }
+    const recipients = await prisma.noticeRecipient.findMany({ where, include: { deliveries: true } });
     return res.json({ recipients });
   })
 );

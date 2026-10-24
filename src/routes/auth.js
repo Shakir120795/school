@@ -4,6 +4,15 @@ import { config } from "../config.js";
 import { hashPassword, verifyPassword, randomToken, hashToken } from "../utils/security.js";
 import { signAccessToken, requireAuth } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
+import { rateLimit } from "../middleware/rateLimit.js";
+
+// Brute-force guard: 10 login attempts per minute per IP+email.
+const loginLimiter = rateLimit({
+  name: "login",
+  limit: Number(process.env.RATE_LIMIT_LOGIN_PER_MIN || 10),
+  windowMs: 60_000,
+  keyFn: (req) => `${req.ip}:${String(req.body?.email || "").toLowerCase()}`,
+});
 
 const router = Router();
 
@@ -63,6 +72,7 @@ router.post(
 
 router.post(
   "/login",
+  loginLimiter,
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["email", "password"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
