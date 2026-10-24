@@ -100,3 +100,42 @@ export async function resolveAudience(schoolId, audienceType, targets, audienceM
     ...staff,
   ];
 }
+
+/**
+ * Core send: snapshot recipients + write the outbox event + flip the notice
+ * to SENDING, all in ONE transaction. Permission checks live in the route
+ * (API) — the worker calls this directly for scheduled notices.
+ * Returns the recipient count, or null when the notice cannot be sent.
+ */
+export async function sendNoticeCore(schoolId, notice) {
+  const recipients = await resolveAudience(schoolId, notice.audienceType, notice.targets || [], notice.audienceMeta);
+  const result = await prisma.$transaction(async (tx) => {
+    if (recipients.length) {
+      await tx.noticeRecipient.createMany({
+        data: recipients.map((r) => ({
+          schoolId,
+          noticeId: notice.id,
+          recipientType: r.recipientType,
+          recipientRef: r.recipientRef,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    const updated = await tx.notice.update({
+      where: { id: notice.id },
+      data: { status: "SENDING", sentAt: new Date() },
+    });
+    await tx.notificationOutbox.create({
+      data: {
+        schoolId,
+        eventType: "notice.send",
+        aggregateType: "Notice",
+        aggregateId: notice.id,
+        payload: { noticeId: notice.id, recipientCount: recipients.length },
+        idempotencyKey: `notice:${notice.id}:send`,
+      },
+    });
+    return updated;
+  });
+  return { notice: result, recipientCount: recipients.length };
+}

@@ -14,6 +14,8 @@ const memberships = ref([]);
 const guardians = ref([]);
 const msg = ref("");
 const qrDataUrl = ref("");
+const printSelection = ref([]);
+const printCards = ref([]);
 const qrFor = ref("");
 
 const newStudent = ref({ admissionNo: "", fullName: "", classroomId: "", academicYearId: "" });
@@ -87,6 +89,23 @@ async function issueCard(body, label) {
   qrDataUrl.value = await QRCode.toDataURL(r.json.qrToken, { width: 220, margin: 1 });
   msg.value = `Card issued for ${label}. Print this QR on the ID card. The token is shown only once.`;
 }
+async function issueAndPrint() {
+  printCards.value = [];
+  for (const studentId of printSelection.value) {
+    const stu = students.value.find((x) => x.id === studentId);
+    const r = await api(`/schools/${sid}/cards`, { method: "POST", body: { ownerType: "STUDENT", studentId } });
+    if (r.status === 201) {
+      printCards.value.push({
+        name: stu.fullName, adm: stu.admissionNo, cls: className(stu.classroomId),
+        qr: await QRCode.toDataURL(r.json.qrToken, { width: 200, margin: 1 }),
+      });
+    }
+  }
+  msg.value = printCards.value.length
+    ? `${printCards.value.length} card(s) ready below — use Print. Each QR is shown only at issuance.`
+    : "No cards issued (check selection).";
+}
+function printSheet() { window.print(); }
 async function revokeCard(id) {
   note(await api(`/schools/${sid}/cards/${id}/revoke`, { method: "POST", body: { reason: "from web" } }), "Card revoked.");
 }
@@ -124,6 +143,24 @@ function className(id) {
           <select v-model="newStudent.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
         <div class="flex items-end"><button class="btn btn-primary w-full">Add student</button></div>
       </form>
+      <div class="card mb-4 flex flex-wrap gap-2 items-center">
+        <span class="font-semibold text-sm">Bulk ID cards:</span>
+        <select v-model="printSelection" multiple class="input !w-64" size="4">
+          <option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option>
+        </select>
+        <button type="button" class="btn btn-primary" @click="issueAndPrint">Issue & prepare print sheet</button>
+        <button v-if="printCards.length" type="button" class="btn btn-ghost" @click="printSheet">Print sheet</button>
+      </div>
+      <div v-if="printCards.length" id="print-sheet" class="card mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div v-for="c in printCards" :key="c.adm" class="id-card border-2 border-brand-600 rounded-xl p-3 text-center">
+            <div class="font-bold text-sm">Smart School</div>
+            <img :src="c.qr" class="w-28 h-28 mx-auto" alt="QR" />
+            <div class="font-semibold">{{ c.name }}</div>
+            <div class="text-xs text-slate-500">Adm {{ c.adm }} · Class {{ c.cls }}</div>
+          </div>
+        </div>
+      </div>
       <div class="card !p-0 overflow-x-auto">
         <table class="w-full text-sm">
           <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Adm No</th><th class="p-3">Name</th><th class="p-3">Class</th><th class="p-3">Status</th><th class="p-3"></th></tr></thead>

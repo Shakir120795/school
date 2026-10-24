@@ -38,3 +38,10 @@ body {
 .badge {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold;
 }
+
+@media print {
+  body * { visibility: hidden; }
+  #print-sheet, #print-sheet * { visibility: visible; }
+  #print-sheet { position: absolute; inset: 0; box-shadow: none; border: none; }
+  .id-card { break-inside: avoid; }
+}

@@ -3,10 +3,11 @@
 Multi-tenant school operations platform per the approved blueprint
 (`Smart_School_Tracking_Communication_SaaS_Blueprint.md` v1.0, 25 Oct 2026).
 
-**Status: Phase 3 complete — Vue web app (role views, scanner, notice
-composer) in `web/`, production build passing. See `docs/PHASE3-REPORT.md`
-(includes an honest note: no in-browser click-test was possible in the build
-environment). Phase 4 starts only after owner approval of Phase 3.**
+**Status: Phase 4 complete — WhatsApp Cloud adapter + signed webhooks, FCM
+push adapter + token registration, scheduled sends, QR batch print,
+Capacitor Android preparation. Tests 15/15. See `docs/PHASE4-REPORT.md`
+(real-provider sending and real-device tests still need owner credentials
+and hardware). Phase 5 starts only after owner approval of Phase 4.**
 
 ## What Phase 1 contains
 

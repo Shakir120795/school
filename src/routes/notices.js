@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
-import { checkNoticePermission, resolveAudience } from "../services/notices.js";
+import { checkNoticePermission, resolveAudience, sendNoticeCore } from "../services/notices.js";
 
 const router = Router();
 const SENDERS = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -106,38 +106,8 @@ router.post(
     );
     if (!perm.ok) return res.status(403).json({ error: perm.error });
 
-    const recipients = await resolveAudience(
-      req.params.schoolId, notice.audienceType, notice.targets, notice.audienceMeta
-    );
-    const result = await prisma.$transaction(async (tx) => {
-      if (recipients.length) {
-        await tx.noticeRecipient.createMany({
-          data: recipients.map((r) => ({
-            schoolId: req.params.schoolId,
-            noticeId: notice.id,
-            recipientType: r.recipientType,
-            recipientRef: r.recipientRef,
-          })),
-          skipDuplicates: true,
-        });
-      }
-      const updated = await tx.notice.update({
-        where: { id: notice.id },
-        data: { status: "SENDING", sentAt: new Date() },
-      });
-      await tx.notificationOutbox.create({
-        data: {
-          schoolId: req.params.schoolId,
-          eventType: "notice.send",
-          aggregateType: "Notice",
-          aggregateId: notice.id,
-          payload: { noticeId: notice.id, recipientCount: recipients.length },
-          idempotencyKey: `notice:${notice.id}:send`,
-        },
-      });
-      return updated;
-    });
-    return res.json({ notice: result, recipientCount: recipients.length });
+    const { notice: updated, recipientCount } = await sendNoticeCore(req.params.schoolId, notice);
+    return res.json({ notice: updated, recipientCount });
   })
 );
 

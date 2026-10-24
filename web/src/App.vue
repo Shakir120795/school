@@ -1,5 +1,7 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { initPush } from "./push.js";
+onMounted(() => { initPush(); });
 import { useRoute, useRouter } from "vue-router";
 import { session, currentUser, myRole, myMemberships, api } from "./api.js";
 
