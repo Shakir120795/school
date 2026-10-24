@@ -7,6 +7,20 @@ import { errorHandler } from "./utils/http.js";
 
 export function createApp() {
   const app = express();
+  // CORS for the web app (Phase 3). Origins are allow-listed via CORS_ORIGINS
+  // (comma-separated); default covers local Vite dev/preview.
+  const origins = (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:4173").split(",");
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && origins.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Headers", "authorization,content-type,x-school-id,x-device-key");
+      res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+      res.setHeader("Vary", "Origin");
+    }
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    return next();
+  });
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (req, res) => res.json({ ok: true, service: "smart-school-api", phase: 2 }));

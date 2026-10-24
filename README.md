@@ -3,10 +3,10 @@
 Multi-tenant school operations platform per the approved blueprint
 (`Smart_School_Tracking_Communication_SaaS_Blueprint.md` v1.0, 25 Oct 2026).
 
-**Status: Phase 2 complete — backend foundation + core APIs (auth, management,
-attendance, notices, outbox worker) with 10/10 automated tests passing.
-See `docs/PHASE2-REPORT.md`. Phase 3 (Vue UI) starts only after owner approval
-of Phase 2.**
+**Status: Phase 3 complete — Vue web app (role views, scanner, notice
+composer) in `web/`, production build passing. See `docs/PHASE3-REPORT.md`
+(includes an honest note: no in-browser click-test was possible in the build
+environment). Phase 4 starts only after owner approval of Phase 3.**
 
 ## What Phase 1 contains
 
@@ -35,6 +35,16 @@ keys** `(schoolId, parentId) -> (schoolId, id)`, so the database rejects
 cross-school references. Uniqueness (admission number, daily attendance, scan
 idempotency, notice recipients, outbox/delivery idempotency) is school-scoped.
 Phase 2 APIs must still scope every query by the caller's school membership.
+
+## Run the web app (Phase 3)
+
+```powershell
+# API running as below, then once:  node scripts/seed-demo.mjs
+cd web
+npm install
+npm run dev        # http://localhost:5173 — proxies API calls to :4000
+# production build: npm run build
+```
 
 ## Run the API (Phase 2)
 
