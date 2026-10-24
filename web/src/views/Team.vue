@@ -77,7 +77,7 @@ onMounted(load);
       </div>
       <p v-if="msg" class="px-4 pb-2 text-sm text-brand-700">{{ msg }}</p>
       <div class="overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm mtable">
           <thead><tr class="text-left text-slate-500 border-y bg-slate-50"><th class="p-3">Member</th><th class="p-3">Role</th><th class="p-3">Status</th><th class="p-3"></th></tr></thead>
           <tbody>
             <tr v-for="m in filtered" :key="m.id" class="border-b last:border-0" :class="m.status !== 'ACTIVE' ? 'opacity-50' : ''">

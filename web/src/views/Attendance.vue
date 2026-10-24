@@ -106,7 +106,7 @@ function statusBadge(s) {
     </div>
 
     <div v-if="tab === 'students'" class="card !p-0 overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm mtable">
         <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Student</th><th class="p-3">Status</th><th class="p-3">Entry</th><th class="p-3">Exit</th><th class="p-3">Flags</th></tr></thead>
         <tbody>
           <tr v-for="r in visibleRows" :key="r.id" class="border-b last:border-0">
@@ -121,7 +121,7 @@ function statusBadge(s) {
     </div>
 
     <div v-if="tab === 'staff'" class="card !p-0 overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm mtable">
         <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Staff</th><th class="p-3">Status</th><th class="p-3">Check-in</th><th class="p-3">Check-out</th><th class="p-3">Flags</th></tr></thead>
         <tbody>
           <tr v-for="r in staffRows" :key="r.id" class="border-b last:border-0">

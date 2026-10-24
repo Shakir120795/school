@@ -35,6 +35,15 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: "⚙", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
+const mobileNav = computed(() => {
+  const items = nav.value.slice(0, 5);
+  const scanIdx = items.findIndex((n) => n.to === "/scanner");
+  if (scanIdx > -1 && items.length === 5) {
+    const [scan] = items.splice(scanIdx, 1);
+    items.splice(2, 0, scan); // center slot
+  }
+  return items;
+});
 
 async function logout() {
   await api("/auth/logout", { method: "POST", body: {} }).catch(() => {});
@@ -70,13 +79,20 @@ function switchSchool(id) {
     </aside>
 
     <!-- Mobile top bar -->
-    <header class="md:hidden sticky top-0 z-20 bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 flex items-center gap-3 shadow">
-      <div class="font-bold">Smart School</div>
-      <div class="ml-auto text-xs">{{ user?.fullName }} · {{ role }}</div>
-      <button class="text-sm underline" @click="logout">Logout</button>
+    <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 flex items-center gap-3 shadow">
+      <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white" />
+      <div class="min-w-0">
+        <div class="font-bold leading-tight truncate">{{ schoolInfo?.name || "Smart School" }}</div>
+        <div class="text-[11px] text-white/60 leading-tight">{{ role }}</div>
+      </div>
+      <router-link to="/notifications" class="relative ml-auto text-xl p-1" aria-label="Notifications">🔔
+        <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
+      </router-link>
+      <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
+      <button class="text-xs underline text-white/80" @click="logout">Logout</button>
     </header>
 
-    <main class="flex-1 p-4 md:p-6 pb-24 md:pb-6 max-w-6xl mx-auto w-full">
+    <main class="flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
       <div v-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
         <span class="label !mb-0">School</span>
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
@@ -87,10 +103,15 @@ function switchSchool(id) {
     </main>
 
     <!-- Mobile bottom nav -->
-    <nav class="md:hidden fixed bottom-0 inset-x-0 z-20 bg-white border-t border-slate-200 flex justify-around py-2">
-      <router-link v-for="n in nav.slice(0, 5)" :key="n.to + n.label" :to="n.to"
-        class="flex flex-col items-center text-[11px] px-2" :class="route.path === n.to ? 'text-brand-700 font-semibold' : 'text-slate-500'">
-        <span class="text-lg leading-none">{{ n.icon }}</span>{{ n.label.split(" ")[0] }}
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-20 safe-b bg-white/95 backdrop-blur border-t border-slate-200 flex justify-around items-end px-1 pt-1.5">
+      <router-link v-for="n in mobileNav" :key="n.to + n.label" :to="n.to"
+        class="relative flex flex-col items-center gap-0.5 text-[10px] font-medium px-2.5 py-1.5 rounded-2xl min-w-14"
+        :class="route.path === n.to ? 'text-brand-700' : 'text-slate-500'">
+        <span v-if="n.to === '/scanner'"
+          class="grid place-items-center w-12 h-12 -mt-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white text-2xl shadow-lg shadow-emerald-600/30 border-4 border-white">{{ n.icon }}</span>
+        <span v-else class="text-[22px] leading-none py-1 px-3 rounded-full" :class="route.path === n.to ? 'bg-brand-50' : ''">{{ n.icon }}</span>
+        {{ n.label.split(" ")[0] }}
+        <span v-if="n.badge && unreadCount" class="absolute top-0.5 right-1.5 bg-red-600 text-white text-[9px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
       </router-link>
     </nav>
   </div>

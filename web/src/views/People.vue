@@ -167,7 +167,7 @@ function className(id) {
         </div>
       </div>
       <div class="card !p-0 overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm mtable">
           <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Adm No</th><th class="p-3">Name</th><th class="p-3">Class</th><th class="p-3">Status</th><th class="p-3"></th></tr></thead>
           <tbody>
             <tr v-for="s in students" :key="s.id" class="border-b last:border-0">
@@ -241,7 +241,7 @@ function className(id) {
         </form>
       </div>
       <div class="card mt-4 !p-0 overflow-x-auto">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm mtable">
           <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Name</th><th class="p-3">Phone</th><th class="p-3">Children</th></tr></thead>
           <tbody>
             <tr v-for="g in guardians" :key="g.id" class="border-b last:border-0">
