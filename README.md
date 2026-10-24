@@ -3,8 +3,10 @@
 Multi-tenant school operations platform per the approved blueprint
 (`Smart_School_Tracking_Communication_SaaS_Blueprint.md` v1.0, 25 Oct 2026).
 
-**Status: Phase 1 only — database foundation. No application/API/UI code yet.
-Phase 2 starts only after owner approval of Phase 1.**
+**Status: Phase 2 complete — backend foundation + core APIs (auth, management,
+attendance, notices, outbox worker) with 10/10 automated tests passing.
+See `docs/PHASE2-REPORT.md`. Phase 3 (Vue UI) starts only after owner approval
+of Phase 2.**
 
 ## What Phase 1 contains
 
@@ -34,7 +36,19 @@ cross-school references. Uniqueness (admission number, daily attendance, scan
 idempotency, notice recipients, outbox/delivery idempotency) is school-scoped.
 Phase 2 APIs must still scope every query by the caller's school membership.
 
-## Quick start (local)
+## Run the API (Phase 2)
+
+```powershell
+Copy-Item .env.example .env   # set JWT_SECRET to a long random string
+docker compose up -d db
+npm install
+npx prisma migrate dev
+npm start          # API on :4000 (PORT env)
+npm run worker     # notification outbox worker (separate terminal)
+npm test           # needs DATABASE_URL pointing at a *_test database
+```
+
+## Quick start (Phase 1 database only)
 
 See `docs/WINDOWS11-SETUP.md`. Short version:
 
