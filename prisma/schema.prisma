@@ -15,7 +15,8 @@
 // itself, and never personal data in the QR payload.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -129,6 +130,7 @@ enum RecipientType {
 }
 
 enum NotificationChannel {
+  IN_APP
   WHATSAPP
   PUSH
   EMAIL
@@ -170,6 +172,12 @@ model School {
   name      String
   // IANA timezone, e.g. "Asia/Kolkata". Attendance local dates/windows derive from this.
   timezone  String       @default("Asia/Kolkata")
+  // Public profile, filled by the school admin after onboarding (shown in
+  // the app header, parent views and printed ID cards).
+  logoUrl   String?
+  address   String?
+  phone     String?
+  email     String?
   status    PersonStatus @default(ACTIVE)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt

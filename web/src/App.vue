@@ -1,7 +1,17 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { initPush } from "./push.js";
-onMounted(() => { initPush(); });
+const schoolInfo = ref(null);
+const unreadCount = ref(0);
+onMounted(async () => {
+  initPush();
+  if (session.schoolId) {
+    const sres = await api(`/schools/${session.schoolId}`).catch(() => null);
+    if (sres?.json?.school) schoolInfo.value = sres.json.school;
+    const nres = await api(`/schools/${session.schoolId}/my-notifications`).catch(() => null);
+    if (nres?.json) unreadCount.value = nres.json.unread || 0;
+  }
+});
 import { useRoute, useRouter } from "vue-router";
 import { session, currentUser, myRole, myMemberships, api } from "./api.js";
 
@@ -20,6 +30,7 @@ const NAV = [
   { to: "/notices", label: "Notices", icon: "✉", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/parent", label: "My Children", icon: "🏠", roles: ["PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["PARENT"] },
+  { to: "/notifications", label: "Notifications", icon: "🔔", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"], badge: true },
   { to: "/settings", label: "Settings", icon: "⚙", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
@@ -41,13 +52,14 @@ function switchSchool(id) {
     <!-- Desktop sidebar -->
     <aside class="hidden md:flex md:w-64 md:flex-col bg-ink-900 text-white p-5 gap-1">
       <div class="mb-6">
-        <div class="text-lg font-bold">Smart School</div>
+        <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="School logo" class="w-10 h-10 rounded-lg object-contain bg-white mb-2" />
+        <div class="text-lg font-bold">{{ schoolInfo?.name || "Smart School" }}</div>
         <div class="text-xs text-slate-300">Attendance & Communication</div>
       </div>
       <router-link v-for="n in nav" :key="n.to + n.label" :to="n.to"
         class="rounded-xl px-3 py-2.5 text-sm hover:bg-white/10"
         :class="route.path === n.to ? 'bg-white/15 font-semibold' : ''">
-        <span class="mr-2">{{ n.icon }}</span>{{ n.label }}
+        <span class="mr-2">{{ n.icon }}</span>{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
       </router-link>
       <div class="mt-auto text-xs text-slate-300">
         <div class="font-semibold text-white">{{ user?.fullName }}</div>

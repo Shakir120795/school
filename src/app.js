@@ -5,7 +5,9 @@ import attendanceRoutes from "./routes/attendance.js";
 import noticeRoutes from "./routes/notices.js";
 import webhookRoutes from "./routes/webhooks.js";
 import pushRoutes from "./routes/push.js";
+import inboxRoutes from "./routes/inbox.js";
 import { rateLimit } from "./middleware/rateLimit.js";
+import { processOutboxOnce } from "./services/outbox.js";
 import { errorHandler } from "./utils/http.js";
 
 export function createApp() {
@@ -44,6 +46,16 @@ export function createApp() {
   app.use("/", attendanceRoutes); // /attendance/scan + /schools/:id/attendance/*
   app.use("/", noticeRoutes); // /schools/:id/notices/*
   app.use("/", pushRoutes); // /schools/:id/push-tokens
+  app.use("/", inboxRoutes); // /schools/:id/my-notifications
+  // Serverless cron (Vercel Cron sends Authorization: Bearer <CRON_SECRET>).
+  app.get("/internal/process-outbox", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+    const result = await processOutboxOnce(50);
+    return res.json({ ok: true, ...result });
+  });
 
   app.use((req, res) => res.status(404).json({ error: "ROUTE_NOT_FOUND" }));
   app.use(errorHandler);

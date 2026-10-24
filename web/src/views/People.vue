@@ -15,6 +15,7 @@ const guardians = ref([]);
 const msg = ref("");
 const qrDataUrl = ref("");
 const printSelection = ref([]);
+const schoolName = ref("Smart School");
 const printCards = ref([]);
 const qrFor = ref("");
 
@@ -43,7 +44,11 @@ async function load() {
   memberships.value = m.json.memberships || [];
   guardians.value = g.json.guardians || [];
 }
-onMounted(load);
+onMounted(async () => {
+  const sres = await api(`/schools/${sid}`).catch(() => null);
+  if (sres?.json?.school?.name) schoolName.value = sres.json.school.name;
+  await load();
+});
 
 function note(r, okText) {
   msg.value = r.status < 300 ? okText : `Error: ${r.json.error || r.status}`;
@@ -154,7 +159,7 @@ function className(id) {
       <div v-if="printCards.length" id="print-sheet" class="card mb-4">
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div v-for="c in printCards" :key="c.adm" class="id-card border-2 border-brand-600 rounded-xl p-3 text-center">
-            <div class="font-bold text-sm">Smart School</div>
+            <div class="font-bold text-sm">{{ schoolName }}</div>
             <img :src="c.qr" class="w-28 h-28 mx-auto" alt="QR" />
             <div class="font-semibold">{{ c.name }}</div>
             <div class="text-xs text-slate-500">Adm {{ c.adm }} · Class {{ c.cls }}</div>

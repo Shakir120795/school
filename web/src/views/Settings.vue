@@ -52,7 +52,7 @@ async function savePolicy() {
   note(await api(`/schools/${sid}/attendance-policies`, { method: "POST", body: policy.value }), "Policy saved (now the active policy for this scope).");
 }
 async function saveSchool() {
-  note(await api(`/schools/${sid}`, { method: "PATCH", body: { name: school.value.name, timezone: school.value.timezone } }), "School settings saved.");
+  note(await api(`/schools/${sid}`, { method: "PATCH", body: { name: school.value.name, timezone: school.value.timezone, logoUrl: school.value.logoUrl || "", address: school.value.address || "", phone: school.value.phone || "", email: school.value.email || "" } }), "School settings saved.");
 }
 </script>
 
@@ -66,6 +66,11 @@ async function saveSchool() {
       <div><label class="label">Name</label><input v-model="school.name" class="input" /></div>
       <div><label class="label">Timezone (IANA)</label><input v-model="school.timezone" class="input" /></div>
       <div><label class="label">School ID (for gate devices)</label><input :value="school.id" readonly class="input bg-slate-50" /></div>
+      <div><label class="label">Logo URL (school photo/logo)</label><input v-model="school.logoUrl" class="input" placeholder="https://…/logo.png" /></div>
+      <div><label class="label">Address</label><input v-model="school.address" class="input" /></div>
+      <div><label class="label">Phone</label><input v-model="school.phone" class="input" /></div>
+      <div><label class="label">Email</label><input v-model="school.email" class="input" /></div>
+      <div v-if="school.logoUrl"><label class="label">Logo preview</label><img :src="school.logoUrl" class="w-14 h-14 object-contain border rounded-lg" alt="logo" /></div>
       <div><button class="btn btn-primary" @click="saveSchool">Save</button></div>
     </div>
 

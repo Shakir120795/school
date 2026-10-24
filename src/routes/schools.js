@@ -61,10 +61,16 @@ router.patch(
   requireAuth,
   requireSchool(WRITE),
   asyncRoute(async (req, res) => {
-    const school = await prisma.school.update({
-      where: { id: req.params.schoolId },
-      data: { name: req.body.name, timezone: req.body.timezone },
-    });
+    // School profile: name/timezone + public profile the admin fills after
+    // onboarding (logo, address, contact) — only provided fields change.
+    const data = {};
+    for (const f of ["name", "timezone", "logoUrl", "address", "phone", "email"]) {
+      if (req.body[f] !== undefined) data[f] = req.body[f] === "" ? null : req.body[f];
+    }
+    if (data.logoUrl && !/^https?:\/\//i.test(data.logoUrl)) {
+      return res.status(400).json({ error: "LOGO_URL_MUST_BE_HTTP_URL" });
+    }
+    const school = await prisma.school.update({ where: { id: req.params.schoolId }, data });
     return res.json({ school });
   })
 );

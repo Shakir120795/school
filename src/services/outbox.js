@@ -94,6 +94,33 @@ async function deliverPushIfPossible(outbox, recipient, contact, notice) {
 }
 
 async function deliverToRecipient(outbox, recipient, notice) {
+  // IN_APP is the primary channel: the notice lands in the user's app
+  // inbox immediately and is tracked like any other delivery. WhatsApp /
+  // push below are optional extras on top of it.
+  await recordDelivery({
+    schoolId: outbox.schoolId,
+    outboxId: outbox.id,
+    noticeRecipientId: recipient.id,
+    channel: "IN_APP",
+    status: "DELIVERED",
+    provider: "in-app",
+    idempotencyKey: `${outbox.id}:${recipient.id}:IN_APP`,
+    sentAt: new Date(),
+    deliveredAt: new Date(),
+  });
+  if (config.notificationProvider === "fail") {
+    // Simulated external-provider outage: the in-app copy above stays,
+    // but the send as a whole retries/dead-letters like before.
+    throw Object.assign(new Error("provider unavailable (simulated)"), { code: "PROVIDER_DOWN" });
+  }
+  if (config.notificationProvider !== "whatsapp") {
+    await prisma.noticeRecipient.updateMany({
+      where: { id: recipient.id, status: "QUEUED" },
+      data: { status: "DELIVERED" },
+    });
+    await deliverPushIfPossible(outbox, recipient, await resolveContact(outbox.schoolId, recipient), notice);
+    return;
+  }
   const channel = "WHATSAPP";
   if (await guardianOptedOut(outbox.schoolId, recipient, channel)) {
     await recordDelivery({
@@ -106,7 +133,11 @@ async function deliverToRecipient(outbox, recipient, notice) {
       errorCode: "OPTED_OUT",
       errorMessage: "Guardian opted out of this channel",
     });
-    await prisma.noticeRecipient.update({ where: { id: recipient.id }, data: { status: "FAILED" } });
+    // The in-app copy was still delivered above — reflect that, not FAILED.
+    await prisma.noticeRecipient.updateMany({
+      where: { id: recipient.id, status: "QUEUED" },
+      data: { status: "DELIVERED" },
+    });
     return;
   }
 

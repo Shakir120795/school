@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npx prisma generate && cd web && npm install && npm run build",
+  "outputDirectory": "web/dist",
+  "rewrites": [
+    { "source": "/auth/(.*)", "destination": "/api/index.js" },
+    { "source": "/schools/(.*)", "destination": "/api/index.js" },
+    { "source": "/attendance/(.*)", "destination": "/api/index.js" },
+    { "source": "/webhooks/(.*)", "destination": "/api/index.js" },
+    { "source": "/me", "destination": "/api/index.js" },
+    { "source": "/me/(.*)", "destination": "/api/index.js" },
+    { "source": "/health", "destination": "/api/index.js" },
+    { "source": "/internal/(.*)", "destination": "/api/index.js" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/internal/process-outbox", "schedule": "*/5 * * * *" }
+  ]
+}

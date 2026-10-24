@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { checkNoticePermission, resolveAudience, sendNoticeCore } from "../services/notices.js";
+import { processOutboxOnce } from "../services/outbox.js";
 
 const router = Router();
 const SENDERS = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -120,6 +121,12 @@ router.post(
     if (!perm.ok) return res.status(403).json({ error: perm.error });
 
     const { notice: updated, recipientCount } = await sendNoticeCore(req.params.schoolId, notice);
+    // On serverless (Vercel) there is no always-on worker: run one outbox
+    // pass inline so in-app deliveries land immediately. A cron endpoint
+    // (/internal/process-outbox) covers scheduled notices.
+    if (process.env.VERCEL) {
+      try { await processOutboxOnce(50); } catch (e) { console.error("inline outbox pass failed", e.message); }
+    }
     return res.json({ notice: updated, recipientCount });
   })
 );

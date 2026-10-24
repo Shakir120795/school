@@ -306,11 +306,13 @@ test("notices: teacher scope, principal broadcast, send-once, worker delivery, o
   const pass = await processOutboxOnce(50);
   assert.ok(pass.processed >= 1);
   const recipients = await prisma.noticeRecipient.findMany({ where: { noticeId } });
+  // In-app is the primary channel (Phase 6): a WhatsApp opt-out no longer
+  // blocks delivery — the guardian still receives the notice in the app.
   const optedOut = recipients.find((r) => r.recipientRef === kid.guardianId);
-  assert.equal(optedOut.status, "FAILED");
+  assert.equal(optedOut.status, "DELIVERED");
   const deliveries = await prisma.notificationDelivery.findMany({ where: { noticeRecipientId: optedOut.id } });
-  assert.equal(deliveries[0].errorCode, "OPTED_OUT");
-  const accepted = recipients.filter((r) => r.status === "PROVIDER_ACCEPTED");
+  assert.ok(deliveries.some((d) => d.channel === "IN_APP" && d.status === "DELIVERED"));
+  const accepted = recipients.filter((r) => r.status === "DELIVERED");
   assert.ok(accepted.length >= 1);
   const noticeRow = await prisma.notice.findUnique({ where: { id: noticeId } });
   assert.equal(noticeRow.status, "SENT");

@@ -156,8 +156,8 @@ test("pilot rehearsal: a full school day end-to-end", async () => {
   const recipient = await prisma.noticeRecipient.findFirst({
     where: { noticeId: notice.json.notice.id, recipientRef: kidA.guardianId },
   });
-  const delivery = await prisma.notificationDelivery.findFirst({ where: { noticeRecipientId: recipient.id } });
-  assert.equal(delivery.status, "PROVIDER_ACCEPTED");
+  const delivery = await prisma.notificationDelivery.findFirst({ where: { noticeRecipientId: recipient.id, channel: "IN_APP" } });
+  assert.equal(delivery.status, "DELIVERED");
   const ack = await H.api(base, "POST", `/schools/${S.schoolId}/notices/${notice.json.notice.id}/ack`, {
     token: kidA.parentToken, schoolId: S.schoolId, body: {},
   });

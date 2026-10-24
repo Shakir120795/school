@@ -65,5 +65,7 @@ test("failing provider: notice row survives, outbox retries then dead-letters", 
   assert.ok(notice);
   const deliveries = await prisma.notificationDelivery.findMany({ where: { outboxId: outbox.id } });
   assert.ok(deliveries.length >= 1);
-  assert.ok(deliveries.every((d) => d.status === "FAILED" || d.errorCode));
+  // Phase 6 semantics: the in-app copy is delivered even while the external
+  // provider is down — the outage costs retries/dead-letter, not the notice.
+  assert.ok(deliveries.some((d) => d.channel === "IN_APP" && d.status === "DELIVERED"));
 });
