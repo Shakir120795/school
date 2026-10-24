@@ -1,0 +1,843 @@
+// Smart School Tracking, Attendance & Communication SaaS — Phase 1 schema
+// Blueprint: Smart_School_Tracking_Communication_SaaS_Blueprint.md v1.0 (25 Oct 2026)
+//
+// Tenant-isolation strategy (defense in depth):
+//  1. Every tenant-owned row carries `schoolId`.
+//  2. Key parent tables expose @@unique([schoolId, id]) so child tables can use
+//     COMPOSITE foreign keys (schoolId + parentId) -> (schoolId, id). The database
+//     itself then rejects a link between rows of two different schools.
+//  3. Uniqueness rules (admission no, subject code, attendance-per-day, scan
+//     idempotency, etc.) are always scoped by schoolId.
+//  4. The API (Phase 2) must still scope every query by the authenticated
+//     user's school membership — DB constraints are the backstop, not a substitute.
+//
+// QR/NFC: CardCredential stores ONLY a hash of the opaque token. Never the token
+// itself, and never personal data in the QR payload.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum MembershipRole {
+  SCHOOL_ADMIN
+  PRINCIPAL
+  TEACHER
+  PARENT
+  STAFF
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  INACTIVE
+}
+
+enum PersonStatus {
+  ACTIVE
+  INACTIVE
+  LEFT
+  SUSPENDED
+}
+
+enum CardOwnerType {
+  STUDENT
+  STAFF
+}
+
+enum CardCredentialStatus {
+  ACTIVE
+  REVOKED
+  REPLACED
+  LOST
+}
+
+enum ScanEventType {
+  ENTRY
+  EXIT
+  INVALID
+}
+
+enum ScanSource {
+  QR
+  NFC
+  MANUAL
+}
+
+enum AttendanceDayStatus {
+  PRESENT
+  LATE
+  ABSENT
+  ON_LEAVE
+  HALF_DAY
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NoticeType {
+  HOMEWORK
+  HOLIDAY
+  ANNOUNCEMENT
+  EMERGENCY
+  CUSTOM
+}
+
+enum NoticeStatus {
+  DRAFT
+  SCHEDULED
+  APPROVAL_PENDING
+  APPROVED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum NoticeAudienceType {
+  ASSIGNED_CLASS
+  SELECTED_STUDENTS
+  SELECTED_GUARDIANS
+  ALL_PARENTS
+  ALL_TEACHERS
+  ALL_PARENTS_AND_TEACHERS
+  INDIVIDUAL_STAFF
+}
+
+enum NoticePriority {
+  NORMAL
+  URGENT
+  EMERGENCY
+}
+
+enum RecipientType {
+  GUARDIAN
+  TEACHER
+  STAFF
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  PUSH
+  EMAIL
+  SMS
+}
+
+enum DeliveryStatus {
+  QUEUED
+  PROVIDER_ACCEPTED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  ACKNOWLEDGED
+  DEAD_LETTER
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+  DEAD_LETTER
+}
+
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+  INACTIVE
+}
+
+// ---------------------------------------------------------------------------
+// Platform / tenant root
+// ---------------------------------------------------------------------------
+
+model School {
+  id        String       @id @default(cuid())
+  slug      String       @unique // e.g. "green-valley-public-school"
+  name      String
+  // IANA timezone, e.g. "Asia/Kolkata". Attendance local dates/windows derive from this.
+  timezone  String       @default("Asia/Kolkata")
+  status    PersonStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  memberships            SchoolMembership[]
+  academicYears          AcademicYear[]
+  guardians              Guardian[]
+  students               Student[]
+  classrooms             Classroom[]
+  subjects               Subject[]
+  teacherProfiles        TeacherProfile[]
+  cardCredentials        CardCredential[]
+  devices                Device[]
+  studentScanEvents      StudentScanEvent[]
+  studentAttendances     StudentAttendance[]
+  staffScanEvents        StaffScanEvent[]
+  staffAttendances       StaffAttendance[]
+  attendanceAudits       AttendanceAudit[]
+  correctionRequests     AttendanceCorrectionRequest[]
+  notices                Notice[]
+  notificationOutboxes   NotificationOutbox[]
+  notificationDeliveries NotificationDelivery[]
+  attendancePolicies     AttendancePolicy[]
+  holidays               Holiday[]
+  auditLogs              AuditLog[]
+
+  @@index([status])
+}
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String // e.g. "2026-27"
+  startsOn  DateTime @db.Date
+  endsOn    DateTime @db.Date
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school                   School                    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classrooms               Classroom[]
+  teacherAssignments       TeacherClassAssignment[]
+  classInchargeAssignments ClassInchargeAssignment[]
+  students                 Student[]
+
+  // Enables composite (schoolId, id) foreign keys from child tables.
+  @@unique([schoolId, id])
+  @@unique([schoolId, name])
+  @@index([schoolId, isCurrent])
+}
+
+// Global login identity. School access is granted ONLY via SchoolMembership,
+// so one login can belong to several schools with a different role in each.
+model User {
+  id              String   @id @default(cuid())
+  email           String?  @unique
+  phone           String?  @unique
+  passwordHash    String? // null for OTP/invite-only accounts
+  fullName        String
+  isPlatformAdmin Boolean  @default(false) // platform operator; NO school data access by default
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  memberships          SchoolMembership[]
+  guardianProfiles     Guardian[]
+  auditLogs            AuditLog[]
+  attendanceAudits     AttendanceAudit[]
+  correctionsRequested AttendanceCorrectionRequest[] @relation("CorrectionRequester")
+  correctionsDecided   AttendanceCorrectionRequest[] @relation("CorrectionApprover")
+
+  @@index([isActive])
+}
+
+model SchoolMembership {
+  id        String           @id @default(cuid())
+  schoolId  String
+  userId    String
+  role      MembershipRole
+  status    MembershipStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teacherProfile TeacherProfile?
+  noticesSent    Notice[]        @relation("NoticeSender")
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, userId]) // one membership per user per school
+  @@index([userId])
+  @@index([schoolId, role, status])
+}
+
+// ---------------------------------------------------------------------------
+// People: guardians, students, classes, subjects, teachers
+// ---------------------------------------------------------------------------
+
+model Guardian {
+  id           String       @id @default(cuid())
+  schoolId     String
+  userId       String? // linked login account, if the guardian uses the app
+  fullName     String
+  phone        String?
+  email        String?
+  relationship String? // e.g. father / mother / guardian
+  status       PersonStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  school        School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  user          User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  studentLinks  StudentGuardian[]
+  consents      CommunicationConsent[]
+  noticeTargets NoticeTarget[]
+
+  @@unique([schoolId, id])
+  @@index([schoolId, phone])
+  @@index([userId])
+}
+
+model Classroom {
+  id             String   @id @default(cuid())
+  schoolId       String
+  academicYearId String
+  name           String // e.g. "5"
+  section        String? // e.g. "A"
+  gradeLevel     Int?
+  roomLabel      String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  school                   School                    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  academicYear             AcademicYear              @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
+  students                 Student[]
+  teacherAssignments       TeacherClassAssignment[]
+  classInchargeAssignments ClassInchargeAssignment[]
+  noticeTargets            NoticeTarget[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, academicYearId, name, section])
+  @@index([schoolId, academicYearId])
+}
+
+model Student {
+  id             String       @id @default(cuid())
+  schoolId       String
+  academicYearId String?
+  classroomId    String?
+  admissionNo    String
+  fullName       String
+  dateOfBirth    DateTime?    @db.Date
+  gender         String?
+  status         PersonStatus @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  school          School              @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  academicYear    AcademicYear?       @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
+  classroom       Classroom?          @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Restrict)
+  guardianLinks   StudentGuardian[]
+  noticeTargets   NoticeTarget[]
+  cardCredentials CardCredential[]
+  scanEvents      StudentScanEvent[]
+  attendances     StudentAttendance[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, admissionNo])
+  @@index([schoolId, classroomId, status])
+  @@index([schoolId, fullName])
+}
+
+// Many-to-many guardian <-> student, pinned to ONE school by composite FKs:
+// a guardian from school A physically cannot be linked to a student of school B.
+model StudentGuardian {
+  id         String   @id @default(cuid())
+  schoolId   String
+  studentId  String
+  guardianId String
+  relation   String? // per-link relation label (father/mother/...)
+  isPrimary  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  student  Student  @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [schoolId, guardianId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, guardianId])
+  @@index([schoolId, guardianId])
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  code      String // school-scoped code, e.g. "MATH"
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  school             School                   @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  teacherAssignments TeacherClassAssignment[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, code])
+  @@index([schoolId, name])
+}
+
+// Teacher-specific profile on top of a school membership.
+// Only school-approved public fields here (displayName, photo, office contact
+// channel). Personal phone/address must never be added to this table.
+model TeacherProfile {
+  id                     String       @id @default(cuid())
+  schoolId               String
+  membershipId           String       @unique
+  displayName            String
+  photoUrl               String?
+  approvedContactChannel String? // school office channel shown to parents, if approved
+  isVisibleToParents     Boolean      @default(true)
+  status                 PersonStatus @default(ACTIVE)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  school              School                    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  membership          SchoolMembership          @relation(fields: [schoolId, membershipId], references: [schoolId, id], onDelete: Cascade)
+  classAssignments    TeacherClassAssignment[]
+  inchargeAssignments ClassInchargeAssignment[]
+  cardCredentials     CardCredential[]
+  staffScanEvents     StaffScanEvent[]
+  staffAttendances    StaffAttendance[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, membershipId])
+  @@index([schoolId, status])
+}
+
+model TeacherClassAssignment {
+  id             String   @id @default(cuid())
+  schoolId       String
+  teacherId      String
+  classroomId    String
+  subjectId      String
+  academicYearId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  teacher      TeacherProfile @relation(fields: [schoolId, teacherId], references: [schoolId, id], onDelete: Cascade)
+  classroom    Classroom      @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  subject      Subject        @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, teacherId, classroomId, subjectId, academicYearId])
+  @@index([schoolId, classroomId])
+  @@index([schoolId, teacherId])
+}
+
+model ClassInchargeAssignment {
+  id             String    @id @default(cuid())
+  schoolId       String
+  teacherId      String
+  classroomId    String
+  academicYearId String
+  effectiveFrom  DateTime  @db.Date
+  effectiveTo    DateTime? @db.Date // null = currently in charge
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  teacher      TeacherProfile @relation(fields: [schoolId, teacherId], references: [schoolId, id], onDelete: Cascade)
+  classroom    Classroom      @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  academicYear AcademicYear   @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Cascade)
+  // NOTE: "only one CURRENT incharge per classroom" is enforced by a partial
+  // unique index added in the initial migration SQL (Prisma cannot express it).
+
+  @@index([schoolId, classroomId, effectiveTo])
+  @@index([schoolId, teacherId])
+}
+
+// ---------------------------------------------------------------------------
+// ID cards (QR now, NFC optional later) and scanner devices
+// ---------------------------------------------------------------------------
+
+// Stores ONLY tokenHash = hash(opaque random token printed as QR).
+// Exactly one of studentId / teacherProfileId must be set (CHECK in migration SQL).
+model CardCredential {
+  id               String               @id @default(cuid())
+  schoolId         String
+  ownerType        CardOwnerType
+  studentId        String?
+  teacherProfileId String?
+  tokenHash        String               @unique // global: hash of a high-entropy token
+  status           CardCredentialStatus @default(ACTIVE)
+  issuedAt         DateTime             @default(now())
+  revokedAt        DateTime?
+  revokeReason     String?
+  lastUsedAt       DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student        Student?        @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+  teacherProfile TeacherProfile? @relation(fields: [schoolId, teacherProfileId], references: [schoolId, id], onDelete: Cascade)
+
+  studentScanEvents StudentScanEvent[]
+  staffScanEvents   StaffScanEvent[]
+
+  @@index([schoolId, status])
+  @@index([schoolId, studentId])
+  @@index([schoolId, teacherProfileId])
+}
+
+model Device {
+  id            String       @id @default(cuid())
+  schoolId      String
+  name          String // e.g. "Main gate tablet"
+  deviceKeyHash String       @unique // hash of the device credential, never the raw key
+  status        DeviceStatus @default(ACTIVE)
+  lastSeenAt    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  school            School             @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  studentScanEvents StudentScanEvent[]
+  staffScanEvents   StaffScanEvent[]
+
+  @@index([schoolId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Attendance — students and staff are SEPARATE tables, rules and audits.
+// Machine scan events are immutable originals; daily records can be corrected
+// only through audited corrections. Corrections never rewrite scan events.
+// ---------------------------------------------------------------------------
+
+model StudentScanEvent {
+  id               String        @id @default(cuid())
+  schoolId         String
+  studentId        String
+  cardCredentialId String?
+  deviceId         String?
+  eventType        ScanEventType
+  source           ScanSource    @default(QR)
+  scannedAt        DateTime // UTC instant; school timezone applied for windows/display
+  idempotencyKey   String // per-school dedupe for retries / double scans
+  isDuplicate      Boolean       @default(false)
+  reviewFlag       String? // e.g. OUT_OF_WINDOW, MISSING_PAIR — a flag, not an accusation
+  createdAt        DateTime      @default(now())
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student        Student         @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+  cardCredential CardCredential? @relation(fields: [cardCredentialId], references: [id], onDelete: SetNull)
+  device         Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, idempotencyKey])
+  @@index([schoolId, studentId, scannedAt])
+  @@index([schoolId, scannedAt])
+}
+
+model StudentAttendance {
+  id          String              @id @default(cuid())
+  schoolId    String
+  studentId   String
+  localDate   DateTime            @db.Date // date in the SCHOOL's timezone
+  status      AttendanceDayStatus
+  entryAt     DateTime?
+  exitAt      DateTime?
+  isLate      Boolean             @default(false)
+  isEarlyExit Boolean             @default(false)
+  reviewFlag  String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  school  School  @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, localDate]) // one daily record per student per day
+  @@index([schoolId, localDate, status])
+}
+
+model StaffScanEvent {
+  id               String        @id @default(cuid())
+  schoolId         String
+  teacherProfileId String
+  cardCredentialId String?
+  deviceId         String?
+  eventType        ScanEventType
+  source           ScanSource    @default(QR)
+  scannedAt        DateTime
+  idempotencyKey   String
+  isDuplicate      Boolean       @default(false)
+  reviewFlag       String?
+  createdAt        DateTime      @default(now())
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  teacherProfile TeacherProfile  @relation(fields: [schoolId, teacherProfileId], references: [schoolId, id], onDelete: Cascade)
+  cardCredential CardCredential? @relation(fields: [cardCredentialId], references: [id], onDelete: SetNull)
+  device         Device?         @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, idempotencyKey])
+  @@index([schoolId, teacherProfileId, scannedAt])
+}
+
+model StaffAttendance {
+  id               String              @id @default(cuid())
+  schoolId         String
+  teacherProfileId String
+  localDate        DateTime            @db.Date
+  status           AttendanceDayStatus
+  checkInAt        DateTime?
+  checkOutAt       DateTime?
+  isLate           Boolean             @default(false)
+  reviewFlag       String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  school         School         @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  teacherProfile TeacherProfile @relation(fields: [schoolId, teacherProfileId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, teacherProfileId, localDate])
+  @@index([schoolId, localDate, status])
+}
+
+// Auditable correction trail for ANY attendance entity (student or staff).
+model AttendanceAudit {
+  id          String   @id @default(cuid())
+  schoolId    String
+  entityType  String // "StudentAttendance" | "StaffAttendance" | "StudentScanEvent" | ...
+  entityId    String
+  actorUserId String
+  action      String // CREATE | CORRECT | VERIFY | APPROVE | REJECT
+  reason      String?
+  before      Json?
+  after       Json?
+  createdAt   DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  actor  User   @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, entityType, entityId])
+  @@index([schoolId, createdAt])
+}
+
+// Correction REQUEST workflow (staff in blueprint §5): request -> approve/reject.
+// "No self-approval" is enforced in Phase 2 logic AND by a CHECK in migration SQL
+// (decidedByUserId <> requestedByUserId when status <> PENDING is a service rule;
+// the SQL CHECK covers approver <> requester for decided rows).
+model AttendanceCorrectionRequest {
+  id                String           @id @default(cuid())
+  schoolId          String
+  entityType        String
+  entityId          String
+  requestedByUserId String
+  decidedByUserId   String?
+  status            CorrectionStatus @default(PENDING)
+  reason            String
+  proposedChanges   Json
+  decidedAt         DateTime?
+  decisionNote      String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  school      School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  requestedBy User   @relation("CorrectionRequester", fields: [requestedByUserId], references: [id], onDelete: Restrict)
+  decidedBy   User?  @relation("CorrectionApprover", fields: [decidedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, status])
+  @@index([schoolId, entityType, entityId])
+}
+
+// Configurable timings instead of hard-coded windows (blueprint §5).
+model AttendancePolicy {
+  id              String        @id @default(cuid())
+  schoolId        String
+  appliesTo       CardOwnerType // STUDENT or STAFF policy
+  entryStart      String // "07:30" local school time
+  entryEnd        String // "08:15"
+  lateAfter       String // "08:15"
+  exitStart       String?
+  exitEnd         String?
+  workingWeekdays Int[] // 1=Mon .. 7=Sun in school local time
+  graceMinutes    Int           @default(0)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  // "One active policy per (school, appliesTo)" is enforced by a partial
+  // unique index in the initial migration SQL (Prisma cannot express it).
+  @@index([schoolId, appliesTo, isActive])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  schoolId  String
+  localDate DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, localDate])
+}
+
+// ---------------------------------------------------------------------------
+// Notices, recipients, outbox and deliveries (custom worker, NO n8n)
+// ---------------------------------------------------------------------------
+
+model Notice {
+  id                 String             @id @default(cuid())
+  schoolId           String
+  senderMembershipId String
+  type               NoticeType         @default(ANNOUNCEMENT)
+  priority           NoticePriority     @default(NORMAL)
+  audienceType       NoticeAudienceType
+  title              String
+  body               String
+  status             NoticeStatus       @default(DRAFT)
+  scheduledAt        DateTime?
+  sentAt             DateTime?
+  requiresAck        Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  school     School            @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  sender     SchoolMembership  @relation("NoticeSender", fields: [schoolId, senderMembershipId], references: [schoolId, id], onDelete: Restrict)
+  targets    NoticeTarget[]
+  recipients NoticeRecipient[]
+
+  @@unique([schoolId, id])
+  @@index([schoolId, status, scheduledAt])
+  @@index([schoolId, createdAt])
+}
+
+// Audience definition BEFORE resolution (class / students chosen by the sender).
+// Recipients are then snapshotted into NoticeRecipient at send time.
+model NoticeTarget {
+  id          String   @id @default(cuid())
+  schoolId    String
+  noticeId    String
+  classroomId String?
+  studentId   String?
+  guardianId  String?
+  createdAt   DateTime @default(now())
+
+  notice    Notice     @relation(fields: [schoolId, noticeId], references: [schoolId, id], onDelete: Cascade)
+  classroom Classroom? @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  student   Student?   @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+  guardian  Guardian?  @relation(fields: [schoolId, guardianId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([noticeId])
+  @@index([schoolId, classroomId])
+}
+
+// One row per resolved recipient (snapshot). recipientRef = guardianId or
+// membershipId as a string, so guardian and staff recipients share one table
+// with a single enforceable uniqueness rule.
+model NoticeRecipient {
+  id             String         @id @default(cuid())
+  schoolId       String
+  noticeId       String
+  recipientType  RecipientType
+  recipientRef   String
+  status         DeliveryStatus @default(QUEUED)
+  acknowledgedAt DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  notice     Notice                 @relation(fields: [schoolId, noticeId], references: [schoolId, id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  @@unique([schoolId, id])
+  @@unique([noticeId, recipientType, recipientRef])
+  @@index([schoolId, noticeId, status])
+}
+
+// Durable PostgreSQL outbox: business rows and outbox events are written in the
+// SAME transaction; a Node worker claims PENDING rows (Phase 2) and calls
+// provider adapters. A provider outage never loses the attendance/notice row.
+model NotificationOutbox {
+  id             String       @id @default(cuid())
+  schoolId       String
+  eventType      String // e.g. "notice.send", "attendance.entry"
+  aggregateType  String // e.g. "Notice", "StudentAttendance"
+  aggregateId    String
+  payload        Json
+  idempotencyKey String       @unique
+  status         OutboxStatus @default(PENDING)
+  attempts       Int          @default(0)
+  maxAttempts    Int          @default(5)
+  nextAttemptAt  DateTime     @default(now())
+  lockedAt       DateTime?
+  lockedBy       String? // worker id while PROCESSING
+  lastError      String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  school     School                 @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  deliveries NotificationDelivery[]
+
+  @@index([status, nextAttemptAt])
+  @@index([schoolId, aggregateType, aggregateId])
+}
+
+// Per-attempt / per-channel delivery record. Statuses are NOT interchangeable:
+// QUEUED != PROVIDER_ACCEPTED != SENT != DELIVERED != READ.
+model NotificationDelivery {
+  id                String              @id @default(cuid())
+  schoolId          String
+  outboxId          String?
+  noticeRecipientId String?
+  channel           NotificationChannel
+  provider          String? // e.g. "whatsapp-cloud", "fcm", "smtp"
+  providerMessageId String?
+  status            DeliveryStatus      @default(QUEUED)
+  idempotencyKey    String
+  attemptCount      Int                 @default(0)
+  errorCode         String?
+  errorMessage      String?
+  nextRetryAt       DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  school          School              @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  outbox          NotificationOutbox? @relation(fields: [outboxId], references: [id], onDelete: SetNull)
+  noticeRecipient NoticeRecipient?    @relation(fields: [schoolId, noticeRecipientId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, channel, idempotencyKey])
+  @@index([schoolId, status])
+  @@index([providerMessageId])
+}
+
+// Guardian communication consent / preference per channel.
+model CommunicationConsent {
+  id         String              @id @default(cuid())
+  schoolId   String
+  guardianId String
+  channel    NotificationChannel
+  optedIn    Boolean             @default(true)
+  source     String? // e.g. "admission-form", "app-settings"
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  guardian Guardian @relation(fields: [schoolId, guardianId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, guardianId, channel])
+}
+
+// ---------------------------------------------------------------------------
+// General audit log (platform + school actions; support access must be audited)
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  schoolId    String? // null = platform-level action
+  actorUserId String?
+  action      String
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  school School? @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  actor  User?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, createdAt])
+  @@index([actorUserId, createdAt])
+}
