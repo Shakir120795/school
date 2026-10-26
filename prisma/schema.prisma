@@ -216,8 +216,51 @@ model School {
   exams                  Exam[]
   supportTickets         SupportTicket[]
   ptmSlots               PtmSlot[]
+  subscriptions          SchoolSubscription[]
 
   @@index([status])
+}
+
+// Platform billing (Phase 29 WS8): the operator sells the SaaS itself
+// to schools. A PlatformPlan is a price point (money is integer paise,
+// like the fees ledger); a SchoolSubscription assigns one plan to one
+// school for a period. status is a plain string ("ACTIVE" |
+// "EXPIRED" | "CANCELLED") — expiry is mostly COMPUTED from endsAt at
+// read time; the stored value only really carries CANCELLED.
+model PlatformPlan {
+  id           String   @id @default(cuid())
+  name         String
+  pricePaise   Int
+  periodMonths Int
+  features     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions SchoolSubscription[]
+
+  @@index([isActive])
+}
+
+model SchoolSubscription {
+  id          String   @id @default(cuid())
+  schoolId    String
+  planId      String
+  status      String   @default("ACTIVE") // ACTIVE | EXPIRED | CANCELLED
+  startsAt    DateTime
+  endsAt      DateTime
+  amountPaise Int
+  paymentNote String?
+  createdBy   String // operator userId who assigned it
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school School       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  plan   PlatformPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, status])
+  @@index([planId])
+  @@index([endsAt])
 }
 
 model AcademicYear {

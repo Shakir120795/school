@@ -549,6 +549,220 @@ router.get("/platform/fees-summary", asyncRoute(async (req, res) => {
   return res.json({ schools: out, totals, generatedAt: new Date().toISOString() });
 }));
 
+// Phase 29 WS8: owner billing — the plans the operator sells to
+// schools (PlatformPlan) and each school's subscription
+// (SchoolSubscription). Operator only (router-level requirePlatform
+// guard above). GRACEFUL SETUP RULE: the billing tables are created
+// by docs/PENDING-LIVE-SQL.sql, which the owner runs ONCE by hand —
+// until then EVERY billing handler answers HTTP 200
+// { setupRequired: true, plans: [], schools: [] } instead of a 500,
+// so the console can show a clean "not set up yet" notice.
+const BILLING_SETUP = { setupRequired: true, plans: [], schools: [] };
+function isBillingSetupError(e) {
+  if (!e) return false;
+  if (e.code === "P2021" || e.code === "P2022") return true; // table / column does not exist
+  const msg = String(e.message || e);
+  return /does not exist/i.test(msg) && /(PlatformPlan|SchoolSubscription|relation|table)/i.test(msg);
+}
+function billingSetupOrThrow(e, res) {
+  if (isBillingSetupError(e)) {
+    res.json(BILLING_SETUP);
+    return true;
+  }
+  return false;
+}
+
+const DEFAULT_PLANS = [
+  { name: "Trial", pricePaise: 0, periodMonths: 1, features: "Free trial" },
+  { name: "Yearly", pricePaise: 999900, periodMonths: 12, features: null },
+  { name: "Lifetime", pricePaise: 4999900, periodMonths: 120, features: null },
+];
+
+// Lazy seed + full billing snapshot. The current subscription per
+// school is its LATEST one (by creation); its reported status is
+// computed — a stored CANCELLED stays CANCELLED, a stored ACTIVE
+// whose endsAt has passed reports EXPIRED.
+async function billingSnapshot() {
+  let plans = await prisma.platformPlan.findMany({ orderBy: { createdAt: "asc" } });
+  if (!plans.length) {
+    for (const p of DEFAULT_PLANS) await prisma.platformPlan.create({ data: p });
+    plans = await prisma.platformPlan.findMany({ orderBy: { createdAt: "asc" } });
+  }
+  const schools = await prisma.school.findMany({
+    select: { id: true, name: true, slug: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const subs = await prisma.schoolSubscription.findMany({
+    orderBy: { createdAt: "desc" },
+    include: { plan: { select: { name: true } } },
+  });
+  const now = new Date();
+  const currentBySchool = {};
+  for (const sub of subs) {
+    if (currentBySchool[sub.schoolId]) continue; // latest first — first hit wins
+    const computed =
+      sub.status === "CANCELLED" ? "CANCELLED" : sub.endsAt < now ? "EXPIRED" : "ACTIVE";
+    currentBySchool[sub.schoolId] = {
+      id: sub.id,
+      planId: sub.planId,
+      planName: sub.plan?.name || null,
+      status: computed,
+      startsAt: sub.startsAt,
+      endsAt: sub.endsAt,
+      daysLeft: Math.max(0, Math.ceil((sub.endsAt - now) / 86400000)),
+      amountPaise: sub.amountPaise,
+      paymentNote: sub.paymentNote,
+    };
+  }
+  return {
+    setupRequired: false,
+    plans: plans.map((p) => ({
+      id: p.id, name: p.name, pricePaise: p.pricePaise, periodMonths: p.periodMonths,
+      features: p.features, isActive: p.isActive, createdAt: p.createdAt, updatedAt: p.updatedAt,
+    })),
+    schools: schools.map((s) => ({
+      schoolId: s.id, name: s.name, slug: s.slug, status: s.status,
+      subscription: currentBySchool[s.id] || null,
+    })),
+  };
+}
+
+router.get("/platform/billing", asyncRoute(async (req, res) => {
+  try {
+    return res.json(await billingSnapshot());
+  } catch (e) {
+    if (billingSetupOrThrow(e, res)) return;
+    throw e;
+  }
+}));
+
+router.post("/platform/billing/plans", asyncRoute(async (req, res) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const pricePaise = Number(req.body?.pricePaise);
+    const periodMonths = Number(req.body?.periodMonths);
+    if (!name) return res.status(400).json({ error: "NAME_REQUIRED" });
+    if (!Number.isInteger(pricePaise) || pricePaise < 0) return res.status(400).json({ error: "INVALID_PRICE" });
+    if (!Number.isInteger(periodMonths) || periodMonths < 1) return res.status(400).json({ error: "INVALID_PERIOD" });
+    const plan = await prisma.platformPlan.create({
+      data: {
+        name, pricePaise, periodMonths,
+        features: req.body?.features ? String(req.body.features) : null,
+      },
+    });
+    return res.status(201).json({ plan });
+  } catch (e) {
+    if (billingSetupOrThrow(e, res)) return;
+    throw e;
+  }
+}));
+
+router.patch("/platform/billing/plans/:id", asyncRoute(async (req, res) => {
+  try {
+    const data = {};
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (!name) return res.status(400).json({ error: "NAME_REQUIRED" });
+      data.name = name;
+    }
+    if (req.body?.pricePaise !== undefined) {
+      const v = Number(req.body.pricePaise);
+      if (!Number.isInteger(v) || v < 0) return res.status(400).json({ error: "INVALID_PRICE" });
+      data.pricePaise = v;
+    }
+    if (req.body?.periodMonths !== undefined) {
+      const v = Number(req.body.periodMonths);
+      if (!Number.isInteger(v) || v < 1) return res.status(400).json({ error: "INVALID_PERIOD" });
+      data.periodMonths = v;
+    }
+    if (req.body?.features !== undefined) data.features = req.body.features ? String(req.body.features) : null;
+    if (req.body?.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
+    if (!Object.keys(data).length) return res.status(400).json({ error: "NOTHING_TO_UPDATE" });
+    const existing = await prisma.platformPlan.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "PLAN_NOT_FOUND" });
+    const plan = await prisma.platformPlan.update({ where: { id: existing.id }, data });
+    return res.json({ plan });
+  } catch (e) {
+    if (billingSetupOrThrow(e, res)) return;
+    throw e;
+  }
+}));
+
+// Assign (or renew) a plan to a school. RENEW = REPLACE: if the
+// school already has an ACTIVE, not-yet-expired subscription, the
+// old one is marked CANCELLED first and the new one takes over from
+// startsAt (default now) for plan.periodMonths months. Lookups all
+// happen BEFORE any write and there is no $transaction here — the
+// live pooler runs connection_limit=1 (Phase 20 rule).
+router.post("/platform/billing/subscriptions", asyncRoute(async (req, res) => {
+  try {
+    const missing = requireFields(req.body, ["schoolId", "planId"]);
+    if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    const school = await prisma.school.findUnique({
+      where: { id: String(req.body.schoolId) },
+      select: { id: true },
+    });
+    if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+    const plan = await prisma.platformPlan.findUnique({ where: { id: String(req.body.planId) } });
+    if (!plan) return res.status(404).json({ error: "PLAN_NOT_FOUND" });
+    const startsAt = req.body.startsAt ? new Date(req.body.startsAt) : new Date();
+    if (Number.isNaN(startsAt.getTime())) return res.status(400).json({ error: "INVALID_STARTS_AT" });
+    let amountPaise = plan.pricePaise;
+    if (req.body.amountPaise !== undefined && req.body.amountPaise !== null) {
+      amountPaise = Number(req.body.amountPaise);
+      if (!Number.isInteger(amountPaise) || amountPaise < 0) return res.status(400).json({ error: "INVALID_AMOUNT" });
+    }
+    const endsAt = new Date(startsAt);
+    endsAt.setMonth(endsAt.getMonth() + plan.periodMonths);
+    const now = new Date();
+    const replaced = await prisma.schoolSubscription.findMany({
+      where: { schoolId: school.id, status: "ACTIVE", endsAt: { gt: now } },
+      select: { id: true },
+    });
+    if (replaced.length) {
+      await prisma.schoolSubscription.updateMany({
+        where: { id: { in: replaced.map((r) => r.id) } },
+        data: { status: "CANCELLED" },
+      });
+    }
+    const subscription = await prisma.schoolSubscription.create({
+      data: {
+        schoolId: school.id,
+        planId: plan.id,
+        status: "ACTIVE",
+        startsAt,
+        endsAt,
+        amountPaise,
+        paymentNote: req.body.paymentNote ? String(req.body.paymentNote) : null,
+        createdBy: req.user.id,
+      },
+      include: { plan: { select: { name: true } } },
+    });
+    return res.status(201).json({
+      subscription: { ...subscription, planName: subscription.plan?.name || null },
+      replacedCount: replaced.length,
+    });
+  } catch (e) {
+    if (billingSetupOrThrow(e, res)) return;
+    throw e;
+  }
+}));
+
+router.post("/platform/billing/subscriptions/:id/cancel", asyncRoute(async (req, res) => {
+  try {
+    const existing = await prisma.schoolSubscription.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "SUBSCRIPTION_NOT_FOUND" });
+    const subscription = await prisma.schoolSubscription.update({
+      where: { id: existing.id },
+      data: { status: "CANCELLED" },
+    });
+    return res.json({ subscription });
+  } catch (e) {
+    if (billingSetupOrThrow(e, res)) return;
+    throw e;
+  }
+}));
+
 // Permanent delete: every school-scoped table, children before
 // parents; then the school row itself.
 const PURGE_TIERS = [

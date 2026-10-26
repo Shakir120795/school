@@ -226,9 +226,112 @@ function actPageChanged(p) {
   loadActivity();
 }
 
+// Phase 29 WS8: owner billing — plans the operator sells to schools
+// + each school's current subscription. Until the pending SQL file
+// is run on the database, the API answers setupRequired and this
+// card shows a notice instead of broken controls.
+const billing = ref(null);
+const billingLoading = ref(true);
+const billingMsg = ref("");
+const billingErr = ref("");
+const planForm = ref({ name: "", priceRupees: "", periodMonths: "", features: "" });
+const editingPlanId = ref("");
+const planSaving = ref(false);
+const assignFor = ref("");
+const assignForm = ref({ planId: "", paymentNote: "" });
+const assignSaving = ref(false);
+const cancelBusyId = ref("");
+const fmtINR = (paise) => "₹" + (Number(paise || 0) / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+const fmtDate = (iso) => (iso ? String(iso).slice(0, 10) : "—");
+const subChipCls = (st) =>
+  ({ ACTIVE: "bg-emerald-100 text-emerald-700", EXPIRED: "bg-amber-100 text-amber-700", CANCELLED: "bg-rose-100 text-rose-700" })[st] || "bg-slate-100 text-slate-500";
+async function loadBilling() {
+  billingLoading.value = true;
+  try {
+    const r = await api("/platform/billing", { school: false });
+    if (r.status === 200) billing.value = r.json;
+    else billingErr.value = r.json?.error || "Could not load billing";
+  } finally {
+    billingLoading.value = false;
+  }
+}
+function startEditPlan(p) {
+  editingPlanId.value = p.id;
+  planForm.value = {
+    name: p.name,
+    priceRupees: String(p.pricePaise / 100),
+    periodMonths: String(p.periodMonths),
+    features: p.features || "",
+  };
+}
+function cancelEditPlan() {
+  editingPlanId.value = "";
+  planForm.value = { name: "", priceRupees: "", periodMonths: "", features: "" };
+}
+async function savePlan() {
+  billingErr.value = ""; billingMsg.value = "";
+  const pricePaise = Math.round(Number(planForm.value.priceRupees) * 100);
+  const periodMonths = Number(planForm.value.periodMonths);
+  if (!planForm.value.name.trim()) { billingErr.value = "Plan name is required."; return; }
+  if (!Number.isFinite(pricePaise) || pricePaise < 0) { billingErr.value = "Enter a valid price (₹)."; return; }
+  if (!Number.isInteger(periodMonths) || periodMonths < 1) { billingErr.value = "Period must be a whole number of months (1 or more)."; return; }
+  const body = {
+    name: planForm.value.name.trim(),
+    pricePaise,
+    periodMonths,
+    features: planForm.value.features.trim() || undefined,
+  };
+  planSaving.value = true;
+  const r = editingPlanId.value
+    ? await api(`/platform/billing/plans/${editingPlanId.value}`, { method: "PATCH", school: false, body })
+    : await api("/platform/billing/plans", { method: "POST", school: false, body });
+  planSaving.value = false;
+  if (r.status === 200 || r.status === 201) {
+    billingMsg.value = editingPlanId.value ? `Plan "${body.name}" updated.` : `Plan "${body.name}" created.`;
+    cancelEditPlan();
+    await loadBilling();
+  } else billingErr.value = r.json?.error || "Could not save plan";
+}
+async function togglePlanActive(p) {
+  const r = await api(`/platform/billing/plans/${p.id}`, { method: "PATCH", school: false, body: { isActive: !p.isActive } });
+  if (r.status === 200) { billingMsg.value = `Plan "${p.name}" is now ${p.isActive ? "inactive" : "active"}.`; await loadBilling(); }
+  else billingErr.value = r.json?.error || "Could not update plan";
+}
+function openAssign(bs) {
+  assignFor.value = assignFor.value === bs.schoolId ? "" : bs.schoolId;
+  const firstActive = (billing.value?.plans || []).find((p) => p.isActive);
+  assignForm.value = { planId: firstActive?.id || "", paymentNote: "" };
+}
+async function confirmAssign(bs) {
+  if (!assignForm.value.planId) { billingErr.value = "Choose a plan first."; return; }
+  billingErr.value = ""; billingMsg.value = "";
+  assignSaving.value = true;
+  const r = await api("/platform/billing/subscriptions", {
+    method: "POST",
+    school: false,
+    body: { schoolId: bs.schoolId, planId: assignForm.value.planId, paymentNote: assignForm.value.paymentNote.trim() || undefined },
+  });
+  assignSaving.value = false;
+  if (r.status === 201) {
+    billingMsg.value = `${bs.name} is now on ${r.json.subscription?.planName || "the selected plan"}${r.json.replacedCount ? " (previous subscription replaced)" : ""}.`;
+    assignFor.value = "";
+    await loadBilling();
+  } else billingErr.value = r.json?.error || "Could not assign plan";
+}
+async function cancelSubscription(bs) {
+  if (!bs.subscription) return;
+  if (!confirm(`Cancel ${bs.name}'s ${bs.subscription.planName || ""} subscription?`)) return;
+  cancelBusyId.value = bs.subscription.id;
+  const r = await api(`/platform/billing/subscriptions/${bs.subscription.id}/cancel`, { method: "POST", school: false });
+  cancelBusyId.value = "";
+  if (r.status === 200) { billingMsg.value = `${bs.name}'s subscription cancelled.`; await loadBilling(); }
+  else billingErr.value = r.json?.error || "Could not cancel subscription";
+}
+
 onMounted(async () => {
   await load();
   loadActivity();
+  loadBilling();
   await applyDeepLink();
 });
 </script>
@@ -319,6 +422,69 @@ onMounted(async () => {
         </div>
       </div>
       <p v-if="!schools.length" class="card text-sm text-slate-400">No schools yet — create the first one below.</p>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <h2 class="font-bold">💳 Billing</h2>
+        <span class="text-xs text-slate-400">Plans you sell to schools, and who is on which plan.</span>
+      </div>
+      <p v-if="billingMsg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ billingMsg }}</p>
+      <p v-if="billingErr" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ billingErr }}</p>
+      <p v-if="billingLoading" class="text-sm text-slate-400 animate-pulse">Loading billing…</p>
+      <div v-else-if="!billing || billing.setupRequired" class="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-3 py-3">
+        Billing is not set up on the database yet — one SQL file is pending; plans &amp; subscriptions will appear here once it's run.
+      </div>
+      <template v-else>
+        <div class="flex flex-wrap gap-2 mb-3">
+          <div v-for="p in billing.plans" :key="p.id" class="chip !py-1.5 gap-2" :class="p.isActive ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-400'">
+            <span class="font-bold">{{ p.name }}</span>
+            <span>{{ fmtINR(p.pricePaise) }} · {{ p.periodMonths }} mo</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full" :class="p.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'">{{ p.isActive ? "ACTIVE" : "INACTIVE" }}</span>
+            <button class="underline text-xs" @click="startEditPlan(p)">Edit</button>
+            <button class="underline text-xs" @click="togglePlanActive(p)">{{ p.isActive ? "Deactivate" : "Activate" }}</button>
+          </div>
+          <p v-if="!billing.plans.length" class="text-sm text-slate-400">No plans yet — create the first one below.</p>
+        </div>
+        <form class="bg-slate-50 rounded-2xl p-3 grid gap-2 mb-4" @submit.prevent="savePlan">
+          <div class="text-sm font-bold">{{ editingPlanId ? "Edit plan" : "Create a plan" }}</div>
+          <div class="grid sm:grid-cols-4 gap-2">
+            <input v-model="planForm.name" class="input" required placeholder="Plan name (e.g. Yearly)" />
+            <input v-model="planForm.priceRupees" class="input" required type="number" min="0" step="any" placeholder="Price ₹ (e.g. 9999)" />
+            <input v-model="planForm.periodMonths" class="input" required type="number" min="1" step="1" placeholder="Period (months)" />
+            <input v-model="planForm.features" class="input" placeholder="Features (optional)" />
+          </div>
+          <div class="flex gap-2">
+            <button class="btn btn-primary !py-2 text-sm" :disabled="planSaving">{{ planSaving ? "Saving…" : editingPlanId ? "Save plan" : "Create plan" }}</button>
+            <button v-if="editingPlanId" type="button" class="btn btn-ghost !py-2 text-sm" @click="cancelEditPlan">Cancel edit</button>
+          </div>
+        </form>
+        <div v-for="bs in billing.schools" :key="bs.schoolId" class="py-2 border-b border-slate-50 last:border-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-semibold text-sm">{{ bs.name }}</span>
+            <template v-if="bs.subscription">
+              <span class="chip bg-slate-100 text-slate-600">{{ bs.subscription.planName || "Plan" }}</span>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="subChipCls(bs.subscription.status)">{{ bs.subscription.status }}</span>
+              <span class="text-xs text-slate-400">{{ fmtDate(bs.subscription.startsAt) }} → {{ fmtDate(bs.subscription.endsAt) }} · {{ bs.subscription.daysLeft }} day(s) left · {{ fmtINR(bs.subscription.amountPaise) }}</span>
+              <span v-if="bs.subscription.paymentNote" class="text-xs text-slate-400">· {{ bs.subscription.paymentNote }}</span>
+            </template>
+            <span v-else class="text-xs text-slate-400">No subscription</span>
+            <span class="ml-auto flex gap-2">
+              <button class="btn btn-ghost !py-1.5 text-xs" @click="openAssign(bs)">{{ bs.subscription && bs.subscription.status === "ACTIVE" ? "Renew / Change plan" : "Assign plan" }}</button>
+              <button v-if="bs.subscription && bs.subscription.status === 'ACTIVE'" class="btn btn-ghost !py-1.5 text-xs text-red-600" :disabled="cancelBusyId === bs.subscription.id" @click="cancelSubscription(bs)">{{ cancelBusyId === bs.subscription.id ? "Cancelling…" : "Cancel" }}</button>
+            </span>
+          </div>
+          <div v-if="assignFor === bs.schoolId" class="bg-slate-50 rounded-2xl p-3 grid sm:grid-cols-3 gap-2 mt-2">
+            <select v-model="assignForm.planId" class="input">
+              <option value="" disabled>Choose a plan…</option>
+              <option v-for="p in billing.plans.filter((x) => x.isActive)" :key="p.id" :value="p.id">{{ p.name }} — {{ fmtINR(p.pricePaise) }} / {{ p.periodMonths }} mo</option>
+            </select>
+            <input v-model="assignForm.paymentNote" class="input" placeholder="Payment note (optional — e.g. UPI ref)" />
+            <button class="btn btn-primary !py-2 text-sm" :disabled="assignSaving" @click="confirmAssign(bs)">{{ assignSaving ? "Assigning…" : "Assign subscription" }}</button>
+          </div>
+        </div>
+        <p v-if="!billing.schools.length" class="text-sm text-slate-400">No schools yet.</p>
+      </template>
     </div>
 
     <div class="card mb-4">
