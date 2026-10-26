@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { login, loginWithOtp, api, myRole, currentUser } from "../api.js";
+import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -34,12 +34,18 @@ onMounted(async () => {
   if (r && r.status === 200 && r.json.parentAuthMode) parentMode.value = r.json.parentAuthMode;
 });
 
-const staffTitle = computed(() => (variant === "teacher" ? "Teacher login" : "Staff login"));
-const staffNote = computed(() =>
-  variant === "teacher"
-    ? "Use the email & password given by your school office."
-    : "For the school admin, principal and office staff — use the email & password given to you."
-);
+const staffTitle = computed(() => {
+  if (variant === "teacher") return "Teacher Login";
+  if (variant === "admin") return "School Admin Login";
+  if (variant === "owner") return "Owner Login";
+  return "Staff Login";
+});
+const staffNote = computed(() => {
+  if (variant === "teacher") return "Use the email & password given by your school office.";
+  if (variant === "admin") return "For the school admin and principal — use the email & password issued for your school.";
+  if (variant === "owner") return "Platform owner only. This opens the Super Admin Console, above all schools.";
+  return "For the school admin, principal and office staff — use the email & password given to you.";
+});
 
 async function sendOtp() {
   busy.value = true; error.value = ""; notice.value = "";
@@ -77,6 +83,17 @@ async function submit() {
     error.value = r.json.error === "INVALID_CREDENTIALS" ? "Wrong login ID or password." : `Login failed (${r.json.error || r.status})`;
     return;
   }
+  // Role-locked pages (Phase 23): the credentials are valid but the
+  // account belongs to a different audience — say so clearly and
+  // sign back out, instead of silently landing on the wrong app.
+  const roles = myMemberships().map((m) => m.role);
+  const isOwner = !!currentUser()?.isPlatformAdmin;
+  const wrongPage = (msg) => { session.clear(); error.value = msg; };
+  if (variant === "owner" && !isOwner) { wrongPage("This page is only for the platform owner. Your account is a school account — please use your school's login page."); return; }
+  if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or Staff login page."); return; }
+  if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
+  if (variant === "admin" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL"].includes(x))) { wrongPage("This page is for the school admin / principal only. Your account does not have that role."); return; }
+  if (variant === "staff" && !isOwner && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"].includes(x))) { wrongPage("This page is for school staff only. Parents use the Parent login page."); return; }
   if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
@@ -98,7 +115,7 @@ async function submit() {
       <!-- PARENT -->
       <template v-if="tab === 'parent'">
         <form v-if="parentMode === 'password'" @submit.prevent="submit">
-          <div class="text-lg font-bold mb-1">Parent login</div>
+          <div class="text-lg font-bold mb-1">Parent Login</div>
           <p class="text-sm text-slate-500 mb-4">Use the login ID & password given by your school office.</p>
           <label class="label">Login ID (email)</label>
           <input v-model="email" type="email" required class="input mb-3" placeholder="you@example.com" />
@@ -109,7 +126,7 @@ async function submit() {
         </form>
 
         <form v-else @submit.prevent="otpSent ? verifyOtp() : sendOtp()">
-          <div class="text-lg font-bold mb-1">Parent login</div>
+          <div class="text-lg font-bold mb-1">Parent Login</div>
           <p class="text-sm text-slate-500 mb-4">Use the mobile number given to your school. No password needed — we send an OTP.</p>
           <label class="label">Mobile number</label>
           <input v-model="phone" type="tel" inputmode="numeric" maxlength="13" required class="input mb-3 !text-lg tracking-wide" placeholder="10-digit mobile number" :disabled="otpSent" />
@@ -138,9 +155,12 @@ async function submit() {
       </form>
 
       <div v-if="locked" class="mt-5 pt-4 border-t border-slate-100 text-center text-sm text-slate-500">
-        <template v-if="variant === 'parent'">Teacher? <router-link class="underline font-semibold" to="/login/teacher">Teacher login</router-link> · Staff? <router-link class="underline font-semibold" to="/login/staff">Staff login</router-link></template>
-        <template v-else-if="variant === 'teacher'">Parent? <router-link class="underline font-semibold" to="/login/parent">Parent login</router-link> · Staff? <router-link class="underline font-semibold" to="/login/staff">Staff login</router-link></template>
-        <template v-else>Parent? <router-link class="underline font-semibold" to="/login/parent">Parent login</router-link> · Teacher? <router-link class="underline font-semibold" to="/login/teacher">Teacher login</router-link></template>
+        Not your page?
+        <router-link v-if="variant !== 'parent'" class="underline font-semibold" to="/login/parent">Parent</router-link><span v-if="variant !== 'parent'"> · </span>
+        <router-link v-if="variant !== 'teacher'" class="underline font-semibold" to="/login/teacher">Teacher</router-link><span v-if="variant !== 'teacher'"> · </span>
+        <router-link v-if="variant !== 'staff'" class="underline font-semibold" to="/login/staff">Staff</router-link><span v-if="variant !== 'staff'"> · </span>
+        <router-link v-if="variant !== 'admin'" class="underline font-semibold" to="/login/admin">School Admin</router-link><span v-if="variant !== 'admin'"> · </span>
+        <router-link v-if="variant !== 'owner'" class="underline font-semibold" to="/login/owner">Owner</router-link>
       </div>
     </div>
     <p class="text-[11px] text-white/40 mt-5">Install: browser menu → “Add to Home screen”</p>

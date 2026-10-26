@@ -36,6 +36,27 @@ async function resetAdmin(s) {
   if (r.status === 200) msg.value = `Admin password for ${s.name} has been reset. Share it with the school securely.`;
   else err.value = r.json?.error || "Reset failed";
 }
+// Phase 23 drill-in: open one school and see/control everyone in it.
+const openId = ref("");
+const members = ref(null);
+const membersBusy = ref(false);
+const ROLE_ORDER = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
+const ROLE_LABEL = { SCHOOL_ADMIN: "School Admin", PRINCIPAL: "Principal", TEACHER: "Teachers", STAFF: "Staff", PARENT: "Parents" };
+async function toggleMembers(s) {
+  if (openId.value === s.id) { openId.value = ""; members.value = null; return; }
+  openId.value = s.id; members.value = null; membersBusy.value = true; err.value = "";
+  const r = await api(`/platform/schools/${s.id}/members`, { school: false });
+  membersBusy.value = false;
+  if (r.status === 200) members.value = r.json.members;
+  else err.value = r.json?.error || "Could not load members";
+}
+async function resetMember(s, m) {
+  const pw = prompt(`New password for ${m.fullName} (${m.role}${m.email ? ", " + m.email : ""}) at ${s.name} — at least 8 characters:`);
+  if (!pw) return;
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}/reset-password`, { method: "POST", school: false, body: { newPassword: pw } });
+  if (r.status === 200) msg.value = `Password for ${m.fullName} (${s.name}) has been reset. Share it securely.`;
+  else err.value = r.json?.error || "Reset failed";
+}
 async function removeSchool(s) {
   const typed = prompt(`PERMANENTLY delete "${s.name}" and ALL its data (students, fees, attendance — everything)?\n\nType the school slug to confirm: ${s.slug}`);
   if (typed !== s.slug) { if (typed !== null) err.value = "Slug did not match — school not deleted."; return; }
@@ -69,9 +90,28 @@ onMounted(load);
           <span class="chip bg-violet-50 text-violet-700">Admin: {{ s.adminName }} · {{ s.adminEmail }}</span>
         </div>
         <div class="flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-ghost !py-1.5 text-xs" @click="toggleMembers(s)">{{ openId === s.id ? "Hide members" : "👥 Members" }}</button>
           <button class="btn btn-ghost !py-1.5 text-xs" @click="toggleStatus(s)">{{ s.status === "ACTIVE" ? "Suspend school" : "Reactivate" }}</button>
           <button class="btn btn-ghost !py-1.5 text-xs" @click="resetAdmin(s)">Reset admin password</button>
           <button class="btn btn-ghost !py-1.5 text-xs text-red-600" @click="removeSchool(s)">Delete school</button>
+        </div>
+        <div v-if="openId === s.id" class="mt-3 border-t border-slate-100 pt-3">
+          <p v-if="membersBusy" class="text-sm text-slate-400">Loading members…</p>
+          <template v-else-if="members">
+            <template v-for="role in ROLE_ORDER" :key="role">
+              <div v-if="members[role]?.length" class="mb-3">
+                <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">{{ ROLE_LABEL[role] }} ({{ members[role].length }})</div>
+                <div v-for="m in members[role]" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
+                  <span class="font-semibold text-sm">{{ m.fullName }}</span>
+                  <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
+                  <span v-if="role === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] ml-auto" @click="resetMember(s, m)">Reset password</button>
+                </div>
+              </div>
+            </template>
+            <p v-if="!Object.values(members).some((g) => g.length)" class="text-sm text-slate-400">No members yet.</p>
+          </template>
         </div>
       </div>
       <p v-if="!schools.length" class="card text-sm text-slate-400">No schools yet — create the first one below.</p>

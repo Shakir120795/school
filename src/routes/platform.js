@@ -72,6 +72,81 @@ router.post("/platform/schools/:schoolId/reset-admin-password", asyncRoute(async
   return res.json({ reset: true });
 }));
 
+// Phase 23 drill-in: every member of one school, grouped by role.
+// The operator controls everyone — school admins, teachers, staff
+// and parents — without needing a login inside the school.
+router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) => {
+  const school = await prisma.school.findUnique({
+    where: { id: req.params.schoolId },
+    select: { id: true, name: true, slug: true, status: true },
+  });
+  if (!school) return res.status(404).json({ error: "NOT_FOUND" });
+  const memberships = await prisma.schoolMembership.findMany({
+    where: { schoolId: school.id },
+    include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  // Parents: how many children each parent login is linked to
+  // (Guardian.userId -> StudentGuardian rows). Both lookups are
+  // resolved up front; no transaction is involved.
+  const parentUserIds = memberships.filter((m) => m.role === "PARENT").map((m) => m.userId);
+  const childrenByUser = {};
+  if (parentUserIds.length) {
+    const guardians = await prisma.guardian.findMany({
+      where: { schoolId: school.id, userId: { in: parentUserIds } },
+      select: { id: true, userId: true },
+    });
+    if (guardians.length) {
+      const links = await prisma.studentGuardian.groupBy({
+        by: ["guardianId"],
+        where: { schoolId: school.id, guardianId: { in: guardians.map((g) => g.id) } },
+        _count: { _all: true },
+      });
+      const perGuardian = Object.fromEntries(links.map((l) => [l.guardianId, l._count._all]));
+      for (const g of guardians) childrenByUser[g.userId] = (childrenByUser[g.userId] || 0) + (perGuardian[g.id] || 0);
+    }
+  }
+  const members = { SCHOOL_ADMIN: [], PRINCIPAL: [], TEACHER: [], STAFF: [], PARENT: [] };
+  for (const m of memberships) {
+    (members[m.role] ||= []).push({
+      membershipId: m.id,
+      userId: m.userId,
+      role: m.role,
+      fullName: m.user.fullName,
+      email: m.user.email,
+      phone: m.user.phone,
+      status: m.status,
+      isActive: m.user.isActive,
+      ...(m.role === "PARENT" ? { childrenCount: childrenByUser[m.userId] || 0 } : {}),
+    });
+  }
+  const [students, classes] = await Promise.all([
+    prisma.student.count({ where: { schoolId: school.id, status: "ACTIVE" } }),
+    prisma.classroom.count({ where: { schoolId: school.id } }),
+  ]);
+  return res.json({ school: { ...school, students, classes }, members, total: memberships.length });
+}));
+
+// Phase 23: the operator can reset ANY member's password (teacher,
+// parent, staff — not only the school admin), same pattern as the
+// school-admin reset above.
+router.post("/platform/schools/:schoolId/members/:membershipId/reset-password", asyncRoute(async (req, res) => {
+  const missing = requireFields(req.body, ["newPassword"]);
+  if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+  if (String(req.body.newPassword).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
+  const membership = await prisma.schoolMembership.findFirst({
+    where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+    select: { id: true, userId: true, role: true },
+  });
+  if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
+  await prisma.user.update({
+    where: { id: membership.userId },
+    data: { passwordHash: await hashPassword(req.body.newPassword) },
+  });
+  await revokeSessions(membership.userId);
+  return res.json({ reset: true, role: membership.role });
+}));
+
 // Permanent delete: every school-scoped table, children before
 // parents; then the school row itself.
 const PURGE_TIERS = [

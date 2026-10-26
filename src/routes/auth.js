@@ -80,11 +80,17 @@ router.post(
     if (!user || !user.isActive || !(await verifyPassword(req.body.password, user.passwordHash || ""))) {
       return res.status(401).json({ error: "INVALID_CREDENTIALS" });
     }
-    const refreshToken = await issueSession(req, user);
-    const memberships = await prisma.schoolMembership.findMany({
-      where: { userId: user.id, status: "ACTIVE" },
-      select: { schoolId: true, role: true },
-    });
+    // Session row + memberships are independent once the password
+    // checks out — run them together instead of two sequential
+    // round-trips (Phase 23 perf: every serial query costs a full
+    // pooler round-trip at login).
+    const [refreshToken, memberships] = await Promise.all([
+      issueSession(req, user),
+      prisma.schoolMembership.findMany({
+        where: { userId: user.id, status: "ACTIVE" },
+        select: { schoolId: true, role: true },
+      }),
+    ]);
     return res.json({
       accessToken: signAccessToken(user),
       refreshToken,
