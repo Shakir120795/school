@@ -39,3 +39,5 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Later / hardware-dependent: transport + GPS (§15), library (§19),
   health & incidents (§20), staff HR/payroll (§18), super-admin billing
   (§31), AI assists (§32), NFC/RFID readers (§26 — QR stays the MVP)
+
+<!-- deploy trigger 26 Oct 2026: Phase 21 webhook retry -->
