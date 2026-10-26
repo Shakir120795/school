@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { api } from "../api.js";
+import TabbedList from "../components/TabbedList.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
 const schools = ref([]);
@@ -40,16 +41,24 @@ async function resetAdmin(s) {
 const openId = ref("");
 const members = ref(null);
 const membersBusy = ref(false);
-const groups = computed(() => {
-  if (!members.value) return [];
-  const m = members.value;
+// Scale-ready member list: one tab per group (Admins / Teachers /
+// Staff / Parents / Removed), each with search + status filter +
+// 25-per-page pagination — the shared <TabbedList> pattern, identical
+// to the school-side Team page. Search/filter/page run client-side
+// over the already-fetched grouped lists (fine up to ~1000 rows).
+const memberGroups = computed(() => {
+  const m = members.value || {};
   return [
     { key: "ADMINS", label: "Admins", items: [...(m.SCHOOL_ADMIN || []), ...(m.PRINCIPAL || [])] },
-    { key: "TEACHER", label: "Teachers", items: m.TEACHER || [] },
+    { key: "TEACHERS", label: "Teachers", items: m.TEACHER || [] },
     { key: "STAFF", label: "Staff", items: m.STAFF || [] },
-    { key: "PARENT", label: "Parents", items: m.PARENT || [] },
-  ].filter((g) => g.items.length);
+    { key: "PARENTS", label: "Parents", items: m.PARENT || [] },
+    { key: "REMOVED", label: "Removed", items: removedList.value },
+  ];
 });
+const memberSearchText = (m) =>
+  [m.fullName, m.email, m.phone, m.role, m.reason, m.note].filter(Boolean).join(" ");
+const memberStatusOf = (m) => m.status ?? null;
 const addForm = ref({ fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" });
 async function refreshMembers(s) {
   const r = await api(`/platform/schools/${s.id}/members`, { school: false });
@@ -152,32 +161,35 @@ onMounted(load);
         <div v-if="openId === s.id" class="mt-3 border-t border-slate-100 pt-3">
           <p v-if="membersBusy" class="text-sm text-slate-400">Loading members…</p>
           <template v-else-if="members">
-            <div v-for="g in groups" :key="g.key" class="mb-3">
-              <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">{{ g.label }} ({{ g.items.length }})</div>
-              <div v-for="m in g.items" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
-                <span class="font-semibold text-sm">{{ m.fullName }}</span>
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
-                <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
-                <span v-if="g.key === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
-                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
-                <span class="ml-auto flex flex-wrap gap-1">
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="toggleMemberStatus(s, m)">{{ m.status === "ACTIVE" ? "Deactivate" : "Activate" }}</button>
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="resetMember(s, m)">Reset password</button>
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="openRemove(s, m)">Remove</button>
-                </span>
-              </div>
-            </div>
-            <p v-if="!groups.length" class="text-sm text-slate-400">No members yet — add the first one below.</p>
-            <div v-if="removedList.length" class="mb-3">
-              <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Removed members ({{ removedList.length }})</div>
-              <div v-for="m in removedList" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0 opacity-60">
-                <span class="font-semibold text-sm line-through">{{ m.fullName }}</span>
-                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
-                <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
-                <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
-              </div>
-            </div>
+            <TabbedList
+              :groups="memberGroups"
+              :search-text="memberSearchText"
+              :status-of="memberStatusOf"
+              :reset-key="s.id"
+              search-placeholder="Search name, email, phone…"
+            >
+              <template #row="{ item: m, group }">
+                <div v-if="group.key === 'REMOVED'" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0 opacity-60">
+                  <span class="font-semibold text-sm line-through">{{ m.fullName }}</span>
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
+                  <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
+                  <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
+                </div>
+                <div v-else :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
+                  <span class="font-semibold text-sm">{{ m.fullName }}</span>
+                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
+                  <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
+                  <span v-if="m.role === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
+                  <span class="ml-auto flex flex-wrap gap-1">
+                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>
+                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="toggleMemberStatus(s, m)">{{ m.status === "ACTIVE" ? "Deactivate" : "Activate" }}</button>
+                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="resetMember(s, m)">Reset password</button>
+                    <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="openRemove(s, m)">Remove</button>
+                  </span>
+                </div>
+              </template>
+            </TabbedList>
             <form class="bg-slate-50 rounded-2xl p-3 grid gap-2 mt-2" @submit.prevent="addMember(s)">
               <div class="text-sm font-bold">Add a member to {{ s.name }}</div>
               <div class="grid sm:grid-cols-2 gap-2">

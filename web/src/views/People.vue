@@ -1,7 +1,9 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import QRCode from "qrcode";
 import { api, session } from "../api.js";
+import { usePager, matchStatus } from "../composables/usePager.js";
+import Pager from "../components/Pager.vue";
 
 const sid = session.schoolId;
 const tab = ref("students");
@@ -118,6 +120,54 @@ function className(id) {
   const c = classrooms.value.find((x) => x.id === id);
   return c ? `${c.name}${c.section ? "-" + c.section : ""}` : "—";
 }
+
+// --- Scale-ready list controls (search + filters + 25/page pager) ----
+// Students: search matches name / admission no / roll no AND the
+// linked guardians' name+phone+email (built from the guardians fetch,
+// which carries studentLinks) — no API change needed.
+const stuQuery = ref("");
+const stuClass = ref("");
+const stuStatus = ref(""); // "" all | ACTIVE | INACTIVE
+const guardianTextByStudent = computed(() => {
+  const map = {};
+  for (const g of guardians.value) {
+    for (const l of g.studentLinks || []) {
+      map[l.studentId] = `${map[l.studentId] || ""} ${g.fullName} ${g.phone || ""} ${g.email || ""}`.trim();
+    }
+  }
+  return map;
+});
+const filteredStudents = computed(() => {
+  const q = stuQuery.value.trim().toLowerCase();
+  return students.value.filter((s) => {
+    if (q && !`${s.fullName} ${s.admissionNo} ${s.rollNo || ""} ${guardianTextByStudent.value[s.id] || ""}`.toLowerCase().includes(q)) return false;
+    if (stuClass.value && s.classroomId !== stuClass.value) return false;
+    if (!matchStatus(s.status, stuStatus.value)) return false;
+    return true;
+  });
+});
+const stuPager = usePager(filteredStudents, 25);
+watch([stuQuery, stuClass, stuStatus], () => stuPager.reset());
+
+// Teachers tab: search by name (a school has ~15–20 teachers, so a
+// filter is enough there — no pager needed).
+const teacherQuery = ref("");
+const filteredTeachers = computed(() => {
+  const q = teacherQuery.value.trim().toLowerCase();
+  if (!q) return teachers.value;
+  return teachers.value.filter((t) => t.displayName.toLowerCase().includes(q));
+});
+
+// Guardians tab: guardians grow with students (~1 per student), so
+// they get the same search + 25/page pagination as the students list.
+const guardQuery = ref("");
+const filteredGuardians = computed(() => {
+  const q = guardQuery.value.trim().toLowerCase();
+  if (!q) return guardians.value;
+  return guardians.value.filter((g) => `${g.fullName} ${g.phone || ""} ${g.email || ""}`.toLowerCase().includes(q));
+});
+const guardPager = usePager(filteredGuardians, 25);
+watch(guardQuery, () => guardPager.reset());
 </script>
 
 <template>
@@ -170,18 +220,34 @@ function className(id) {
           </div>
         </div>
       </div>
+      <div class="card mb-4 flex flex-wrap gap-2 items-center">
+        <input v-model="stuQuery" class="input flex-1 min-w-[200px]" placeholder="Search student, admission no, guardian name / phone…" />
+        <select v-model="stuClass" class="input !w-auto">
+          <option value="">All classes</option>
+          <option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option>
+        </select>
+        <select v-model="stuStatus" class="input !w-auto">
+          <option value="">All status</option>
+          <option value="ACTIVE">Active</option>
+          <option value="INACTIVE">Inactive</option>
+        </select>
+      </div>
       <div class="card !p-0 overflow-x-auto">
         <table class="w-full text-sm mtable">
           <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Adm No</th><th class="p-3">Name</th><th class="p-3">Class</th><th class="p-3">Status</th><th class="p-3"></th></tr></thead>
           <tbody>
-            <tr v-for="s in students" :key="s.id" class="border-b last:border-0">
+            <tr v-for="s in stuPager.pageItems.value" :key="s.id" class="border-b last:border-0">
               <td class="p-3">{{ s.admissionNo }}</td><td class="p-3 font-medium">{{ s.fullName }}</td>
               <td class="p-3">{{ className(s.classroomId) }}</td>
-              <td class="p-3"><span class="badge bg-green-100 text-green-700">{{ s.status }}</span></td>
+              <td class="p-3"><span class="badge" :class="s.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">{{ s.status }}</span></td>
               <td class="p-3 text-right"><button class="btn btn-ghost !py-1.5" @click="issueCard({ ownerType: 'STUDENT', studentId: s.id }, s.fullName)">Issue QR card</button></td>
             </tr>
+            <tr v-if="!filteredStudents.length"><td class="p-3 text-slate-400" colspan="5">No students match — try a different search or filter.</td></tr>
           </tbody>
         </table>
+        <div class="px-3 pb-3">
+          <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
+        </div>
       </div>
     </div>
 
@@ -211,8 +277,12 @@ function className(id) {
         </form>
       </div>
 
+      <div class="card mb-4">
+        <input v-model="teacherQuery" class="input" placeholder="Search teacher by name…" />
+        <p v-if="!filteredTeachers.length" class="text-sm text-slate-400 mt-2">No teachers match your search.</p>
+      </div>
       <div class="grid md:grid-cols-2 gap-3">
-        <div v-for="t in teachers" :key="t.id" class="card">
+        <div v-for="t in filteredTeachers" :key="t.id" class="card">
           <div class="flex items-start gap-3">
             <div class="font-semibold">{{ t.displayName }}</div>
             <span class="badge ml-auto" :class="t.isVisibleToParents ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">{{ t.isVisibleToParents ? "Visible to parents" : "Hidden" }}</span>
@@ -244,16 +314,23 @@ function className(id) {
           <button class="btn btn-primary">Link</button>
         </form>
       </div>
+      <div class="card mt-4 flex flex-wrap gap-2 items-center">
+        <input v-model="guardQuery" class="input flex-1 min-w-[200px]" placeholder="Search guardian by name, phone or email…" />
+      </div>
       <div class="card mt-4 !p-0 overflow-x-auto">
         <table class="w-full text-sm mtable">
           <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Name</th><th class="p-3">Phone</th><th class="p-3">Children</th></tr></thead>
           <tbody>
-            <tr v-for="g in guardians" :key="g.id" class="border-b last:border-0">
+            <tr v-for="g in guardPager.pageItems.value" :key="g.id" class="border-b last:border-0">
               <td class="p-3 font-medium">{{ g.fullName }}</td><td class="p-3">{{ g.phone || "—" }}</td>
               <td class="p-3">{{ (g.studentLinks || []).length }}</td>
             </tr>
+            <tr v-if="!filteredGuardians.length"><td class="p-3 text-slate-400" colspan="3">No guardians match your search.</td></tr>
           </tbody>
         </table>
+        <div class="px-3 pb-3">
+          <Pager :page="guardPager.page.value" :total-pages="guardPager.totalPages.value" :from="guardPager.from.value" :to="guardPager.to.value" :total="guardPager.total.value" @update:page="guardPager.page.value = $event" />
+        </div>
       </div>
     </div>
   </div>

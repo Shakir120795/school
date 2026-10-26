@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api, session, myRole } from "../api.js";
+import { usePager } from "../composables/usePager.js";
+import Pager from "../components/Pager.vue";
 
 const sid = session.schoolId;
 const role = myRole();
@@ -24,11 +26,19 @@ const summary = computed(() => {
     total: list.length,
   };
 });
-const visibleRows = computed(() =>
-  tab.value === "students" && classFilter.value
-    ? rows.value.filter((r) => r.student?.classroomId === classFilter.value)
-    : rows.value
-);
+// Students register: class filter + name/admission search + 25/page
+// pagination (read-only list — the summary cards above always count
+// the FULL day, never just the visible page).
+const attQuery = ref("");
+const visibleRows = computed(() => {
+  let list = rows.value;
+  if (classFilter.value) list = list.filter((r) => r.student?.classroomId === classFilter.value);
+  const q = attQuery.value.trim().toLowerCase();
+  if (q) list = list.filter((r) => `${r.student?.fullName || ""} ${r.student?.admissionNo || ""}`.toLowerCase().includes(q));
+  return list;
+});
+const attPager = usePager(visibleRows, 25);
+watch([attQuery, classFilter, date, tab], () => attPager.reset());
 
 async function load() {
   const [a, b] = await Promise.all([
@@ -95,6 +105,7 @@ function statusBadge(s) {
         <option value="">All classes</option>
         <option v-for="c in classes" :key="c.id" :value="c.id">Class {{ c.name }}<span v-if="c.section">-{{ c.section }}</span></option>
       </select>
+      <input v-if="tab === 'students'" v-model="attQuery" class="input flex-1 min-w-[180px]" placeholder="Search student by name or admission no…" />
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
@@ -109,15 +120,19 @@ function statusBadge(s) {
       <table class="w-full text-sm mtable">
         <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Student</th><th class="p-3">Status</th><th class="p-3">Entry</th><th class="p-3">Exit</th><th class="p-3">Flags</th></tr></thead>
         <tbody>
-          <tr v-for="r in visibleRows" :key="r.id" class="border-b last:border-0">
+          <tr v-for="r in attPager.pageItems.value" :key="r.id" class="border-b last:border-0">
             <td class="p-3 font-medium">{{ r.student?.fullName }} <span class="text-slate-400">({{ r.student?.admissionNo }})</span></td>
             <td class="p-3"><span class="badge" :class="statusBadge(r.status)">{{ r.status }}</span></td>
             <td class="p-3">{{ fmt(r.entryAt) }}</td><td class="p-3">{{ fmt(r.exitAt) }}</td>
             <td class="p-3 text-amber-600">{{ r.reviewFlag || "" }}</td>
           </tr>
           <tr v-if="!rows.length"><td class="p-3 text-slate-500" colspan="5">No student attendance for this date yet.</td></tr>
+          <tr v-else-if="!visibleRows.length"><td class="p-3 text-slate-500" colspan="5">No students match your search or class filter.</td></tr>
         </tbody>
       </table>
+      <div class="px-3 pb-3">
+        <Pager :page="attPager.page.value" :total-pages="attPager.totalPages.value" :from="attPager.from.value" :to="attPager.to.value" :total="attPager.total.value" @update:page="attPager.page.value = $event" />
+      </div>
     </div>
 
     <div v-if="tab === 'staff'" class="card !p-0 overflow-x-auto">

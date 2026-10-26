@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api, session } from "../api.js";
+import { usePager } from "../composables/usePager.js";
+import Pager from "../components/Pager.vue";
 
 // Teacher class roll-call (Phase 13): mark the class for today.
 // Gate entry times stay visible — a child who scanned in shows their
@@ -44,6 +46,19 @@ async function loadRoster() {
 function allPresent() {
   for (const row of roster.value) marks.value[row.student.id] = "PRESENT";
 }
+// Search + pagination narrow only the VISIBLE list. Marks live in the
+// `marks` map keyed by studentId, so filtering/paging can never lose a
+// mark: counts and Save always run over the FULL roster.
+const rosterQuery = ref("");
+const visibleRoster = computed(() => {
+  const q = rosterQuery.value.trim().toLowerCase();
+  if (!q) return roster.value;
+  return roster.value.filter((row) =>
+    `${row.student.fullName} ${row.student.admissionNo} ${row.student.rollNo || ""}`.toLowerCase().includes(q)
+  );
+});
+const rosterPager = usePager(visibleRoster, 25);
+watch([rosterQuery, classroomId], () => rosterPager.reset());
 const counts = computed(() => {
   const c = { PRESENT: 0, LATE: 0, ABSENT: 0, ON_LEAVE: 0, unmarked: 0 };
   for (const row of roster.value) {
@@ -82,6 +97,10 @@ onMounted(loadClasses);
           <option v-for="c in classes" :key="c.id" :value="c.id">{{ c.name }}{{ c.section ? "-" + c.section : "" }}</option>
         </select>
       </div>
+      <div class="flex-1 min-w-[180px]">
+        <label class="label">Search student</label>
+        <input v-model="rosterQuery" class="input" placeholder="Name, admission no, roll no…" />
+      </div>
       <button class="btn btn-ghost" @click="allPresent" :disabled="!roster.length">Mark all present</button>
       <div class="text-sm text-slate-500">
         <span class="text-emerald-600 font-semibold">{{ counts.PRESENT }} present</span> ·
@@ -94,8 +113,9 @@ onMounted(loadClasses);
 
     <div v-if="!classes.length" class="card text-sm text-slate-400">No classes are assigned to you yet. Ask the school admin to assign your class.</div>
 
+    <p v-if="roster.length && !visibleRoster.length" class="card text-sm text-slate-400 mb-2">No students match your search.</p>
     <div class="grid gap-2">
-      <div v-for="row in roster" :key="row.student.id" class="card !py-3 flex flex-wrap items-center gap-3">
+      <div v-for="row in rosterPager.pageItems.value" :key="row.student.id" class="card !py-3 flex flex-wrap items-center gap-3">
         <img v-if="row.student.photoUrl" :src="row.student.photoUrl" alt="" class="w-10 h-10 rounded-full object-cover" />
         <span v-else class="w-10 h-10 rounded-full bg-brand-50 flex items-center justify-center font-bold text-brand-700">{{ row.student.fullName.slice(0, 1) }}</span>
         <div class="min-w-[140px]">
@@ -113,6 +133,16 @@ onMounted(loadClasses);
         </div>
       </div>
     </div>
+
+    <Pager
+      v-if="roster.length"
+      :page="rosterPager.page.value"
+      :total-pages="rosterPager.totalPages.value"
+      :from="rosterPager.from.value"
+      :to="rosterPager.to.value"
+      :total="rosterPager.total.value"
+      @update:page="rosterPager.page.value = $event"
+    />
 
     <div v-if="roster.length" class="sticky bottom-20 md:bottom-4 mt-4">
       <button class="btn btn-primary w-full !py-3 shadow-lg" :disabled="saving" @click="save">{{ saving ? "Saving…" : "Save roll-call" }}</button>

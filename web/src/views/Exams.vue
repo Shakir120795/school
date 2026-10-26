@@ -1,6 +1,8 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api, session } from "../api.js";
+import { usePager } from "../composables/usePager.js";
+import Pager from "../components/Pager.vue";
 
 // Exams & marks (Phase 18). Staff create exams and enter marks;
 // parents see the report card only after results are published.
@@ -22,6 +24,20 @@ const reportChild = ref("");
 const report = ref(null);
 
 const GRADE_CLS = { "A+": "bg-emerald-500", A: "bg-emerald-400", "B+": "bg-sky-500", B: "bg-sky-400", C: "bg-amber-500", D: "bg-orange-500", F: "bg-rose-500" };
+
+// Marks entry list: search + pagination narrow only the VISIBLE rows.
+// Entered marks live in the `markInputs` map keyed by student id, so
+// paging/filtering never loses an entered mark; stats and Save always
+// run over the FULL markRows list.
+const markQuery = ref("");
+const visibleMarkRows = computed(() => {
+  const q = markQuery.value.trim().toLowerCase();
+  if (!q) return markRows.value;
+  return markRows.value.filter((s) => `${s.fullName} ${s.admissionNo} ${s.rollNo || ""}`.toLowerCase().includes(q));
+});
+const markPager = usePager(visibleMarkRows, 25);
+watch(markQuery, () => markPager.reset());
+watch(selected, () => { markQuery.value = ""; markPager.reset(); });
 const stats = computed(() => {
   const vals = markRows.value.filter((r) => r.marksObtained !== null && r.marksObtained !== undefined).map((r) => Number(markInputs.value[r.id] ?? r.marksObtained));
   if (!selected.value || !vals.length) return null;
@@ -132,14 +148,17 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
       <section v-if="selected" class="card">
         <h2 class="font-bold mb-1">Enter marks — {{ selected.name }} ({{ selected.subject?.name }}, max {{ selected.maxMarks }})</h2>
         <p v-if="stats" class="text-sm text-slate-500 mb-3">Entered {{ stats.entered }}/{{ stats.total }} · Class average {{ stats.avgPct }}% · Top score {{ stats.top }}</p>
+        <input v-model="markQuery" class="input mb-3" placeholder="Search student by name, admission no, roll no…" />
         <div class="grid gap-1.5">
-          <div v-for="s in markRows" :key="s.id" class="flex items-center gap-2 text-sm border border-slate-100 rounded-xl px-3 py-2">
+          <div v-for="s in markPager.pageItems.value" :key="s.id" class="flex items-center gap-2 text-sm border border-slate-100 rounded-xl px-3 py-2">
             <span class="font-medium">{{ s.fullName }}</span>
             <span class="text-xs text-slate-400">{{ s.admissionNo }}<span v-if="s.rollNo"> · Roll {{ s.rollNo }}</span></span>
             <input v-model="markInputs[s.id]" type="number" min="0" :max="selected.maxMarks" step="0.5" class="input !w-28 ml-auto" placeholder="Marks" />
             <span class="text-slate-400 text-xs">/ {{ selected.maxMarks }}</span>
           </div>
+          <p v-if="!visibleMarkRows.length" class="text-sm text-slate-400">No students match your search.</p>
         </div>
+        <Pager :page="markPager.page.value" :total-pages="markPager.totalPages.value" :from="markPager.from.value" :to="markPager.to.value" :total="markPager.total.value" @update:page="markPager.page.value = $event" />
         <button class="btn btn-primary w-full mt-3 !py-3" @click="saveMarks">Save marks</button>
       </section>
     </template>

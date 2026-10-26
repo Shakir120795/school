@@ -1,0 +1,105 @@
+<script setup>
+import { computed, ref, watch } from "vue";
+import { usePager, matchStatus } from "../composables/usePager.js";
+import Pager from "./Pager.vue";
+
+// Shared tabbed member/people list — ONE pattern used by the owner
+// Console drill-in and the school-side Team & Access page (and any
+// future grouped list), so tabs + search + status filter + pagination
+// behave identically everywhere.
+//
+// Props:
+//   groups:           [{ key, label, items }] — one tab per group,
+//                     label rendered with its count.
+//   searchText(item): haystack string the search box matches against.
+//   statusOf(item):   member status string, or null when the group has
+//                     no status (e.g. Removed) — the status filter then
+//                     hides itself for that tab.
+//   resetKey:         change it (e.g. a different school opened) to
+//                     reset tab/search/filter/page.
+// Rows are rendered by the parent through the `row` slot
+// ({ item, group }) so each view keeps its own row actions/markup.
+const props = defineProps({
+  groups: { type: Array, required: true },
+  searchText: { type: Function, required: true },
+  statusOf: { type: Function, default: null },
+  pageSize: { type: Number, default: 25 },
+  resetKey: { type: [String, Number], default: "" },
+  searchPlaceholder: { type: String, default: "Search name, email, phone…" },
+  rowKey: { type: Function, default: (i) => i.membershipId || i.id },
+});
+
+const activeKey = ref(props.groups[0]?.key || "");
+const query = ref("");
+const statusFilter = ref(""); // "" all | ACTIVE | INACTIVE
+
+const activeGroup = computed(
+  () => props.groups.find((g) => g.key === activeKey.value) || props.groups[0] || { key: "", label: "", items: [] }
+);
+const hasStatus = computed(
+  () => !!props.statusOf && (activeGroup.value.items || []).some((i) => props.statusOf(i))
+);
+const filtered = computed(() => {
+  const q = query.value.trim().toLowerCase();
+  return (activeGroup.value.items || []).filter((item) => {
+    if (q && !props.searchText(item).toLowerCase().includes(q)) return false;
+    if (statusFilter.value && props.statusOf && !matchStatus(props.statusOf(item), statusFilter.value)) return false;
+    return true;
+  });
+});
+const { page, pageItems, total, totalPages, from, to, reset } = usePager(filtered, props.pageSize);
+
+watch([activeKey, query, statusFilter], reset);
+watch(
+  () => props.resetKey,
+  () => {
+    query.value = "";
+    statusFilter.value = "";
+    activeKey.value = props.groups[0]?.key || "";
+    reset();
+  }
+);
+watch(
+  () => props.groups.map((g) => g.key).join(","),
+  (keys) => {
+    if (!keys.split(",").includes(activeKey.value)) activeKey.value = props.groups[0]?.key || "";
+  }
+);
+</script>
+
+<template>
+  <div>
+    <div class="flex gap-2 overflow-x-auto pb-1 mb-3 -mx-1 px-1">
+      <button
+        v-for="g in groups"
+        :key="g.key"
+        type="button"
+        class="btn whitespace-nowrap !py-2 shrink-0"
+        :class="activeKey === g.key ? 'btn-primary' : 'btn-ghost'"
+        @click="activeKey = g.key"
+      >
+        {{ g.label }} ({{ g.items.length }})
+      </button>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-2">
+      <input v-model="query" class="input flex-1 min-w-[180px]" :placeholder="searchPlaceholder" />
+      <select v-if="hasStatus" v-model="statusFilter" class="input !w-auto">
+        <option value="">All status</option>
+        <option value="ACTIVE">Active</option>
+        <option value="INACTIVE">Inactive</option>
+      </select>
+    </div>
+    <slot v-for="item in pageItems" :key="rowKey(item)" name="row" :item="item" :group="activeGroup" />
+    <p v-if="!filtered.length" class="text-sm text-slate-400 py-2">
+      {{ query || statusFilter ? "No matches — try a different search or filter." : "Nothing here yet." }}
+    </p>
+    <Pager
+      :page="page"
+      :total-pages="totalPages"
+      :from="from"
+      :to="to"
+      :total="total"
+      @update:page="page = $event"
+    />
+  </div>
+</template>
