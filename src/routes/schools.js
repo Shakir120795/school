@@ -6,6 +6,7 @@ import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser } from "../utils/parentChildren.js";
+import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 
 const router = Router();
 const WRITE = ADMIN_ROLES;
@@ -256,6 +257,25 @@ router.patch(
       include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
     });
     return res.json({ membership });
+  })
+);
+
+// Phase 29 WS2: activity log for THIS school only — SCHOOL_ADMIN /
+// PRINCIPAL of this school (WRITE). requireSchool resolves the
+// school from :schoolId and 403s non-members / wrong roles and
+// 404s an unknown school, per the existing conventions; the query
+// is forced to this school's rows regardless of any query params.
+// Same item shape + pagination/action filter as /platform/activity.
+router.get(
+  "/:schoolId/activity",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const { page, pageSize } = parsePagination(req.query);
+    const where = { schoolId: req.params.schoolId };
+    if (req.query.action) where.action = String(req.query.action);
+    const result = await fetchActivityPage({ where, page, pageSize });
+    return res.json(result);
   })
 );
 

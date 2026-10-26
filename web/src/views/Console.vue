@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
 import MemberCard from "../components/MemberCard.vue";
+import Pager from "../components/Pager.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
 const schools = ref([]);
@@ -180,8 +181,54 @@ async function removeSchool(s) {
   if (r.status === 200) { msg.value = `${s.name} and all its data have been deleted.`; await load(); }
   else err.value = r.json?.error || "Delete failed";
 }
+// Phase 29 WS2: platform activity log — every AuditLog row across
+// all schools (plus platform-level rows with no school), latest
+// first, server-paginated 25/page with school + action filters.
+const actItems = ref([]);
+const actTotal = ref(0);
+const actPage = ref(1);
+const actTotalPages = ref(1);
+const actLoading = ref(true);
+const actLoaded = ref(false);
+const actSchoolId = ref("");
+const actAction = ref("");
+const actActions = ref([]);
+const ACT_PAGE_SIZE = 25;
+const actFrom = computed(() => (actTotal.value === 0 ? 0 : (actPage.value - 1) * ACT_PAGE_SIZE + 1));
+const actTo = computed(() => Math.min(actTotal.value, actPage.value * ACT_PAGE_SIZE));
+const roleChipCls = (r) =>
+  ({ PLATFORM_ADMIN: "bg-violet-600 text-white", SCHOOL_ADMIN: "bg-violet-100 text-violet-700", PRINCIPAL: "bg-indigo-100 text-indigo-700", TEACHER: "bg-sky-100 text-sky-700", STAFF: "bg-slate-200 text-slate-600", PARENT: "bg-emerald-100 text-emerald-700" })[r] || "bg-slate-100 text-slate-500";
+const fmtWhen = (iso) => (iso ? String(iso).replace("T", " ").slice(0, 16) : "—");
+async function loadActivity() {
+  actLoading.value = true;
+  try {
+    const qs = new URLSearchParams({ page: String(actPage.value), pageSize: String(ACT_PAGE_SIZE) });
+    if (actSchoolId.value) qs.set("schoolId", actSchoolId.value);
+    if (actAction.value) qs.set("action", actAction.value);
+    const r = await api(`/platform/activity?${qs}`, { school: false });
+    if (r.status === 200) {
+      actItems.value = r.json.items || [];
+      actTotal.value = r.json.total || 0;
+      actTotalPages.value = r.json.totalPages || 1;
+      if (r.json.actions?.length) actActions.value = r.json.actions;
+    }
+  } finally {
+    actLoading.value = false;
+    actLoaded.value = true;
+  }
+}
+function actFilterChanged() {
+  actPage.value = 1;
+  loadActivity();
+}
+function actPageChanged(p) {
+  actPage.value = p;
+  loadActivity();
+}
+
 onMounted(async () => {
   await load();
+  loadActivity();
   await applyDeepLink();
 });
 </script>
@@ -272,6 +319,36 @@ onMounted(async () => {
         </div>
       </div>
       <p v-if="!schools.length" class="card text-sm text-slate-400">No schools yet — create the first one below.</p>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <h2 class="font-bold">🕘 Activity</h2>
+        <span v-if="actLoaded && !actLoading" class="text-xs text-slate-400">{{ actTotal }} event(s)</span>
+        <span class="ml-auto flex flex-wrap gap-2">
+          <select v-model="actSchoolId" class="input !w-auto !py-1.5 text-xs" @change="actFilterChanged">
+            <option value="">All schools</option>
+            <option v-for="s in schools" :key="s.id" :value="s.id">{{ s.name }}</option>
+          </select>
+          <select v-model="actAction" class="input !w-auto !py-1.5 text-xs" @change="actFilterChanged">
+            <option value="">All actions</option>
+            <option v-for="a in actActions" :key="a.action" :value="a.action">{{ a.label }}</option>
+          </select>
+        </span>
+      </div>
+      <p v-if="actLoading" class="text-sm text-slate-400 animate-pulse">Loading activity…</p>
+      <template v-else>
+        <div v-if="!actItems.length" class="text-sm text-slate-400">No activity yet.</div>
+        <div v-for="it in actItems" :key="it.id" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+          <span class="text-[11px] text-slate-400 w-32 shrink-0">{{ fmtWhen(it.createdAt) }}</span>
+          <span class="font-semibold text-sm">{{ it.actorName || "—" }}</span>
+          <span v-if="it.actorRole" class="text-[10px] font-bold px-1.5 py-0.5 rounded" :class="roleChipCls(it.actorRole)">{{ it.actorRole.replace("_", " ") }}</span>
+          <span class="text-sm">{{ it.label }}</span>
+          <span v-if="it.schoolName" class="chip bg-slate-100 text-slate-600">{{ it.schoolName }}</span>
+          <span v-if="it.detailsText" class="text-xs text-slate-500 w-full sm:w-auto">{{ it.detailsText }}</span>
+        </div>
+        <Pager :page="actPage" :total-pages="actTotalPages" :from="actFrom" :to="actTo" :total="actTotal" @update:page="actPageChanged" />
+      </template>
     </div>
 
     <form class="card grid gap-3" @submit.prevent="createSchool">

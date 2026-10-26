@@ -11,6 +11,7 @@ import { hashPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
+import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 
 const router = Router();
 
@@ -398,6 +399,22 @@ router.post("/platform/schools/:schoolId/members/:membershipId/reset-password", 
   });
   await revokeSessions(membership.userId);
   return res.json({ reset: true, role: membership.role });
+}));
+
+// Phase 29 WS2: platform-wide activity log (operator only — the
+// router-level requirePlatform guard above covers this route).
+// Optional ?schoolId= and ?action= filters, ?page=&pageSize=
+// (default 25, cap 100), latest first. Rows with no schoolId
+// (platform-level actions) are included with schoolName null.
+// Item shape is shared with the school-scoped endpoint via
+// utils/activity.js — everything the UI needs in one call.
+router.get("/platform/activity", asyncRoute(async (req, res) => {
+  const { page, pageSize } = parsePagination(req.query);
+  const where = {};
+  if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
+  if (req.query.action) where.action = String(req.query.action);
+  const result = await fetchActivityPage({ where, page, pageSize });
+  return res.json(result);
 }));
 
 // Permanent delete: every school-scoped table, children before
