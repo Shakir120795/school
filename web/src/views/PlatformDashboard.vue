@@ -38,7 +38,71 @@ async function load() {
     loading.value = false;
   }
 }
-onMounted(load);
+
+// Phase 29 WS3: "Aaj ki halat" blocks — Today's attendance, Fees
+// stuck and Recent activity. Each block loads and fails
+// INDEPENDENTLY (own loading flag + own try/catch): one failing
+// block shows its own "couldn't load" state and never blanks the
+// rest of the dashboard.
+const todayRows = ref([]);
+const todayLoading = ref(true);
+const todayErr = ref("");
+async function loadToday() {
+  todayLoading.value = true;
+  try {
+    const r = await api("/platform/today", { school: false });
+    if (r.status === 200) todayRows.value = r.json.schools || [];
+    else todayErr.value = r.json?.error || "Could not load today's attendance";
+  } catch {
+    todayErr.value = "Could not load today's attendance";
+  } finally {
+    todayLoading.value = false;
+  }
+}
+
+const feesRows = ref([]);
+const feesLoading = ref(true);
+const feesErr = ref("");
+const inr = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
+const feesDueSchools = computed(() => feesRows.value.filter((r) => !r.error && (r.totalDuePaise > 0 || r.unpaidCount > 0)));
+const feesErrorSchools = computed(() => feesRows.value.filter((r) => r.error));
+const feesClearCount = computed(() => feesRows.value.filter((r) => !r.error && !(r.totalDuePaise > 0 || r.unpaidCount > 0)).length);
+async function loadFees() {
+  feesLoading.value = true;
+  try {
+    const r = await api("/platform/fees-summary", { school: false });
+    if (r.status === 200) feesRows.value = r.json.schools || [];
+    else feesErr.value = r.json?.error || "Could not load fees summary";
+  } catch {
+    feesErr.value = "Could not load fees summary";
+  } finally {
+    feesLoading.value = false;
+  }
+}
+
+const actRows = ref([]);
+const actLoading = ref(true);
+const actErr = ref("");
+const fmtWhen = (iso) => (iso ? String(iso).replace("T", " ").slice(0, 16) : "—");
+async function loadActivity() {
+  actLoading.value = true;
+  try {
+    const r = await api("/platform/activity?pageSize=8", { school: false });
+    if (r.status === 200) actRows.value = r.json.items || [];
+    else actErr.value = r.json?.error || "Could not load recent activity";
+  } catch {
+    actErr.value = "Could not load recent activity";
+  } finally {
+    actLoading.value = false;
+  }
+}
+
+onMounted(() => {
+  load();
+  loadToday();
+  loadFees();
+  loadActivity();
+});
 
 // Phase 28: GLOBAL search — one box searches the WHOLE platform
 // (schools, members of any role, guardians, students) by name,
@@ -220,6 +284,64 @@ function openStudent(s) {
         </button>
       </div>
       </template>
+
+      <!-- Phase 29 WS3: Aaj ki halat — three independent blocks -->
+      <div class="card mt-5">
+        <h2 class="font-bold mb-3">📊 Today's attendance</h2>
+        <p v-if="todayLoading" class="text-sm text-slate-400 animate-pulse">Loading…</p>
+        <p v-else-if="todayErr" class="text-sm text-red-700">Couldn't load today's attendance.</p>
+        <template v-else>
+          <p v-if="!todayRows.length" class="text-sm text-slate-400">No schools yet.</p>
+          <div v-for="r in todayRows" :key="r.schoolId" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+            <span class="font-semibold text-sm">{{ r.schoolName }}</span>
+            <span class="text-xs text-slate-400">{{ r.date || "" }}</span>
+            <span v-if="r.error" class="text-sm text-red-600 ml-auto">Couldn't load</span>
+            <span v-else-if="!r.marked" class="text-sm text-slate-400 ml-auto">No attendance marked yet today</span>
+            <span v-else class="text-sm ml-auto">
+              <span class="font-bold">{{ r.present }}/{{ r.marked }} present ({{ r.pctPresent }}%)</span>
+              <span class="text-slate-400"> · {{ r.absent }} absent<span v-if="r.late"> · {{ r.late }} late</span><span v-if="r.onLeave"> · {{ r.onLeave }} on leave</span></span>
+            </span>
+          </div>
+        </template>
+      </div>
+
+      <div class="card mt-4">
+        <h2 class="font-bold mb-3">💰 Fees stuck</h2>
+        <p v-if="feesLoading" class="text-sm text-slate-400 animate-pulse">Loading…</p>
+        <p v-else-if="feesErr" class="text-sm text-red-700">Couldn't load fees summary.</p>
+        <template v-else>
+          <p v-if="!feesRows.length" class="text-sm text-slate-400">No schools yet.</p>
+          <template v-else>
+            <div v-for="r in feesDueSchools" :key="r.schoolId" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+              <span class="font-semibold text-sm">{{ r.schoolName }}</span>
+              <span class="text-xs text-slate-500">{{ r.unpaidCount }} unpaid invoice{{ r.unpaidCount === 1 ? "" : "s" }}<span v-if="r.overdueCount"> · {{ r.overdueCount }} overdue</span></span>
+              <span class="text-sm font-bold ml-auto">{{ inr(r.totalDuePaise) }} due<span v-if="r.overdueCount" class="text-rose-600"> · {{ inr(r.overdueDuePaise) }} overdue</span></span>
+            </div>
+            <p v-if="!feesDueSchools.length && !feesErrorSchools.length" class="text-sm text-emerald-700">All clear — no fees stuck anywhere.</p>
+            <p v-else-if="feesClearCount" class="text-xs text-slate-400 mt-2">…and {{ feesClearCount }} school{{ feesClearCount === 1 ? "" : "s" }} all clear (₹0 due)</p>
+            <p v-for="r in feesErrorSchools" :key="'err-' + r.schoolId" class="text-sm text-red-600 mt-1">{{ r.schoolName }} — couldn't load</p>
+          </template>
+        </template>
+      </div>
+
+      <div class="card mt-4">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <h2 class="font-bold">🕘 Recent activity</h2>
+          <button type="button" class="btn btn-ghost !py-1.5 text-xs ml-auto" @click="router.push('/console')">View all →</button>
+        </div>
+        <p v-if="actLoading" class="text-sm text-slate-400 animate-pulse">Loading…</p>
+        <p v-else-if="actErr" class="text-sm text-red-700">Couldn't load recent activity.</p>
+        <template v-else>
+          <p v-if="!actRows.length" class="text-sm text-slate-400">No activity recorded yet.</p>
+          <div v-for="it in actRows" :key="it.id" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+            <span class="text-[11px] text-slate-400 w-32 shrink-0">{{ fmtWhen(it.createdAt) }}</span>
+            <span class="font-semibold text-sm">{{ it.actorName || "—" }}</span>
+            <span class="text-sm">{{ it.label }}</span>
+            <span v-if="it.schoolName" class="chip bg-slate-100 text-slate-600">{{ it.schoolName }}</span>
+            <span v-if="it.detailsText" class="text-xs text-slate-500 w-full sm:w-auto">{{ it.detailsText }}</span>
+          </div>
+        </template>
+      </div>
     </template>
   </div>
 </template>

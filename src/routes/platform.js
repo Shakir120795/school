@@ -12,6 +12,7 @@ import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
+import { localParts, dateOnly } from "../utils/time.js";
 
 const router = Router();
 
@@ -415,6 +416,137 @@ router.get("/platform/activity", asyncRoute(async (req, res) => {
   if (req.query.action) where.action = String(req.query.action);
   const result = await fetchActivityPage({ where, page, pageSize });
   return res.json(result);
+}));
+
+// Phase 29 WS3: owner dashboard "Aaj ki halat" — TODAY's attendance
+// per school. Operator only (router-level guard above). "Today" is
+// the current calendar date IN EACH SCHOOL'S timezone
+// (localParts + dateOnly — the exact same localDate convention as
+// the roll-call / on-campus / analytics code). Definitions match
+// src/routes/analytics.js: a LATE student was still present, so
+// present = PRESENT + LATE, marked = every StudentAttendance row
+// for that localDate, and pctPresent = present/marked. Phase-27
+// guard: NO full Student rows are ever selected — only a status
+// groupBy on StudentAttendance plus prisma.student.count (a count
+// selects no columns). Each school aggregates inside its own
+// try/catch: a failing school comes back with zeros + error:true
+// and never 500s the whole endpoint.
+router.get("/platform/today", asyncRoute(async (req, res) => {
+  const schools = await prisma.school.findMany({
+    select: { id: true, name: true, slug: true, timezone: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const out = [];
+  for (const s of schools) {
+    try {
+      const dateStr = localParts(new Date(), s.timezone || "Asia/Kolkata").dateStr;
+      const localDate = dateOnly(dateStr);
+      const grouped = await prisma.studentAttendance.groupBy({
+        by: ["status"],
+        where: { schoolId: s.id, localDate },
+        _count: { _all: true },
+      });
+      const byStatus = { PRESENT: 0, LATE: 0, ABSENT: 0, ON_LEAVE: 0, HALF_DAY: 0 };
+      let marked = 0;
+      for (const g of grouped) {
+        const n = g._count?._all || 0;
+        marked += n;
+        if (byStatus[g.status] !== undefined) byStatus[g.status] = n;
+      }
+      const present = byStatus.PRESENT + byStatus.LATE;
+      const totalStudents = await prisma.student.count({ where: { schoolId: s.id, status: "ACTIVE" } });
+      out.push({
+        schoolId: s.id, schoolName: s.name, slug: s.slug, status: s.status,
+        timezone: s.timezone, date: dateStr,
+        present, late: byStatus.LATE, absent: byStatus.ABSENT,
+        onLeave: byStatus.ON_LEAVE, halfDay: byStatus.HALF_DAY,
+        byStatus, marked, totalStudents,
+        pctPresent: marked ? Math.round((present / marked) * 100) : 0,
+        error: false,
+      });
+    } catch (e) {
+      console.error("platform/today school aggregate failed:", s.id, e?.message || e);
+      out.push({
+        schoolId: s.id, schoolName: s.name, slug: s.slug, status: s.status,
+        timezone: s.timezone, date: null,
+        present: 0, late: 0, absent: 0, onLeave: 0, halfDay: 0,
+        byStatus: { PRESENT: 0, LATE: 0, ABSENT: 0, ON_LEAVE: 0, HALF_DAY: 0 },
+        marked: 0, totalStudents: 0, pctPresent: 0, error: true,
+      });
+    }
+  }
+  return res.json({ schools: out, generatedAt: new Date().toISOString() });
+}));
+
+// Phase 29 WS3: owner dashboard "Fees stuck" — per school, the
+// invoices still owed and how much. Operator only. Definitions
+// follow src/routes/fees.js exactly (do not invent new ones):
+// FeeInvoiceStatus is UNPAID | PARTIAL | PAID | WAIVED (there is
+// NO stored OVERDUE status) — an invoice is still owed while it
+// is UNPAID or PARTIAL, its balance is totalPaise minus the sum
+// of its FeePayments, and it is OVERDUE when it is still owed and
+// its dueDate is before today, compared exactly like the fees
+// summary endpoint does (dueDate date-string < today's UTC
+// date-string). Amounts stay integer paise end-to-end; the UI
+// formats ₹ (paise/100, en-IN). Per-school try/catch, same rule
+// as /platform/today: one bad school returns zeros + error:true.
+router.get("/platform/fees-summary", asyncRoute(async (req, res) => {
+  const schools = await prisma.school.findMany({
+    select: { id: true, name: true, slug: true, status: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const out = [];
+  for (const s of schools) {
+    try {
+      const invoices = await prisma.feeInvoice.findMany({
+        where: { schoolId: s.id, status: { in: ["UNPAID", "PARTIAL"] } },
+        select: { id: true, totalPaise: true, dueDate: true, status: true },
+        orderBy: { dueDate: "asc" },
+      });
+      let paidOf = {};
+      if (invoices.length) {
+        const paidRows = await prisma.feePayment.groupBy({
+          by: ["invoiceId"],
+          where: { schoolId: s.id, invoiceId: { in: invoices.map((i) => i.id) } },
+          _sum: { amountPaise: true },
+        });
+        paidOf = Object.fromEntries(paidRows.map((r) => [r.invoiceId, r._sum.amountPaise || 0]));
+      }
+      let totalDuePaise = 0;
+      let overdueDuePaise = 0;
+      let overdueCount = 0;
+      for (const inv of invoices) {
+        const balance = inv.totalPaise - (paidOf[inv.id] || 0);
+        totalDuePaise += balance;
+        if (inv.dueDate.toISOString().slice(0, 10) < today) {
+          overdueCount += 1;
+          overdueDuePaise += balance;
+        }
+      }
+      out.push({
+        schoolId: s.id, schoolName: s.name, slug: s.slug, status: s.status,
+        unpaidCount: invoices.length, overdueCount,
+        totalDuePaise, overdueDuePaise, error: false,
+      });
+    } catch (e) {
+      console.error("platform/fees-summary school aggregate failed:", s.id, e?.message || e);
+      out.push({
+        schoolId: s.id, schoolName: s.name, slug: s.slug, status: s.status,
+        unpaidCount: 0, overdueCount: 0, totalDuePaise: 0, overdueDuePaise: 0, error: true,
+      });
+    }
+  }
+  const totals = out.reduce(
+    (a, r) => ({
+      unpaidCount: a.unpaidCount + r.unpaidCount,
+      overdueCount: a.overdueCount + r.overdueCount,
+      totalDuePaise: a.totalDuePaise + r.totalDuePaise,
+      overdueDuePaise: a.overdueDuePaise + r.overdueDuePaise,
+    }),
+    { unpaidCount: 0, overdueCount: 0, totalDuePaise: 0, overdueDuePaise: 0 }
+  );
+  return res.json({ schools: out, totals, generatedAt: new Date().toISOString() });
 }));
 
 // Permanent delete: every school-scoped table, children before
