@@ -279,6 +279,39 @@ router.get(
   })
 );
 
+// Phase 29 WS4: setup-wizard status for THIS school — SCHOOL_ADMIN /
+// PRINCIPAL only (WRITE). Six booleans + counts, computed with count
+// queries ONLY: no rows are selected, so this stays safe even where
+// a list endpoint would trip over pending columns (e.g. students).
+// Each count is independent; Promise.all surfaces a real failure to
+// the error handler rather than silently ticking a step.
+router.get(
+  "/:schoolId/setup-status",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
+    const [years, classrooms, teachers, students, policies, feeStructures] = await Promise.all([
+      prisma.academicYear.count({ where: { schoolId } }),
+      prisma.classroom.count({ where: { schoolId } }),
+      prisma.schoolMembership.count({ where: { schoolId, role: "TEACHER", status: "ACTIVE" } }),
+      prisma.student.count({ where: { schoolId } }),
+      prisma.attendancePolicy.count({ where: { schoolId, isActive: true } }),
+      prisma.feeStructure.count({ where: { schoolId } }),
+    ]);
+    const steps = {
+      academicYear: { done: years > 0, count: years },
+      classes: { done: classrooms > 0, count: classrooms },
+      teachers: { done: teachers > 0, count: teachers },
+      students: { done: students > 0, count: students },
+      attendancePolicy: { done: policies > 0, count: policies },
+      feeStructure: { done: feeStructures > 0, count: feeStructures },
+    };
+    const complete = Object.values(steps).every((s) => s.done);
+    return res.json({ steps, complete });
+  })
+);
+
 // Removed members of THIS school, with their removal records.
 router.get(
   "/:schoolId/users/removed",

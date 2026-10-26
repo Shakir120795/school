@@ -18,6 +18,28 @@ const holForm = ref({ localDate: "", name: "" });
 const msg = ref("");
 
 const isManager = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(role);
+
+// Phase 29 WS4: setup wizard (managers only). One aggregate call;
+// a failed check leaves setup null and the card simply stays hidden
+// rather than breaking the dashboard.
+const setup = ref(null);
+const setupLoading = ref(isManager);
+const SETUP_STEPS = [
+  { key: "academicYear", label: "Academic year created", hint: "Create your current academic year", to: "/settings" },
+  { key: "classes", label: "Classes added", hint: "Add your first class", to: "/settings" },
+  { key: "teachers", label: "Teachers added", hint: "Add teachers to your team", to: "/team" },
+  { key: "students", label: "Students added", hint: "Add or import your students", to: "/people" },
+  { key: "attendancePolicy", label: "Attendance policy set", hint: "Set entry and late timings", to: "/settings" },
+  { key: "feeStructure", label: "Fee structure added", hint: "Set fees for a class", to: "/fees" },
+];
+async function loadSetup() {
+  if (!isManager) return;
+  try {
+    const r = await api(`/schools/${sid}/setup-status`);
+    if (r.status === 200) setup.value = r.json;
+  } catch { /* wizard is best-effort; dashboard must not break */ }
+  setupLoading.value = false;
+}
 const pct = computed(() => A.value?.today.attendancePct ?? 0);
 const ring = computed(() => {
   const c = 2 * Math.PI * 34;
@@ -57,7 +79,7 @@ async function removeHoliday(id) {
 // The operator has no school context — the school dashboard below
 // would render an empty page for them (Phase 27 complaint). They
 // get the platform overview instead; school loading is skipped.
-onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") load(); else loading.value = false; });
+onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); loadSetup(); } else loading.value = false; });
 </script>
 
 <template>
@@ -73,6 +95,23 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") load(); el
       <div class="flex gap-2">
         <button type="button" class="btn btn-ghost" @click="router.push('/attendance')">📋 Register</button>
         <button type="button" class="btn btn-primary" @click="router.push('/notices')">✉️ New notice</button>
+      </div>
+    </div>
+
+    <!-- Phase 29 WS4: setup wizard — managers only, never blocks the dashboard -->
+    <div v-if="isManager && setupLoading" class="card text-slate-500 mb-4">Checking your setup…</div>
+    <div v-else-if="isManager && setup && setup.complete" class="card mb-4 py-3 text-sm font-semibold text-emerald-700">✅ School setup complete</div>
+    <div v-else-if="isManager && setup" class="card mb-4">
+      <h2 class="font-bold mb-1">🚀 Finish setting up your school</h2>
+      <p class="text-sm text-slate-500 mb-3">Work through these steps to get your school fully running.</p>
+      <div v-for="s in SETUP_STEPS" :key="s.key" class="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0 text-sm">
+        <span v-if="setup.steps[s.key]?.done" class="text-emerald-600 font-bold">✓</span>
+        <span v-else class="text-slate-300 font-bold">○</span>
+        <span class="flex-1">
+          <span class="font-semibold" :class="setup.steps[s.key]?.done ? 'text-slate-400 line-through' : ''">{{ s.label }}</span>
+          <span v-if="!setup.steps[s.key]?.done" class="block text-xs text-slate-500">{{ s.hint }}</span>
+        </span>
+        <router-link v-if="!setup.steps[s.key]?.done" :to="s.to" class="text-brand-700 font-semibold shrink-0">Set up →</router-link>
       </div>
     </div>
 
