@@ -211,6 +211,8 @@ model School {
   feeHeads               FeeHead[]
   feeStructures          FeeStructure[]
   feeInvoices            FeeInvoice[]
+  timetableSlots         TimetableSlot[]
+  calendarEvents         CalendarEvent[]
 
   @@index([status])
 }
@@ -329,6 +331,7 @@ model Classroom {
   noticeTargets            NoticeTarget[]
   homework                 Homework[]
   feeStructures            FeeStructure[]
+  timetableSlots           TimetableSlot[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, academicYearId, name, section])
@@ -401,6 +404,7 @@ model Subject {
   school             School                   @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   teacherAssignments TeacherClassAssignment[]
   homework           Homework[]
+  timetableSlots     TimetableSlot[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, code])
@@ -429,6 +433,7 @@ model TeacherProfile {
   cardCredentials     CardCredential[]
   staffScanEvents     StaffScanEvent[]
   staffAttendances    StaffAttendance[]
+  timetableSlots      TimetableSlot[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, membershipId])
@@ -1132,6 +1137,50 @@ model FeePayment {
 
   @@unique([schoolId, receiptNo])
   @@index([schoolId, invoiceId])
+}
+
+// Timetable + calendar (Phase 17, PDF §8/§22). A slot is one period in
+// a class's weekly grid (weekday 1=Mon..7=Sun). Slots without a
+// subject are labelled periods (Lunch, Assembly). Calendar events sit
+// next to the existing Holiday list in one merged month view.
+model TimetableSlot {
+  id               String   @id @default(cuid())
+  schoolId         String
+  classroomId      String
+  weekday          Int // 1=Mon .. 7=Sun
+  periodNo         Int
+  startTime        String // "09:00" school-local
+  endTime          String // "09:45"
+  subjectId        String?
+  label            String? // for non-subject periods (Lunch, Assembly, Sports…)
+  teacherProfileId String?
+  room             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classroom      Classroom       @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  subject        Subject?        @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Restrict)
+  teacherProfile TeacherProfile? @relation(fields: [schoolId, teacherProfileId], references: [schoolId, id], onDelete: Restrict)
+
+  @@unique([schoolId, classroomId, weekday, periodNo])
+  @@index([schoolId, teacherProfileId])
+}
+
+model CalendarEvent {
+  id                    String    @id @default(cuid())
+  schoolId              String
+  title                 String
+  description           String?
+  eventDate             DateTime  @db.Date
+  endDate               DateTime? @db.Date
+  type                  String    @default("EVENT") // EVENT | EXAM | SPORTS | CULTURAL | PTM | OTHER
+  createdByMembershipId String
+  createdAt             DateTime  @default(now())
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, eventDate])
 }
 
 model OtpLoginChallenge {

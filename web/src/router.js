@@ -12,6 +12,7 @@ const routes = [
   { path: "/homework", component: () => import("./views/Homework.vue") },
   { path: "/leave", component: () => import("./views/Leave.vue") },
   { path: "/fees", component: () => import("./views/Fees.vue") },
+  { path: "/timetable", component: () => import("./views/Timetable.vue") },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },

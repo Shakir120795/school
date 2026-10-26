@@ -31,7 +31,7 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Phase 15 — DONE (26 Oct): leave applications (parent applies, teacher/manager decides, ON_LEAVE auto-applied without overwriting attended days, decision alerts)
 - Phase 16 — DONE (26 Oct): fees ledger (heads + class structures, idempotent invoice generation, payments with receipt numbers, waive, summary; gateway later)
   recording + receipts, parent fee view; gateway integration after
-- Phase 17 — Timetable + school calendar/events (§8/§22)
+- Phase 17 — DONE (26 Oct): class timetable grids + teacher my-periods + merged school calendar (events + holidays)
 - Phase 18 — Exams, marks, report cards (§9)
 - Phase 19 — Bulk import students/guardians (CSV) + report exports (§16/§21)
 - Phase 20 — Support tickets (§23/§30) + PTM bookings (§17)

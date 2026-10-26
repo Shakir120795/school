@@ -32,6 +32,7 @@ const NAV = [
   { to: "/homework", label: "Homework", icon: "📚", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/leave", label: "Leave", icon: "✉️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/fees", label: "Fees", icon: "💳", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF", "PARENT"] },
+  { to: "/timetable", label: "Timetable", icon: "🗓️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/parent", label: "My Children", icon: "🏠", roles: ["PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["PARENT"] },
