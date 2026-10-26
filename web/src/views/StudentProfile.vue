@@ -1,7 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { api, session } from "../api.js";
+import { api, session, myRole } from "../api.js";
 
 // Student 360 profile (Phase 29 WS5): one aggregate read —
 // GET /schools/:id/students/:studentId/profile — renders the
@@ -50,6 +50,87 @@ const FEE_CLS = {
   WAIVED: "bg-slate-100 text-slate-500",
 };
 
+// Phase 29 WS6: manager actions — class transfer + admission-no
+// correction (PATCH /schools/:id/students/:studentId, audited
+// server-side). Managers only (SCHOOL_ADMIN / PRINCIPAL); the
+// endpoint's WRITE guard 403s everyone else anyway. Hidden for
+// TEACHER / STAFF.
+const isManager = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(myRole());
+const classrooms = ref([]);
+const classroomsLoading = ref(false);
+const transferTo = ref("");
+const transferring = ref(false);
+const transferMsg = ref("");
+const transferErr = ref("");
+const admInput = ref("");
+const admSaving = ref(false);
+const admMsg = ref("");
+const admErr = ref("");
+const roomLabel = (c) => `${c.name}${c.section ? "-" + c.section : ""}`;
+
+watch(student, (s) => {
+  if (!s) return;
+  transferTo.value = s.classroomId || "";
+  admInput.value = s.admissionNo || "";
+});
+
+async function loadClassrooms() {
+  classroomsLoading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/classrooms`);
+    if (r.status === 200) classrooms.value = r.json.classrooms || [];
+  } catch {
+    classrooms.value = [];
+  } finally {
+    classroomsLoading.value = false;
+  }
+}
+
+async function doTransfer() {
+  transferMsg.value = "";
+  transferErr.value = "";
+  transferring.value = true;
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}`, {
+      method: "PATCH",
+      body: { classroomId: transferTo.value || null },
+    });
+    if (r.status === 200) {
+      transferMsg.value = "Class updated.";
+      await load();
+    } else {
+      transferErr.value = r.json?.error || `Could not transfer (${r.status})`;
+    }
+  } catch {
+    transferErr.value = "Could not transfer. Please try again.";
+  } finally {
+    transferring.value = false;
+  }
+}
+
+async function doAdmission() {
+  admMsg.value = "";
+  admErr.value = "";
+  admSaving.value = true;
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}`, {
+      method: "PATCH",
+      body: { admissionNo: admInput.value.trim() },
+    });
+    if (r.status === 200) {
+      admMsg.value = "Admission number updated.";
+      await load();
+    } else {
+      // 409 ADMISSION_NO_TAKEN lands here — shown inline verbatim.
+      admErr.value = r.json?.error || `Could not save (${r.status})`;
+    }
+  } catch {
+    admErr.value = "Could not save. Please try again.";
+  } finally {
+    admSaving.value = false;
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -67,7 +148,10 @@ async function load() {
     loading.value = false;
   }
 }
-onMounted(load);
+onMounted(() => {
+  load();
+  if (isManager) loadClassrooms();
+});
 </script>
 
 <template>
@@ -120,6 +204,35 @@ onMounted(load);
             <dd class="font-medium">{{ family?.address || "—" }}</dd>
           </div>
         </dl>
+      </div>
+
+      <!-- Manager actions (WS6): class transfer + admission correction -->
+      <div v-if="isManager" class="grid lg:grid-cols-2 gap-4 mb-4 items-start">
+        <div class="card">
+          <h2 class="font-bold mb-2">🔀 Transfer class</h2>
+          <p class="text-sm text-slate-500 mb-3">Move {{ student.fullName }} to another class. Attendance and fees history stay with the student.</p>
+          <div class="flex gap-2">
+            <select v-model="transferTo" class="input flex-1" :disabled="transferring || classroomsLoading">
+              <option value="">— No class —</option>
+              <option v-for="c in classrooms" :key="c.id" :value="c.id">{{ roomLabel(c) }}{{ c.id === student.classroomId ? " (current)" : "" }}</option>
+            </select>
+            <button type="button" class="btn btn-primary" :disabled="transferring || classroomsLoading || transferTo === (student.classroomId || '')" @click="doTransfer">{{ transferring ? "Transferring…" : "Transfer" }}</button>
+          </div>
+          <p v-if="classroomsLoading" class="text-sm text-slate-400 mt-2">Loading classes…</p>
+          <p v-if="transferErr" class="text-sm text-red-700 mt-2">{{ transferErr }}</p>
+          <p v-else-if="transferMsg" class="text-sm text-emerald-700 mt-2">{{ transferMsg }}</p>
+        </div>
+
+        <div class="card">
+          <h2 class="font-bold mb-2">✏️ Correct admission no</h2>
+          <p class="text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">⚠️ Parent login IDs made from the admission number will NOT change automatically.</p>
+          <div class="flex gap-2">
+            <input v-model="admInput" class="input flex-1" :disabled="admSaving" />
+            <button type="button" class="btn btn-primary" :disabled="admSaving || !admInput.trim() || admInput.trim() === student.admissionNo" @click="doAdmission">{{ admSaving ? "Saving…" : "Save" }}</button>
+          </div>
+          <p v-if="admErr" class="text-sm text-red-700 mt-2">{{ admErr }}</p>
+          <p v-else-if="admMsg" class="text-sm text-emerald-700 mt-2">{{ admMsg }}</p>
+        </div>
       </div>
 
       <div class="grid lg:grid-cols-2 gap-4 items-start">

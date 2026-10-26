@@ -4,9 +4,13 @@
 // (GET /schools/:schoolId/activity). Single source of truth so the
 // two views never drift.
 //
-// AuditLog rows today are written ONLY by utils/memberRemoval.js
+// AuditLog rows are written by utils/memberRemoval.js
 // (action MEMBER_REMOVED, metadata { reason, note, role, memberName,
-// memberEmail }). The label map also covers the other lifecycle
+// memberEmail }) and, since Phase 29 WS6, by the student PATCH in
+// routes/schools.js (STUDENT_TRANSFERRED { studentName,
+// fromClassroomId, fromClassLabel, toClassroomId, toClassLabel } and
+// STUDENT_ADMISSION_CORRECTED { studentName, oldAdmissionNo,
+// newAdmissionNo }). The label map also covers the other lifecycle
 // actions named in the Phase 29 brief so any future writer is
 // labelled nicely without a client change; anything unknown falls
 // back to a prettified version of the raw code.
@@ -25,6 +29,8 @@ export const ACTION_LABELS = {
   SCHOOL_DELETED: "School deleted",
   PASSWORD_RESET: "Password reset",
   ADMIN_PASSWORD_RESET: "Admin password reset",
+  STUDENT_TRANSFERRED: "Student transferred",
+  STUDENT_ADMISSION_CORRECTED: "Admission no. corrected",
 };
 
 export function actionLabel(action) {
@@ -50,10 +56,17 @@ export function parsePagination(query) {
 export function detailsText(row) {
   const m = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
   const parts = [];
-  const target = m.memberName || m.targetName || m.fullName || null;
+  const target = m.memberName || m.studentName || m.targetName || m.fullName || null;
   const targetRole = m.role || m.targetRole || null;
   if (target) parts.push(targetRole ? `${target} (${targetRole})` : target);
   if (m.memberEmail) parts.push(m.memberEmail);
+  // Phase 29 WS6 student actions: readable from → to summaries.
+  if (m.fromClassLabel || m.toClassLabel) {
+    parts.push(`Class ${m.fromClassLabel || "—"} → ${m.toClassLabel || "—"}`);
+  }
+  if (m.oldAdmissionNo || m.newAdmissionNo) {
+    parts.push(`Admission ${m.oldAdmissionNo || "—"} → ${m.newAdmissionNo || "—"}`);
+  }
   if (m.reason) parts.push(`Reason: ${m.reason}`);
   if (m.note) parts.push(m.note);
   if (!parts.length && m.schoolName) parts.push(m.schoolName);

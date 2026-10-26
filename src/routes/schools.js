@@ -638,15 +638,37 @@ router.get(
 // Update a student (Phase 27): profile + family details from the
 // People page Edit form (and the seed backfill). Only provided
 // fields change; optional strings are trimmed, empty clears.
-// admissionNo is NOT editable — parent logins are derived from it.
+// Phase 29 WS6 adds two audited manager actions on the same
+// endpoint (WRITE = SCHOOL_ADMIN / PRINCIPAL):
+//  - classroomId: a real change is a CLASS TRANSFER — the target
+//    classroom must belong to the same school (400 otherwise) and
+//    an AuditLog STUDENT_TRANSFERRED row records from/to ids +
+//    class labels. Attendance / fees history is keyed by student,
+//    never by classroom, so history stays attached untouched.
+//  - admissionNo: a real change is an ADMISSION CORRECTION —
+//    trimmed, must stay unique within the school (409
+//    ADMISSION_NO_TAKEN, nothing saved) and an AuditLog
+//    STUDENT_ADMISSION_CORRECTED row records old + new. NOTE:
+//    parent login IDs derived from the old admission number do
+//    NOT change automatically (the UI warns about this).
+// Both changes in one PATCH apply together and log two rows.
+// All validations run BEFORE the update, so a rejected PATCH
+// saves nothing. The update returns an explicit CORE select
+// (plus any family fields actually being written): the Phase 27
+// family columns do not exist in the live DB yet, and a full-row
+// RETURNING would 500 a classroomId/admissionNo-only PATCH.
 router.patch(
   "/:schoolId/students/:studentId",
   requireAuth,
   requireSchool(WRITE),
   asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
     const target = await prisma.student.findFirst({
-      where: { id: req.params.studentId, schoolId: req.params.schoolId },
-      select: { id: true },
+      where: { id: req.params.studentId, schoolId },
+      select: {
+        id: true, fullName: true, admissionNo: true, classroomId: true,
+        classroom: { select: { id: true, name: true, section: true } },
+      },
     });
     if (!target) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
     const body = req.body || {};
@@ -661,7 +683,42 @@ router.patch(
       if (v && typeof v === "object") return res.status(400).json({ error: v.error });
       if (v !== undefined) data[f] = v;
     }
-    if (body.classroomId !== undefined) data.classroomId = body.classroomId || null;
+    // Class transfer (WS6): validate the destination classroom
+    // belongs to THIS school before anything is written.
+    let transfer = null;
+    if (body.classroomId !== undefined) {
+      const nextClassroomId = body.classroomId || null;
+      data.classroomId = nextClassroomId;
+      if (nextClassroomId !== target.classroomId) {
+        let toClassroom = null;
+        if (nextClassroomId) {
+          toClassroom = await prisma.classroom.findFirst({
+            where: { id: nextClassroomId, schoolId },
+            select: { id: true, name: true, section: true },
+          });
+          if (!toClassroom) return res.status(400).json({ error: "CLASSROOM_NOT_IN_SCHOOL" });
+        }
+        transfer = { toClassroom };
+      }
+    }
+    // Admission correction (WS6): trimmed + unique within school.
+    let admissionChange = null;
+    if (body.admissionNo !== undefined) {
+      if (typeof body.admissionNo !== "string") {
+        return res.status(400).json({ error: "ADMISSION_NO_MUST_BE_A_STRING" });
+      }
+      const nextAdmissionNo = body.admissionNo.trim();
+      if (!nextAdmissionNo) return res.status(400).json({ error: "ADMISSION_NO_REQUIRED" });
+      if (nextAdmissionNo !== target.admissionNo) {
+        const clash = await prisma.student.findFirst({
+          where: { schoolId, admissionNo: nextAdmissionNo, id: { not: target.id } },
+          select: { id: true },
+        });
+        if (clash) return res.status(409).json({ error: "ADMISSION_NO_TAKEN" });
+        admissionChange = { from: target.admissionNo, to: nextAdmissionNo };
+        data.admissionNo = nextAdmissionNo;
+      }
+    }
     if (body.academicYearId !== undefined) data.academicYearId = body.academicYearId || null;
     if (body.dateOfBirth !== undefined) {
       if (!body.dateOfBirth) data.dateOfBirth = null;
@@ -677,7 +734,49 @@ router.patch(
       }
       data.status = body.status;
     }
-    const student = await prisma.student.update({ where: { id: target.id }, data });
+    const select = {
+      id: true, schoolId: true, fullName: true, admissionNo: true, rollNo: true,
+      photoUrl: true, gender: true, dateOfBirth: true, status: true,
+      classroomId: true, academicYearId: true, createdAt: true, updatedAt: true,
+    };
+    for (const f of ["fatherName", "motherName", "address"]) if (f in data) select[f] = true;
+    const student = await prisma.student.update({ where: { id: target.id }, data, select });
+    // Audit AFTER the update (sequential awaits, no transaction —
+    // pooler connection_limit=1 discipline, same as memberRemoval).
+    if (transfer) {
+      await prisma.auditLog.create({
+        data: {
+          schoolId,
+          actorUserId: req.user.id,
+          action: "STUDENT_TRANSFERRED",
+          entityType: "Student",
+          entityId: target.id,
+          metadata: {
+            studentName: target.fullName,
+            fromClassroomId: target.classroomId || null,
+            fromClassLabel: target.classroom ? classLabel(target.classroom) : null,
+            toClassroomId: data.classroomId || null,
+            toClassLabel: transfer.toClassroom ? classLabel(transfer.toClassroom) : null,
+          },
+        },
+      });
+    }
+    if (admissionChange) {
+      await prisma.auditLog.create({
+        data: {
+          schoolId,
+          actorUserId: req.user.id,
+          action: "STUDENT_ADMISSION_CORRECTED",
+          entityType: "Student",
+          entityId: target.id,
+          metadata: {
+            studentName: target.fullName,
+            oldAdmissionNo: admissionChange.from,
+            newAdmissionNo: admissionChange.to,
+          },
+        },
+      });
+    }
     return res.json({ student });
   })
 );

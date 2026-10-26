@@ -29,8 +29,11 @@ const emptyStudent = () => ({
 });
 const newStudent = ref(emptyStudent());
 // Edit student (Phase 27): the same detail fields as Add, PATCHed
-// via /schools/:id/students/:studentId. admissionNo is shown but
-// never edited (parent logins are derived from it).
+// via /schools/:id/students/:studentId. Phase 29 WS6: classroomId
+// changes are audited class transfers and admissionNo is now
+// correctable on the same endpoint (409 ADMISSION_NO_TAKEN when
+// another student already has it) — parent login IDs derived
+// from the old admission number do NOT change automatically.
 const editing = ref(null);
 function startEdit(s) {
   editing.value = {
@@ -47,15 +50,27 @@ function startEdit(s) {
     address: s.address || "",
   };
 }
+const editSaving = ref(false);
+const editErr = ref("");
 async function saveEdit() {
   const e = editing.value;
-  const { id, admissionNo, ...body } = e;
-  const r = await api(`/schools/${sid}/students/${id}`, { method: "PATCH", body });
-  if (r.status === 200) {
-    msg.value = `${e.fullName} updated.`;
-    editing.value = null;
-    load();
-  } else msg.value = `Error: ${r.json.error || r.status}`;
+  editErr.value = "";
+  editSaving.value = true;
+  try {
+    const { id, ...rest } = e;
+    const body = { ...rest, admissionNo: (e.admissionNo || "").trim() };
+    const r = await api(`/schools/${sid}/students/${id}`, { method: "PATCH", body });
+    if (r.status === 200) {
+      msg.value = `${e.fullName} updated.`;
+      editing.value = null;
+      load();
+    } else {
+      // 409 ADMISSION_NO_TAKEN lands here — shown inline in the form.
+      editErr.value = r.json?.error || `Error ${r.status}`;
+    }
+  } finally {
+    editSaving.value = false;
+  }
 }
 const link = ref({ studentId: "", guardianId: "", isPrimary: false });
 const newGuardian = ref({ fullName: "", phone: "", email: "" });
@@ -254,7 +269,9 @@ watch(guardQuery, () => guardPager.reset());
         <div class="flex items-end"><button class="btn btn-primary w-full">Add student</button></div>
       </form>
       <form v-if="editing" class="card grid md:grid-cols-4 gap-3 mb-4 !border-brand-300" @submit.prevent="saveEdit">
-        <div class="md:col-span-4 font-bold">Edit student — Admission No {{ editing.admissionNo }} (login IDs derive from it, so it cannot change)</div>
+        <div class="md:col-span-4 font-bold">Edit student</div>
+        <div><label class="label">Admission No</label><input v-model="editing.admissionNo" required class="input" /></div>
+        <div class="md:col-span-3 text-sm font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 self-end">⚠️ Parent login IDs made from the admission number will NOT change automatically.</div>
         <div><label class="label">Full name</label><input v-model="editing.fullName" required class="input" /></div>
         <div><label class="label">Roll No</label><input v-model="editing.rollNo" class="input" /></div>
         <div><label class="label">Photo URL</label><input v-model="editing.photoUrl" class="input" placeholder="https://…" /></div>
@@ -267,9 +284,10 @@ watch(guardQuery, () => guardPager.reset());
         <div><label class="label">Mother name</label><input v-model="editing.motherName" class="input" /></div>
         <div class="md:col-span-2"><label class="label">Address</label><input v-model="editing.address" class="input" /></div>
         <div class="flex items-end gap-2">
-          <button class="btn btn-primary flex-1">Save changes</button>
-          <button type="button" class="btn btn-ghost flex-1" @click="editing = null">Cancel</button>
+          <button class="btn btn-primary flex-1" :disabled="editSaving">{{ editSaving ? "Saving…" : "Save changes" }}</button>
+          <button type="button" class="btn btn-ghost flex-1" :disabled="editSaving" @click="editing = null">Cancel</button>
         </div>
+        <p v-if="editErr" class="md:col-span-4 text-sm text-red-700">Error: {{ editErr }}</p>
       </form>
       <div class="card mb-4 flex flex-wrap gap-2 items-center">
         <span class="font-semibold text-sm">Bulk ID cards:</span>
