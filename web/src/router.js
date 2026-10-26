@@ -6,6 +6,7 @@ const routes = [
   { path: "/login/parent", component: () => import("./views/Login.vue"), meta: { public: true, variant: "parent" } },
   { path: "/login/teacher", component: () => import("./views/Login.vue"), meta: { public: true, variant: "teacher" } },
   { path: "/login/school", component: () => import("./views/Login.vue"), meta: { public: true, variant: "school" } },
+  { path: "/login/admin", component: () => import("./views/Login.vue"), meta: { public: true, variant: "admin" } },
   { path: "/login/staff", redirect: "/login/school", meta: { public: true } },
   { path: "/", component: () => import("./views/Dashboard.vue") },
   { path: "/people", component: () => import("./views/People.vue") },
@@ -36,7 +37,7 @@ router.beforeEach((to) => {
     // Login pages ALWAYS render their own form — even with a live
     // session (26 Oct correction, overriding the Phase 22 redirect):
     // the separate login links are the backbone of the future
-    // per-role apps, so opening /login/parent|teacher|school must
+    // per-role apps, so opening any /login page must
     // show that page. Login.vue handles the signed-in case in-page
     // with a "you are logged in" banner (dashboard / logout actions)
     // and replaces the session only on a successful sign-in.

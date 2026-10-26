@@ -5,14 +5,14 @@ import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session, 
 
 const router = useRouter();
 const route = useRoute();
-// Role-specific entry points: /login/parent, /login/teacher and
-// /login/school lock this page to one audience (these URLs are the
-// future separate apps' starting points). Plain /login shows the
-// Parent/Staff tab switcher; the platform owner signs in there too
-// and lands on the console.
+// Role-specific entry points: /login/parent, /login/teacher,
+// /login/school and /login/admin each lock this page to ONE
+// audience (these URLs are the future separate apps' starting
+// points). Plain /login is only a chooser — four cards, no form,
+// no tabs — so no two audiences ever share a login screen.
 const variant = route.meta.variant || "";
 const locked = computed(() => variant !== "");
-const tab = ref(variant === "parent" ? "parent" : "staff");
+const isChooser = computed(() => variant === "");
 
 const email = ref("");
 const password = ref("");
@@ -85,15 +85,21 @@ onMounted(async () => {
   if (r && r.status === 200 && r.json.parentAuthMode) parentMode.value = r.json.parentAuthMode;
 });
 
-const staffTitle = computed(() => {
+const pageTitle = computed(() => {
+  if (variant === "parent") return "Parent Login";
   if (variant === "teacher") return "Teacher Login";
   if (variant === "school") return "School Login";
-  return "Staff Login";
+  if (variant === "admin") return "Admin Login";
+  return "";
 });
-const staffNote = computed(() => {
+const pageNote = computed(() => {
+  if (variant === "parent") return parentMode.value === "password"
+    ? "Use the login ID & password given by your school office."
+    : "Use the mobile number given to your school. No password needed — we send an OTP.";
   if (variant === "teacher") return "Use the email & password given by your school office.";
-  if (variant === "school") return "For the school admin, principal and office staff — use the email & password issued for your school.";
-  return "For the school admin, principal and office staff — use the email & password given to you.";
+  if (variant === "school") return "For the school admin, principal and office team — use the email & password issued for your school.";
+  if (variant === "admin") return "For the platform owner only — this controls every school on Smart School.";
+  return "";
 });
 
 async function sendOtp() {
@@ -144,7 +150,8 @@ async function submit() {
   const wrongPage = (msg) => { if (old.access) restoreSession(old); else session.clear(); error.value = msg; };
   if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
   if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
-  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and staff. Teachers use the Teacher login page, parents use the Parent login page."); return; }
+  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
+  if (variant === "admin" && !currentUser()?.isPlatformAdmin) { wrongPage("This page is only for the platform admin."); return; }
   // Success: the new account takes over — revoke the session it
   // replaced and land on the NEW role's home.
   await replaceOldSession(old);
@@ -170,16 +177,35 @@ async function submit() {
         <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — it will replace this session.</p>
       </div>
 
-      <div v-if="!locked" class="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-2xl mb-5">
-        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'parent' ? 'bg-white shadow text-blue-700' : 'text-slate-500'" @click="tab = 'parent'">👨‍👩‍👧 Parent</button>
-        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'staff' ? 'bg-white shadow text-green-700' : 'text-slate-500'" @click="tab = 'staff'">🧑‍🏫 Staff</button>
-      </div>
+      <!-- CHOOSER (plain /login): four doors, no form -->
+      <template v-if="isChooser">
+        <div class="text-lg font-bold mb-1">Choose your login</div>
+        <p class="text-sm text-slate-500 mb-4">Har role ka apna alag login page hai — apna wala chuno.</p>
+        <div class="grid gap-2">
+          <router-link to="/login/parent" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+            <span class="text-2xl">👨‍👩‍👧</span>
+            <span><span class="block font-bold">Parent Login</span><span class="block text-xs text-slate-500">Apne bachcho ki attendance, fees aur notices</span></span>
+          </router-link>
+          <router-link to="/login/teacher" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+            <span class="text-2xl">🧑‍🏫</span>
+            <span><span class="block font-bold">Teacher Login</span><span class="block text-xs text-slate-500">Apni classes, roll-call aur homework</span></span>
+          </router-link>
+          <router-link to="/login/school" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+            <span class="text-2xl">🏫</span>
+            <span><span class="block font-bold">School Login</span><span class="block text-xs text-slate-500">School admin, principal aur office team</span></span>
+          </router-link>
+          <router-link to="/login/admin" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+            <span class="text-2xl">👑</span>
+            <span><span class="block font-bold">Admin Login</span><span class="block text-xs text-slate-500">Platform owner — saare schools ka control</span></span>
+          </router-link>
+        </div>
+      </template>
 
       <!-- PARENT -->
-      <template v-if="tab === 'parent'">
+      <template v-if="variant === 'parent'">
         <form v-if="parentMode === 'password'" @submit.prevent="submit">
-          <div class="text-lg font-bold mb-1">Parent Login</div>
-          <p class="text-sm text-slate-500 mb-4">Use the login ID & password given by your school office.</p>
+          <div class="text-lg font-bold mb-1">{{ pageTitle }}</div>
+          <p class="text-sm text-slate-500 mb-4">{{ pageNote }}</p>
           <label class="label">Login ID (email)</label>
           <input v-model="email" type="email" required class="input mb-3" placeholder="you@example.com" />
           <label class="label">Password</label>
@@ -189,8 +215,8 @@ async function submit() {
         </form>
 
         <form v-else @submit.prevent="otpSent ? verifyOtp() : sendOtp()">
-          <div class="text-lg font-bold mb-1">Parent Login</div>
-          <p class="text-sm text-slate-500 mb-4">Use the mobile number given to your school. No password needed — we send an OTP.</p>
+          <div class="text-lg font-bold mb-1">{{ pageTitle }}</div>
+          <p class="text-sm text-slate-500 mb-4">{{ pageNote }}</p>
           <label class="label">Mobile number</label>
           <input v-model="phone" type="tel" inputmode="numeric" maxlength="13" required class="input mb-3 !text-lg tracking-wide" placeholder="10-digit mobile number" :disabled="otpSent" />
           <template v-if="otpSent">
@@ -205,10 +231,10 @@ async function submit() {
         </form>
       </template>
 
-      <!-- STAFF / TEACHER -->
-      <form v-else @submit.prevent="submit">
-        <div class="text-lg font-bold mb-1">{{ staffTitle }}</div>
-        <p class="text-sm text-slate-500 mb-4">{{ staffNote }}</p>
+      <!-- TEACHER / SCHOOL / ADMIN -->
+      <form v-else-if="locked" @submit.prevent="submit">
+        <div class="text-lg font-bold mb-1">{{ pageTitle }}</div>
+        <p class="text-sm text-slate-500 mb-4">{{ pageNote }}</p>
         <label class="label">Email</label>
         <input v-model="email" type="email" required class="input mb-3" placeholder="you@school.example" />
         <label class="label">Password</label>
@@ -218,10 +244,7 @@ async function submit() {
       </form>
 
       <div v-if="locked" class="mt-5 pt-4 border-t border-slate-100 text-center text-sm text-slate-500">
-        Not your page?
-        <router-link v-if="variant !== 'parent'" class="underline font-semibold" to="/login/parent">Parent login</router-link><span v-if="variant !== 'parent'"> · </span>
-        <router-link v-if="variant !== 'teacher'" class="underline font-semibold" to="/login/teacher">Teacher login</router-link><span v-if="variant !== 'teacher'"> · </span>
-        <router-link v-if="variant !== 'school'" class="underline font-semibold" to="/login/school">School login</router-link>
+        <router-link class="underline font-semibold" to="/login">← All logins</router-link>
       </div>
     </div>
     <p class="text-[11px] text-white/40 mt-5">Install: browser menu → “Add to Home screen”</p>
