@@ -34,6 +34,13 @@ async function createLogin() {
     load();
   } else msg.value = r.json.error || "Could not create login.";
 }
+async function resetPassword(m) {
+  const pw = prompt(`New password for ${m.user.fullName} (${m.user.email}) — at least 8 characters:`);
+  if (!pw) return;
+  const r = await api(`/schools/${sid}/users/${m.id}/reset-password`, { method: "POST", body: { newPassword: pw } });
+  if (r.status === 200) msg.value = `Password reset for ${m.user.fullName}. Share the new password with them securely.`;
+  else msg.value = r.json.error || "Could not reset password.";
+}
 async function toggleStatus(m) {
   const next = m.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
   const r = await api(`/schools/${sid}/users/${m.id}`, { method: "PATCH", body: { status: next } });
@@ -84,7 +91,7 @@ onMounted(load);
               <td class="p-3"><div class="font-semibold">{{ m.user.fullName }}</div><div class="text-xs text-slate-400">{{ m.user.email }}<span v-if="m.user.phone"> · {{ m.user.phone }}</span></div></td>
               <td class="p-3"><span class="chip" :class="roleChip(m.role)">{{ m.role.replace("_", " ") }}</span></td>
               <td class="p-3"><span class="chip" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ m.status }}</span></td>
-              <td class="p-3 text-right"><button type="button" class="text-xs font-bold" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button></td>
+              <td class="p-3 text-right whitespace-nowrap"><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="resetPassword(m)">Reset password</button><button type="button" class="text-xs font-bold" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button></td>
             </tr>
           </tbody>
         </table>

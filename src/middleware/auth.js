@@ -32,6 +32,12 @@ export function requireSchool(roles = []) {
     if (!schoolId) return res.status(400).json({ error: "SCHOOL_CONTEXT_REQUIRED" });
     const school = await prisma.school.findUnique({ where: { id: schoolId } });
     if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+    // A suspended school is frozen for everyone except the platform
+    // operator (Phase 21) — its members cannot use the app until the
+    // operator reactivates it.
+    if (school.status !== "ACTIVE" && !req.user.isPlatformAdmin) {
+      return res.status(403).json({ error: "SCHOOL_SUSPENDED" });
+    }
     if (req.user.isPlatformAdmin && roles.length === 0) {
       req.school = school;
       req.membership = null;

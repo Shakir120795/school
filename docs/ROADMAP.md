@@ -35,6 +35,7 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Phase 18 — DONE (26 Oct): exams + marks entry, publish-gated parent report cards (per-exam %/grade + overall), publish announces to class parents
 - Phase 19 — DONE (26 Oct): CSV bulk student import (row-wise results, auto class/year creation, guardian linking) + students/attendance/fees CSV exports
 - Phase 20 — DONE (26 Oct): support tickets (threaded, status flow, staff reply alerts) + PTM slots with per-child time booking (no double-booking). Core roadmap (Phases 1–20) complete.
+- Phase 21 — DONE (26 Oct): Super Admin console (operator: schools list+counts, create, suspend/reactivate, reset school-admin password, full school delete-purge) + Team password reset for managers + parent demo OTP fixed 123456 (OTP_PROVIDER=demo, until a real SMS provider is connected). No schema change.
 - Later / hardware-dependent: transport + GPS (§15), library (§19),
   health & incidents (§20), staff HR/payroll (§18), super-admin billing
   (§31), AI assists (§32), NFC/RFID readers (§26 — QR stays the MVP)

@@ -170,6 +170,32 @@ router.patch(
   })
 );
 
+// Reset a team member's password (Phase 21): school managers can hand
+// a teacher/staff member a fresh password; their old sessions die.
+router.post(
+  "/:schoolId/users/:membershipId/reset-password",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const missing = requireFields(req.body, ["newPassword"]);
+    if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    if (String(req.body.newPassword).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
+    const target = await prisma.schoolMembership.findFirst({
+      where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+    });
+    if (!target) return res.status(404).json({ error: "MEMBERSHIP_NOT_FOUND" });
+    await prisma.user.update({
+      where: { id: target.userId },
+      data: { passwordHash: await hashPassword(req.body.newPassword) },
+    });
+    await prisma.authSession.updateMany({
+      where: { userId: target.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return res.json({ reset: true });
+  })
+);
+
 // --- Students -------------------------------------------------------------------
 router.post(
   "/:schoolId/students",

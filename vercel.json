@@ -40,6 +40,10 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/platform/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

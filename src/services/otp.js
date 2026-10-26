@@ -74,7 +74,9 @@ export async function requestOtp(rawPhone) {
     where: { phone, createdAt: { gte: new Date(Date.now() - 3600_000) } },
   });
   if (recent >= OTP_MAX_PER_HOUR) return { error: "OTP_RATE_LIMITED" };
-  const code = String(randomInt(100000, 1000000));
+  // Demo mode (owner's decision, 26 Oct 2026): the code is fixed to
+  // 123456 for every parent until a real SMS provider is connected.
+  const code = provider() === "demo" ? "123456" : String(randomInt(100000, 1000000));
   await prisma.otpLoginChallenge.create({
     data: { phone, codeHash: hashToken(code), expiresAt: new Date(Date.now() + OTP_TTL_MS) },
   });

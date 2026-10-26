@@ -16,6 +16,7 @@ const routes = [
   { path: "/exams", component: () => import("./views/Exams.vue") },
   { path: "/data", component: () => import("./views/ImportExport.vue") },
   { path: "/support", component: () => import("./views/Support.vue") },
+  { path: "/console", component: () => import("./views/Console.vue") },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },

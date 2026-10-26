@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { login, loginWithOtp, api } from "../api.js";
+import { login, loginWithOtp, api, myRole, currentUser } from "../api.js";
 
 const router = useRouter();
 const email = ref("");
@@ -53,6 +53,7 @@ async function submit() {
     error.value = r.json.error === "INVALID_CREDENTIALS" ? "Wrong email or password." : `Login failed (${r.json.error || r.status})`;
     return;
   }
+  if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
 </script>
