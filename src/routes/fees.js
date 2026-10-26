@@ -269,9 +269,17 @@ async function computeDefaulters(schoolId) {
     cur.totalDuePaise += due.duePaise;
     byGuardian.set(link.guardianId, cur);
   }
+  // All three numbers describe the same defaulter set: the students
+  // counted are exactly those whose dues a guardian will be reminded
+  // about (a student with dues but NO guardian link cannot be reminded
+  // and is excluded from every count).
   let totalDuePaise = 0;
-  for (const g of byGuardian.values()) totalDuePaise += g.totalDuePaise;
-  return { byGuardian, studentsWithDues: dueByStudent.size, totalDuePaise };
+  const remindedStudents = new Set();
+  for (const g of byGuardian.values()) {
+    totalDuePaise += g.totalDuePaise;
+    for (const c of g.children) remindedStudents.add(c.studentId);
+  }
+  return { byGuardian, studentsWithDues: remindedStudents.size, totalDuePaise };
 }
 
 router.get("/schools/:schoolId/fees/defaulters-preview", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {
