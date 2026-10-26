@@ -8,6 +8,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute } from "../utils/http.js";
 import { parseCsv, toCsv } from "../utils/csv.js";
+import { hashPassword } from "../utils/security.js";
 
 const router = Router();
 const MANAGERS = ["SCHOOL_ADMIN", "PRINCIPAL"];
@@ -133,6 +134,71 @@ router.post("/schools/:schoolId/import/students", requireAuth, requireSchool(MAN
     }
   }
   return res.status(201).json({ import: result, totalRows: rows.length });
+}));
+
+// Teachers import (Phase 29 WS7) — same conventions as the student
+// import above: CSV text in { csv }, per-row results, bad rows are
+// reported and never fatal. Each good row mirrors the Team page's
+// add-member flow exactly: reuse-or-create the User by email
+// (password hashed), then a TEACHER SchoolMembership in this school.
+// A row whose email already has a membership in THIS school (or is
+// repeated inside the file) is a per-row error. Password is optional
+// per row; when blank the new login gets the default below, which the
+// Team page states in its import hint text.
+const TEACHER_DEFAULT_PASSWORD = "Welcome@123";
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+router.post("/schools/:schoolId/teachers/import", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {
+  const schoolId = req.params.schoolId;
+  const csvText = req.body?.csv;
+  if (!csvText || typeof csvText !== "string") return res.status(400).json({ error: "CSV_REQUIRED" });
+  const rows = parseCsv(csvText);
+  if (!rows.length) return res.status(400).json({ error: "CSV_EMPTY_OR_HEADER_ONLY" });
+  if (rows.length > MAX_ROWS) return res.status(400).json({ error: "TOO_MANY_ROWS", max: MAX_ROWS });
+
+  const results = [];
+  const seenInFile = new Set();
+  let created = 0;
+  let rowNo = 1; // header is row 1
+  for (const raw of rows) {
+    rowNo++;
+    const name = pick(raw, ["name", "fullName", "teacherName"]);
+    const emailRaw = pick(raw, ["email", "loginId"]);
+    const email = emailRaw ? emailRaw.trim() : "";
+    const fail = (error) => results.push({ row: rowNo, name: name || null, email: email || null, ok: false, error });
+    if (!name) { fail("MISSING_NAME"); continue; }
+    if (!email) { fail("MISSING_EMAIL"); continue; }
+    if (!EMAIL_RE.test(email)) { fail("INVALID_EMAIL"); continue; }
+    const key = email.toLowerCase();
+    if (seenInFile.has(key)) { fail("DUPLICATE_IN_FILE"); continue; }
+    seenInFile.add(key);
+    try {
+      let user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
+      if (user) {
+        const existing = await prisma.schoolMembership.findFirst({
+          where: { schoolId, userId: user.id },
+          select: { id: true },
+        });
+        if (existing) { fail("ALREADY_A_MEMBER"); continue; }
+      } else {
+        user = await prisma.user.create({
+          data: {
+            email,
+            phone: pick(raw, ["phone", "mobile"]) || undefined,
+            fullName: name,
+            passwordHash: await hashPassword(pick(raw, ["password"]) || TEACHER_DEFAULT_PASSWORD),
+          },
+        });
+      }
+      await prisma.schoolMembership.create({ data: { schoolId, userId: user.id, role: "TEACHER" } });
+      created++;
+      results.push({ row: rowNo, name, email, ok: true });
+    } catch (e) {
+      fail("CREATE_FAILED");
+      console.error("[import-teachers] row failed:", e?.message || e);
+    }
+  }
+  return res.status(201).json({ created, failed: results.length - created, results, totalRows: rows.length });
 }));
 
 router.get("/schools/:schoolId/exports/students.csv", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {

@@ -9,6 +9,8 @@ import { prisma } from "../db.js";
 import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { alertGuardians } from "../services/guardianAlerts.js";
+import { sendNoticeCore } from "../services/notices.js";
+import { processOutboxOnce } from "../services/outbox.js";
 
 const router = Router();
 const OFFICE = ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"]; // fee desk
@@ -222,6 +224,90 @@ router.patch("/schools/:schoolId/fees/invoices/:invoiceId/waive", requireAuth, r
   if (!invoice) return res.status(404).json({ error: "NOT_FOUND" });
   const updated = await prisma.feeInvoice.update({ where: { id: invoiceId }, data: { status: "WAIVED" } });
   return res.json({ invoice: updated });
+}));
+
+// --- Defaulter reminders (Phase 29 WS7) -------------------------------------------
+// Defaulters = guardians having at least one student invoice with a
+// balance > 0 (status UNPAID/PARTIAL; balance = totalPaise − Σ payments,
+// the same semantics as the invoice list above). One entry per guardian,
+// aggregating every child's dues so a reminder is ONE notification per
+// guardian, never one per invoice.
+const inr = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
+
+async function computeDefaulters(schoolId) {
+  const invoices = await prisma.feeInvoice.findMany({
+    where: { schoolId, status: { in: ["UNPAID", "PARTIAL"] } },
+    include: { student: { select: { id: true, fullName: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!invoices.length) return { byGuardian: new Map(), studentsWithDues: 0, totalDuePaise: 0 };
+  const paidRows = await prisma.feePayment.groupBy({
+    by: ["invoiceId"],
+    where: { schoolId, invoiceId: { in: invoices.map((i) => i.id) } },
+    _sum: { amountPaise: true },
+  });
+  const paidOf = Object.fromEntries(paidRows.map((r) => [r.invoiceId, r._sum.amountPaise || 0]));
+  const dueByStudent = new Map(); // studentId -> { name, duePaise }
+  for (const inv of invoices) {
+    const balance = inv.totalPaise - (paidOf[inv.id] || 0);
+    if (balance <= 0) continue;
+    const cur = dueByStudent.get(inv.studentId) || { studentId: inv.studentId, name: inv.student.fullName, duePaise: 0 };
+    cur.duePaise += balance;
+    dueByStudent.set(inv.studentId, cur);
+  }
+  if (!dueByStudent.size) return { byGuardian: new Map(), studentsWithDues: 0, totalDuePaise: 0 };
+  const links = await prisma.studentGuardian.findMany({
+    where: { schoolId, studentId: { in: [...dueByStudent.keys()] } },
+    select: { studentId: true, guardianId: true },
+  });
+  const byGuardian = new Map(); // guardianId -> { totalDuePaise, children: [{name, duePaise}] }
+  for (const link of links) {
+    const due = dueByStudent.get(link.studentId);
+    if (!due) continue;
+    const cur = byGuardian.get(link.guardianId) || { totalDuePaise: 0, children: [] };
+    if (!cur.children.some((c) => c.studentId === due.studentId)) cur.children.push(due);
+    cur.totalDuePaise += due.duePaise;
+    byGuardian.set(link.guardianId, cur);
+  }
+  let totalDuePaise = 0;
+  for (const g of byGuardian.values()) totalDuePaise += g.totalDuePaise;
+  return { byGuardian, studentsWithDues: dueByStudent.size, totalDuePaise };
+}
+
+router.get("/schools/:schoolId/fees/defaulters-preview", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {
+  const { byGuardian, studentsWithDues, totalDuePaise } = await computeDefaulters(req.params.schoolId);
+  return res.json({ guardians: byGuardian.size, studentsWithDues, totalDuePaise });
+}));
+
+router.post("/schools/:schoolId/fees/remind-defaulters", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {
+  const schoolId = req.params.schoolId;
+  const { byGuardian, totalDuePaise } = await computeDefaulters(schoolId);
+  let reminded = 0;
+  for (const [guardianId, g] of byGuardian) {
+    const names = g.children.map((c) => c.name).join(", ");
+    const title = `Fees reminder — ${inr(g.totalDuePaise)} total due for ${names}`;
+    const body =
+      `Dear parent, fees of ${inr(g.totalDuePaise)} are pending for ${names}. ` +
+      g.children.map((c) => `${c.name}: ${inr(c.duePaise)}`).join("; ") +
+      `. Please pay at the school office at the earliest. Thank you.`;
+    // Same pipeline as every other notice: Notice row + target, then
+    // sendNoticeCore snapshots the recipient and writes the outbox event.
+    const notice = await prisma.notice.create({
+      data: {
+        schoolId,
+        senderMembershipId: req.membership.id,
+        type: "ANNOUNCEMENT",
+        audienceType: "SELECTED_GUARDIANS",
+        title,
+        body,
+      },
+    });
+    await prisma.noticeTarget.create({ data: { schoolId, noticeId: notice.id, guardianId } });
+    const sent = await sendNoticeCore(schoolId, { ...notice, targets: [{ guardianId }] });
+    if (sent?.recipientCount) reminded++;
+  }
+  if (reminded && process.env.VERCEL) await processOutboxOnce().catch(() => {});
+  return res.status(201).json({ reminded, totalDuePaise });
 }));
 
 // --- Summary -----------------------------------------------------------------------

@@ -86,6 +86,23 @@ async function waive(inv) {
   const r = await api(`/schools/${sid}/fees/invoices/${inv.id}/waive`, { method: "PATCH" });
   if (r.status === 200) { msg.value = "Invoice waived."; await loadStaff(); } else err.value = r.json?.error || "Waive failed";
 }
+// Phase 29 WS7: one-click defaulter reminders (managers only).
+// Preview first so the confirm dialog carries exact counts/amounts.
+const remindBusy = ref(false);
+async function remindDefaulters() {
+  err.value = ""; msg.value = ""; remindBusy.value = true;
+  try {
+    const p = await api(`/schools/${sid}/fees/defaulters-preview`);
+    if (p.status !== 200) { err.value = p.json?.error || "Could not load defaulters"; return; }
+    if (!p.json.guardians) { msg.value = "No pending dues 🎉"; return; }
+    if (!confirm(`Remind ${p.json.guardians} guardians about ${inr(p.json.totalDuePaise)} total fees due?`)) return;
+    const r = await api(`/schools/${sid}/fees/remind-defaulters`, { method: "POST", body: {} });
+    if (r.status === 201) msg.value = `Reminders sent to ${r.json.reminded} guardians.`;
+    else err.value = r.json?.error || "Could not send reminders";
+  } finally {
+    remindBusy.value = false;
+  }
+}
 async function toggleDetail(inv) {
   if (expanded.value === inv.id) { expanded.value = null; detail.value = null; return; }
   expanded.value = inv.id;
@@ -130,6 +147,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
       <section class="card mb-4">
         <div class="flex flex-wrap items-center gap-2 mb-2">
           <h2 class="font-bold">Invoices</h2>
+          <button v-if="isManager" class="btn btn-primary !py-1.5" :disabled="remindBusy" @click="remindDefaulters">{{ remindBusy ? "Working…" : "🔔 Remind all defaulters" }}</button>
           <select v-model="classFilter" class="input !w-auto ml-auto" @change="loadStaff">
             <option value="">All classes</option>
             <option v-for="c in classes" :key="c.id" :value="c.id">Class {{ c.name }}{{ c.section ? "-" + c.section : "" }}</option>

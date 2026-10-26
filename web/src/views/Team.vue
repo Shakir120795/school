@@ -168,6 +168,45 @@ function actPageChanged(p) {
   loadActivity();
 }
 
+// Phase 29 WS7: bulk teacher import — same UX as the student import
+// (Import & Export page): download a template, pick a CSV file, run,
+// then a per-row results panel. Rows that fail (duplicate email etc.)
+// are reported, never fatal; the member list refreshes after import.
+const impFileName = ref("");
+const impRowCount = ref(0);
+const impCsv = ref("");
+const impBusy = ref(false);
+const impResult = ref(null);
+const impErr = ref("");
+const TEACHER_TEMPLATE = "name,email,phone,password\nPriya Nair,priya.nair@example.com,9811100033,\nKabir Shah,kabir.shah@example.com,,Welcome@123\n";
+function impDownloadTemplate() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([TEACHER_TEMPLATE], { type: "text/csv" }));
+  a.download = "teachers-import-template.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function impOnFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  impFileName.value = f.name;
+  impCsv.value = await f.text();
+  const lines = impCsv.value.split(/\r?\n/).filter((l) => l.trim());
+  impRowCount.value = Math.max(0, lines.length - 1);
+  impResult.value = null;
+  impErr.value = "";
+}
+async function runTeacherImport() {
+  impErr.value = ""; impBusy.value = true;
+  const r = await api(`/schools/${sid}/teachers/import`, { method: "POST", body: { csv: impCsv.value } });
+  impBusy.value = false;
+  if (r.status === 201) {
+    impResult.value = r.json;
+    msg.value = `Teacher import done: ${r.json.created} teacher login(s) created, ${r.json.failed} row(s) skipped.`;
+    load();
+  } else impErr.value = r.json?.error || "Teacher import failed";
+}
+
 onMounted(load);
 onMounted(loadActivity);
 </script>
@@ -246,6 +285,37 @@ onMounted(loadActivity);
         </template>
       </TabbedList>
       <p class="text-[11px] text-slate-400 mt-3">Removed members ke login band hain — unka record Removed tab me rehta hai: kab, kisne, kyun hataya.</p>
+    </div>
+  </div>
+
+  <div class="card mt-4">
+    <h2 class="font-bold mb-1">Import teachers (CSV)</h2>
+    <p class="text-sm text-slate-500 mb-3">
+      Columns: <b>name, email</b> (required), phone, password. Format: name,email,phone,password — one teacher per row.
+      The password column is optional: leave it blank and the login is created with the default password <b>Welcome@123</b> (ask the teacher to change it later via password reset).
+      An email that already belongs to this school, or is repeated in the file, is skipped and reported — the rest still import.
+    </p>
+    <p v-if="impErr" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ impErr }}</p>
+    <div class="flex flex-wrap gap-2 mb-3">
+      <button type="button" class="btn btn-ghost" @click="impDownloadTemplate">⬇ Download template CSV</button>
+      <label class="btn btn-ghost cursor-pointer">
+        Choose CSV file
+        <input type="file" accept=".csv,text/csv" class="hidden" @change="impOnFile" />
+      </label>
+      <span v-if="impFileName" class="text-sm text-slate-500 self-center">{{ impFileName }} — {{ impRowCount }} data rows</span>
+    </div>
+    <button type="button" class="btn btn-primary" :disabled="!impCsv || impBusy" @click="runTeacherImport">{{ impBusy ? "Importing…" : "Import teachers" }}</button>
+
+    <div v-if="impResult" class="mt-4 text-sm">
+      <div class="flex flex-wrap gap-2 mb-2">
+        <span class="chip bg-emerald-100 text-emerald-700">Created: {{ impResult.created }}</span>
+        <span v-if="impResult.failed" class="chip bg-rose-100 text-rose-700">Skipped rows: {{ impResult.failed }}</span>
+      </div>
+      <div class="grid gap-1">
+        <div v-for="(r, i) in impResult.results" :key="i" class="text-xs rounded-lg px-2 py-1.5 border" :class="r.ok ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'">
+          Row {{ r.row }}<span v-if="r.email"> ({{ r.email }})</span> — {{ r.ok ? "Created" : r.error }}
+        </div>
+      </div>
     </div>
   </div>
 
