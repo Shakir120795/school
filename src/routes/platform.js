@@ -8,6 +8,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword } from "../utils/security.js";
+import { normalizePhone } from "../services/otp.js";
 
 const router = Router();
 
@@ -125,6 +126,120 @@ router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =>
     prisma.classroom.count({ where: { schoolId: school.id } }),
   ]);
   return res.json({ school: { ...school, students, classes }, members, total: memberships.length });
+}));
+
+// Phase 23: the operator ADDS members to a school directly — the
+// same find-or-create-user + membership + parent-guardian-link logic
+// as POST /schools/:id/users, minus the in-school permission gate.
+const MEMBER_ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
+router.post("/platform/schools/:schoolId/members", asyncRoute(async (req, res) => {
+  const school = await prisma.school.findUnique({ where: { id: req.params.schoolId }, select: { id: true } });
+  if (!school) return res.status(404).json({ error: "NOT_FOUND" });
+  const missing = requireFields(req.body, ["email", "fullName", "role"]);
+  if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+  if (!MEMBER_ROLES.includes(req.body.role)) return res.status(400).json({ error: "INVALID_ROLE" });
+  let user = await prisma.user.findUnique({ where: { email: req.body.email } });
+  if (!user) {
+    if (!req.body.password) return res.status(400).json({ error: "PASSWORD_REQUIRED_FOR_NEW_USER" });
+    if (String(req.body.password).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
+    user = await prisma.user.create({
+      data: {
+        email: req.body.email,
+        phone: req.body.phone,
+        fullName: req.body.fullName,
+        passwordHash: await hashPassword(req.body.password),
+      },
+    });
+  }
+  const existing = await prisma.schoolMembership.findFirst({
+    where: { schoolId: school.id, userId: user.id },
+    select: { id: true },
+  });
+  if (existing) return res.status(400).json({ error: "ALREADY_A_MEMBER" });
+  const membership = await prisma.schoolMembership.create({
+    data: { schoolId: school.id, userId: user.id, role: req.body.role },
+  });
+  let guardiansLinked = 0;
+  if (req.body.role === "PARENT" && req.body.guardianPhone) {
+    const phone = normalizePhone(req.body.guardianPhone);
+    if (phone) {
+      const guardians = await prisma.guardian.findMany({ where: { schoolId: school.id } });
+      for (const g of guardians) {
+        if (normalizePhone(g.phone) === phone && g.userId !== user.id) {
+          await prisma.guardian.update({ where: { id: g.id }, data: { userId: user.id } });
+          guardiansLinked += 1;
+        }
+      }
+    }
+  }
+  return res.status(201).json({ userId: user.id, membership, guardiansLinked });
+}));
+
+// Phase 23: the operator EDITS a member — name / login email /
+// phone on the user record, membership status on the membership.
+router.patch("/platform/schools/:schoolId/members/:membershipId", asyncRoute(async (req, res) => {
+  const membership = await prisma.schoolMembership.findFirst({
+    where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+  });
+  if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
+  const { fullName, email, phone, status } = req.body || {};
+  if (status !== undefined) {
+    if (!["ACTIVE", "SUSPENDED"].includes(status)) return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
+    await prisma.schoolMembership.update({ where: { id: membership.id }, data: { status } });
+  }
+  const userData = {};
+  if (fullName !== undefined) userData.fullName = String(fullName).trim();
+  if (phone !== undefined) userData.phone = phone || null;
+  if (email !== undefined && email !== null && String(email).trim()) {
+    const taken = await prisma.user.findUnique({ where: { email: String(email).trim() } });
+    if (taken && taken.id !== membership.userId) return res.status(400).json({ error: "EMAIL_ALREADY_IN_USE" });
+    userData.email = String(email).trim();
+  }
+  if (Object.keys(userData).length) {
+    await prisma.user.update({ where: { id: membership.userId }, data: userData });
+  }
+  const fresh = await prisma.schoolMembership.findUnique({
+    where: { id: membership.id },
+    include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
+  });
+  return res.json({ member: {
+    membershipId: fresh.id, userId: fresh.userId, role: fresh.role, status: fresh.status,
+    fullName: fresh.user.fullName, email: fresh.user.email, phone: fresh.user.phone, isActive: fresh.user.isActive,
+  } });
+}));
+
+// Phase 23: the operator REMOVES a member from a school. The
+// membership row is deleted (teacher profile + assignments cascade)
+// UNLESS the member has sent notices — Notice.sender is Restrict, and
+// a school's notice history must not be destroyed; those members are
+// deactivated instead (membership INACTIVE). Either way, a user left
+// with no other memberships is deactivated and signed out everywhere.
+router.delete("/platform/schools/:schoolId/members/:membershipId", asyncRoute(async (req, res) => {
+  const membership = await prisma.schoolMembership.findFirst({
+    where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+    select: { id: true, userId: true, role: true },
+  });
+  if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
+  const sentNotices = await prisma.notice.count({
+    where: { schoolId: req.params.schoolId, senderMembershipId: membership.id },
+  });
+  let removed = false;
+  if (sentNotices === 0) {
+    await prisma.schoolMembership.delete({ where: { id: membership.id } });
+    removed = true;
+  } else {
+    await prisma.schoolMembership.update({ where: { id: membership.id }, data: { status: "INACTIVE" } });
+  }
+  const remaining = await prisma.schoolMembership.count({
+    where: { userId: membership.userId, status: { not: "INACTIVE" } },
+  });
+  let userDeactivated = false;
+  if (remaining === 0) {
+    await revokeSessions(membership.userId);
+    await prisma.user.update({ where: { id: membership.userId }, data: { isActive: false } });
+    userDeactivated = true;
+  }
+  return res.json({ removed, deactivated: !removed || userDeactivated, userDeactivated, role: membership.role });
 }));
 
 // Phase 23: the operator can reset ANY member's password (teacher,

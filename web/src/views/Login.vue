@@ -6,9 +6,10 @@ import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session }
 const router = useRouter();
 const route = useRoute();
 // Role-specific entry points: /login/parent, /login/teacher and
-// /login/staff lock this page to one audience (these URLs are the
+// /login/school lock this page to one audience (these URLs are the
 // future separate apps' starting points). Plain /login shows the
-// Parent/Staff tab switcher.
+// Parent/Staff tab switcher; the platform owner signs in there too
+// and lands on the console.
 const variant = route.meta.variant || "";
 const locked = computed(() => variant !== "");
 const tab = ref(variant === "parent" ? "parent" : "staff");
@@ -36,14 +37,12 @@ onMounted(async () => {
 
 const staffTitle = computed(() => {
   if (variant === "teacher") return "Teacher Login";
-  if (variant === "admin") return "School Admin Login";
-  if (variant === "owner") return "Owner Login";
+  if (variant === "school") return "School Login";
   return "Staff Login";
 });
 const staffNote = computed(() => {
   if (variant === "teacher") return "Use the email & password given by your school office.";
-  if (variant === "admin") return "For the school admin and principal — use the email & password issued for your school.";
-  if (variant === "owner") return "Platform owner only. This opens the Super Admin Console, above all schools.";
+  if (variant === "school") return "For the school admin, principal and office staff — use the email & password issued for your school.";
   return "For the school admin, principal and office staff — use the email & password given to you.";
 });
 
@@ -87,13 +86,10 @@ async function submit() {
   // account belongs to a different audience — say so clearly and
   // sign back out, instead of silently landing on the wrong app.
   const roles = myMemberships().map((m) => m.role);
-  const isOwner = !!currentUser()?.isPlatformAdmin;
   const wrongPage = (msg) => { session.clear(); error.value = msg; };
-  if (variant === "owner" && !isOwner) { wrongPage("This page is only for the platform owner. Your account is a school account — please use your school's login page."); return; }
-  if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or Staff login page."); return; }
+  if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
   if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
-  if (variant === "admin" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL"].includes(x))) { wrongPage("This page is for the school admin / principal only. Your account does not have that role."); return; }
-  if (variant === "staff" && !isOwner && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"].includes(x))) { wrongPage("This page is for school staff only. Parents use the Parent login page."); return; }
+  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and staff. Teachers use the Teacher login page, parents use the Parent login page."); return; }
   if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
@@ -156,11 +152,9 @@ async function submit() {
 
       <div v-if="locked" class="mt-5 pt-4 border-t border-slate-100 text-center text-sm text-slate-500">
         Not your page?
-        <router-link v-if="variant !== 'parent'" class="underline font-semibold" to="/login/parent">Parent</router-link><span v-if="variant !== 'parent'"> · </span>
-        <router-link v-if="variant !== 'teacher'" class="underline font-semibold" to="/login/teacher">Teacher</router-link><span v-if="variant !== 'teacher'"> · </span>
-        <router-link v-if="variant !== 'staff'" class="underline font-semibold" to="/login/staff">Staff</router-link><span v-if="variant !== 'staff'"> · </span>
-        <router-link v-if="variant !== 'admin'" class="underline font-semibold" to="/login/admin">School Admin</router-link><span v-if="variant !== 'admin'"> · </span>
-        <router-link v-if="variant !== 'owner'" class="underline font-semibold" to="/login/owner">Owner</router-link>
+        <router-link v-if="variant !== 'parent'" class="underline font-semibold" to="/login/parent">Parent login</router-link><span v-if="variant !== 'parent'"> · </span>
+        <router-link v-if="variant !== 'teacher'" class="underline font-semibold" to="/login/teacher">Teacher login</router-link><span v-if="variant !== 'teacher'"> · </span>
+        <router-link v-if="variant !== 'school'" class="underline font-semibold" to="/login/school">School login</router-link>
       </div>
     </div>
     <p class="text-[11px] text-white/40 mt-5">Install: browser menu → “Add to Home screen”</p>

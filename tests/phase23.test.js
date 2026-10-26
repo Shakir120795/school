@@ -1,5 +1,6 @@
-// Phase 23: console drill-in (members list grouped by role +
-// operator reset of ANY member's password, not only the admin).
+// Phase 23: console drill-in (members list grouped by role) +
+// FULL operator member management: add / edit / remove / reset
+// password for any member of any school, operator-only throughout.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 
@@ -69,6 +70,66 @@ test("operator resets a TEACHER's password (old 401, new 200)", async () => {
   assert.equal(oldLogin.status, 401);
   const newLogin = await H.api(base, "POST", "/auth/login", { body: { email: teacherEmail, password: "OpReset123!" } });
   assert.equal(newLogin.status, 200);
+});
+
+let crudMembershipId, crudEmail;
+test("operator ADDS a teacher directly; the new login works", async () => {
+  crudEmail = `crud-${Date.now()}@test.dev`;
+  const r = await H.api(base, "POST", `/platform/schools/${S.schoolId}/members`, {
+    token: S.opToken,
+    body: { email: crudEmail, fullName: "Crud Teacher", password: "CrudPass1!", role: "TEACHER" },
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.json));
+  crudMembershipId = r.json.membership.id;
+  const login = await H.api(base, "POST", "/auth/login", { body: { email: crudEmail, password: "CrudPass1!" } });
+  assert.equal(login.status, 200);
+  const dup = await H.api(base, "POST", `/platform/schools/${S.schoolId}/members`, {
+    token: S.opToken,
+    body: { email: crudEmail, fullName: "Crud Teacher", password: "CrudPass1!", role: "TEACHER" },
+  });
+  assert.equal(dup.status, 400);
+  assert.equal(dup.json.error, "ALREADY_A_MEMBER");
+});
+
+test("operator EDITS a member: name + login email change; new email logs in", async () => {
+  const newEmail = `crud-renamed-${Date.now()}@test.dev`;
+  const r = await H.api(base, "PATCH", `/platform/schools/${S.schoolId}/members/${crudMembershipId}`, {
+    token: S.opToken, body: { fullName: "Renamed Teacher", email: newEmail, phone: "9812345678" },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.member.fullName, "Renamed Teacher");
+  assert.equal(r.json.member.email, newEmail);
+  assert.equal(r.json.member.phone, "9812345678");
+  const list = await H.api(base, "GET", `/platform/schools/${S.schoolId}/members`, { token: S.opToken });
+  const inList = list.json.members.TEACHER.find((m) => m.membershipId === crudMembershipId);
+  assert.equal(inList.fullName, "Renamed Teacher");
+  const login = await H.api(base, "POST", "/auth/login", { body: { email: newEmail, password: "CrudPass1!" } });
+  assert.equal(login.status, 200);
+  crudEmail = newEmail;
+});
+
+test("operator REMOVES a member: membership gone, login fails afterwards", async () => {
+  const r = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${crudMembershipId}`, { token: S.opToken });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.removed, true);
+  assert.equal(r.json.userDeactivated, true, "user had no other school — must be deactivated");
+  const login = await H.api(base, "POST", "/auth/login", { body: { email: crudEmail, password: "CrudPass1!" } });
+  assert.equal(login.status, 401);
+  const list = await H.api(base, "GET", `/platform/schools/${S.schoolId}/members`, { token: S.opToken });
+  assert.ok(!list.json.members.TEACHER.some((m) => m.membershipId === crudMembershipId));
+});
+
+test("non-operator is denied on add / edit / remove too", async () => {
+  const add = await H.api(base, "POST", `/platform/schools/${S.schoolId}/members`, {
+    token: S.adminToken, body: { email: "sneak@test.dev", fullName: "Sneak", password: "SneakPass1!", role: "TEACHER" },
+  });
+  assert.equal(add.status, 403);
+  const edit = await H.api(base, "PATCH", `/platform/schools/${S.schoolId}/members/${teacherMembershipId}`, {
+    token: S.adminToken, body: { fullName: "Hijacked" },
+  });
+  assert.equal(edit.status, 403);
+  const del = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${teacherMembershipId}`, { token: S.adminToken });
+  assert.equal(del.status, 403);
 });
 
 test("reset for a membership of another school is 404, not a cross-tenant write", async () => {

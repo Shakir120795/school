@@ -68,13 +68,11 @@ onMounted(load);
 
   <div class="card mb-4">
     <h2 class="font-bold mb-1">Login links for your school</h2>
-    <p class="text-sm text-slate-500 mb-3">Share the right link with each person. Parents, teachers and staff each have their own login page.</p>
+    <p class="text-sm text-slate-500 mb-3">Share the right link with each person. Parents, teachers and the school office each have their own login page.</p>
     <div class="grid sm:grid-cols-3 gap-2 text-sm">
       <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>👨‍👩‍👧 {{ origin }}/login/parent</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/parent')">Copy</button></div>
       <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🧑‍🏫 {{ origin }}/login/teacher</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/teacher')">Copy</button></div>
-      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🏫 {{ origin }}/login/staff</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/staff')">Copy</button></div>
-      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🛡️ {{ origin }}/login/admin</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/admin')">Copy</button></div>
-      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>👑 {{ origin }}/login/owner</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/owner')">Copy</button></div>
+      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🏫 {{ origin }}/login/school</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/school')">Copy</button></div>
     </div>
   </div>
 

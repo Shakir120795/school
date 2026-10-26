@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api } from "../api.js";
 
 // Super Admin console (Phase 21) — platform operator only.
@@ -40,8 +40,52 @@ async function resetAdmin(s) {
 const openId = ref("");
 const members = ref(null);
 const membersBusy = ref(false);
-const ROLE_ORDER = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
-const ROLE_LABEL = { SCHOOL_ADMIN: "School Admin", PRINCIPAL: "Principal", TEACHER: "Teachers", STAFF: "Staff", PARENT: "Parents" };
+const groups = computed(() => {
+  if (!members.value) return [];
+  const m = members.value;
+  return [
+    { key: "ADMINS", label: "Admins", items: [...(m.SCHOOL_ADMIN || []), ...(m.PRINCIPAL || [])] },
+    { key: "TEACHER", label: "Teachers", items: m.TEACHER || [] },
+    { key: "STAFF", label: "Staff", items: m.STAFF || [] },
+    { key: "PARENT", label: "Parents", items: m.PARENT || [] },
+  ].filter((g) => g.items.length);
+});
+const addForm = ref({ fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" });
+async function refreshMembers(s) {
+  const r = await api(`/platform/schools/${s.id}/members`, { school: false });
+  if (r.status === 200) members.value = r.json.members;
+}
+async function addMember(s) {
+  err.value = ""; msg.value = "";
+  const r = await api(`/platform/schools/${s.id}/members`, { method: "POST", school: false, body: { ...addForm.value } });
+  if (r.status === 201) {
+    msg.value = `${addForm.value.fullName} added to ${s.name} (${addForm.value.role}).` + (r.json.guardiansLinked ? ` Linked to ${r.json.guardiansLinked} guardian record(s) — children visible.` : "");
+    addForm.value = { fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" };
+    await refreshMembers(s); await load();
+  } else err.value = r.json?.error || "Could not add member";
+}
+async function editMember(s, m) {
+  const fullName = prompt("Full name:", m.fullName); if (fullName === null) return;
+  const email = prompt("Login email / ID:", m.email || ""); if (email === null) return;
+  const phone = prompt("Phone (leave blank for none):", m.phone || ""); if (phone === null) return;
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "PATCH", school: false, body: { fullName, email, phone } });
+  if (r.status === 200) { msg.value = `${fullName} updated.`; await refreshMembers(s); }
+  else err.value = r.json?.error || "Edit failed";
+}
+async function toggleMemberStatus(s, m) {
+  const status = m.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "PATCH", school: false, body: { status } });
+  if (r.status === 200) { msg.value = `${m.fullName} is now ${status} at ${s.name}.`; await refreshMembers(s); }
+  else err.value = r.json?.error || "Status change failed";
+}
+async function removeMember(s, m) {
+  if (!confirm(`Remove ${m.fullName} (${m.role}) from ${s.name}? Their login for this school will stop working.`)) return;
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "DELETE", school: false });
+  if (r.status === 200) {
+    msg.value = r.json.removed ? `${m.fullName} removed from ${s.name}.` : `${m.fullName} deactivated — they had sent notices, so the school's history is kept.`;
+    await refreshMembers(s); await load();
+  } else err.value = r.json?.error || "Remove failed";
+}
 async function toggleMembers(s) {
   if (openId.value === s.id) { openId.value = ""; members.value = null; return; }
   openId.value = s.id; members.value = null; membersBusy.value = true; err.value = "";
@@ -98,19 +142,41 @@ onMounted(load);
         <div v-if="openId === s.id" class="mt-3 border-t border-slate-100 pt-3">
           <p v-if="membersBusy" class="text-sm text-slate-400">Loading members…</p>
           <template v-else-if="members">
-            <template v-for="role in ROLE_ORDER" :key="role">
-              <div v-if="members[role]?.length" class="mb-3">
-                <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">{{ ROLE_LABEL[role] }} ({{ members[role].length }})</div>
-                <div v-for="m in members[role]" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
-                  <span class="font-semibold text-sm">{{ m.fullName }}</span>
-                  <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
-                  <span v-if="role === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] ml-auto" @click="resetMember(s, m)">Reset password</button>
-                </div>
+            <div v-for="g in groups" :key="g.key" class="mb-3">
+              <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">{{ g.label }} ({{ g.items.length }})</div>
+              <div v-for="m in g.items" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
+                <span class="font-semibold text-sm">{{ m.fullName }}</span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
+                <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
+                <span v-if="g.key === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
+                <span class="ml-auto flex flex-wrap gap-1">
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="toggleMemberStatus(s, m)">{{ m.status === "ACTIVE" ? "Deactivate" : "Activate" }}</button>
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="resetMember(s, m)">Reset password</button>
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="removeMember(s, m)">Remove</button>
+                </span>
               </div>
-            </template>
-            <p v-if="!Object.values(members).some((g) => g.length)" class="text-sm text-slate-400">No members yet.</p>
+            </div>
+            <p v-if="!groups.length" class="text-sm text-slate-400">No members yet — add the first one below.</p>
+            <form class="bg-slate-50 rounded-2xl p-3 grid gap-2 mt-2" @submit.prevent="addMember(s)">
+              <div class="text-sm font-bold">Add a member to {{ s.name }}</div>
+              <div class="grid sm:grid-cols-2 gap-2">
+                <input v-model="addForm.fullName" class="input" required placeholder="Full name" />
+                <input v-model="addForm.email" type="email" class="input" required placeholder="Login email / ID" />
+                <input v-model="addForm.password" class="input" required minlength="8" placeholder="Password (min 8 characters)" />
+                <input v-model="addForm.phone" class="input" placeholder="Phone (optional)" />
+                <select v-model="addForm.role" class="input">
+                  <option value="TEACHER">Teacher</option>
+                  <option value="PARENT">Parent</option>
+                  <option value="SCHOOL_ADMIN">School Admin</option>
+                  <option value="PRINCIPAL">Principal</option>
+                  <option value="STAFF">Staff (office)</option>
+                </select>
+                <input v-if="addForm.role === 'PARENT'" v-model="addForm.guardianPhone" class="input" placeholder="Guardian mobile — links their children" />
+              </div>
+              <button class="btn btn-primary !py-2 text-sm">Add member</button>
+            </form>
           </template>
         </div>
       </div>
