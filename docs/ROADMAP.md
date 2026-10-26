@@ -32,7 +32,7 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Phase 16 — DONE (26 Oct): fees ledger (heads + class structures, idempotent invoice generation, payments with receipt numbers, waive, summary; gateway later)
   recording + receipts, parent fee view; gateway integration after
 - Phase 17 — DONE (26 Oct): class timetable grids + teacher my-periods + merged school calendar (events + holidays)
-- Phase 18 — Exams, marks, report cards (§9)
+- Phase 18 — DONE (26 Oct): exams + marks entry, publish-gated parent report cards (per-exam %/grade + overall), publish announces to class parents
 - Phase 19 — Bulk import students/guardians (CSV) + report exports (§16/§21)
 - Phase 20 — Support tickets (§23/§30) + PTM bookings (§17)
 - Later / hardware-dependent: transport + GPS (§15), library (§19),

@@ -213,6 +213,7 @@ model School {
   feeInvoices            FeeInvoice[]
   timetableSlots         TimetableSlot[]
   calendarEvents         CalendarEvent[]
+  exams                  Exam[]
 
   @@index([status])
 }
@@ -332,6 +333,7 @@ model Classroom {
   homework                 Homework[]
   feeStructures            FeeStructure[]
   timetableSlots           TimetableSlot[]
+  exams                    Exam[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, academicYearId, name, section])
@@ -367,6 +369,7 @@ model Student {
   homeworkCompletions HomeworkCompletion[]
   leaveApplications   LeaveApplication[]
   feeInvoices         FeeInvoice[]
+  examMarks           ExamMark[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -405,6 +408,7 @@ model Subject {
   teacherAssignments TeacherClassAssignment[]
   homework           Homework[]
   timetableSlots     TimetableSlot[]
+  exams              Exam[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, code])
@@ -1181,6 +1185,49 @@ model CalendarEvent {
   school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
 
   @@index([schoolId, eventDate])
+}
+
+// Exams & marks (Phase 18, PDF §9). An exam belongs to one class +
+// subject with max marks. Marks are entered per student; parents see
+// results only after the school publishes them (resultsPublished).
+// Grades are computed from percentage wherever shown — never stored.
+model Exam {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  name                  String
+  classroomId           String
+  subjectId             String
+  examDate              DateTime @db.Date
+  maxMarks              Float
+  resultsPublished      Boolean  @default(false)
+  createdByMembershipId String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classroom Classroom  @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  subject   Subject    @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Restrict)
+  examMarks ExamMark[]
+
+  @@index([schoolId, classroomId])
+}
+
+model ExamMark {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  examId                String
+  studentId             String
+  marksObtained         Float
+  remark                String?
+  enteredByMembershipId String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([examId, studentId])
+  @@index([schoolId, studentId])
 }
 
 model OtpLoginChallenge {
