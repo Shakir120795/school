@@ -72,7 +72,7 @@ onMounted(load);
       <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#fef3c7">🔔</span>Alerts<span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
       <router-link to="/notices" class="tile"><span class="tile-ico" style="background:#e0e7ff">📣</span>Notices</router-link>
       <a href="#teachers" class="tile"><span class="tile-ico" style="background:#dcfce7">🧑‍🏫</span>Teachers</a>
-      <div class="tile tile-soon"><span class="tile-ico" style="background:#ffedd5">📚</span>Homework<span class="soon">Soon</span></div>
+      <router-link to="/homework" class="tile"><span class="tile-ico" style="background:#ffedd5">📚</span>Homework</router-link>
       <div class="tile tile-soon"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees<span class="soon">Soon</span></div>
       <div class="tile tile-soon"><span class="tile-ico" style="background:#e0f2fe">🗓️</span>Time Table<span class="soon">Soon</span></div>
       <router-link to="/pickup" class="tile"><span class="tile-ico" style="background:#fef9c3">🚌</span>Pickup</router-link>

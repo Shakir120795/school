@@ -9,6 +9,7 @@ import pushRoutes from "./routes/push.js";
 import inboxRoutes from "./routes/inbox.js";
 import pickupRoutes from "./routes/pickup.js";
 import rollcallRoutes from "./routes/rollcall.js";
+import homeworkRoutes from "./routes/homework.js";
 import analyticsRoutes from "./routes/analytics.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { processOutboxOnce } from "./services/outbox.js";
@@ -54,6 +55,7 @@ export function createApp() {
   app.use("/", inboxRoutes); // /schools/:id/my-notifications
   app.use("/", pickupRoutes); // /schools/:id pickup persons, approvals, release
   app.use("/", rollcallRoutes); // /schools/:id/rollcall/*
+  app.use("/", homeworkRoutes); // /schools/:id/homework/*
   app.use("/", analyticsRoutes); // /schools/:id/analytics/*
   // Serverless cron (Vercel Cron sends Authorization: Bearer <CRON_SECRET>).
   app.get("/internal/process-outbox", async (req, res) => {

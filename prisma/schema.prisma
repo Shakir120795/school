@@ -206,6 +206,7 @@ model School {
   pickupPersons          PickupPerson[]
   pickupApprovals        PickupApproval[]
   pickupLogs             PickupLog[]
+  homework               Homework[]
 
   @@index([status])
 }
@@ -322,6 +323,7 @@ model Classroom {
   teacherAssignments       TeacherClassAssignment[]
   classInchargeAssignments ClassInchargeAssignment[]
   noticeTargets            NoticeTarget[]
+  homework                 Homework[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, academicYearId, name, section])
@@ -343,17 +345,18 @@ model Student {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  school          School              @relation(fields: [schoolId], references: [id], onDelete: Restrict)
-  pickupPersons   PickupPerson[]
-  pickupApprovals PickupApproval[]
-  pickupLogs      PickupLog[]
-  academicYear    AcademicYear?       @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
-  classroom       Classroom?          @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Restrict)
-  guardianLinks   StudentGuardian[]
-  noticeTargets   NoticeTarget[]
-  cardCredentials CardCredential[]
-  scanEvents      StudentScanEvent[]
-  attendances     StudentAttendance[]
+  school              School               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  pickupPersons       PickupPerson[]
+  pickupApprovals     PickupApproval[]
+  pickupLogs          PickupLog[]
+  academicYear        AcademicYear?        @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Restrict)
+  classroom           Classroom?           @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Restrict)
+  guardianLinks       StudentGuardian[]
+  noticeTargets       NoticeTarget[]
+  cardCredentials     CardCredential[]
+  scanEvents          StudentScanEvent[]
+  attendances         StudentAttendance[]
+  homeworkCompletions HomeworkCompletion[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -390,6 +393,7 @@ model Subject {
 
   school             School                   @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   teacherAssignments TeacherClassAssignment[]
+  homework           Homework[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, code])
@@ -546,22 +550,22 @@ model StudentScanEvent {
 }
 
 model StudentAttendance {
-  id          String              @id @default(cuid())
-  schoolId    String
-  studentId   String
-  localDate   DateTime            @db.Date // date in the SCHOOL's timezone
-  status      AttendanceDayStatus
-  entryAt     DateTime?
-  exitAt      DateTime?
-  isLate      Boolean             @default(false)
-  isEarlyExit Boolean             @default(false)
-  reviewFlag  String?
+  id                   String              @id @default(cuid())
+  schoolId             String
+  studentId            String
+  localDate            DateTime            @db.Date // date in the SCHOOL's timezone
+  status               AttendanceDayStatus
+  entryAt              DateTime?
+  exitAt               DateTime?
+  isLate               Boolean             @default(false)
+  isEarlyExit          Boolean             @default(false)
+  reviewFlag           String?
   // Roll-call audit (Phase 13): who marked this day and when, when the
   // status came from a teacher's class roll-call rather than a gate scan.
   markedByMembershipId String?
   markedAt             DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   school  School  @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
@@ -939,6 +943,47 @@ model PickupLog {
   student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+  @@index([schoolId, studentId])
+}
+
+// Homework (Phase 14, PDF §10). Teachers assign homework to a class;
+// parents see it per child and can mark it done; teachers track who
+// has completed it. Creating homework also announces it to the class
+// through the notice pipeline (type HOMEWORK).
+model Homework {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  classroomId           String
+  subjectId             String?
+  title                 String
+  description           String?
+  dueDate               DateTime @db.Date
+  attachmentUrl         String?
+  createdByMembershipId String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  school              School               @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classroom           Classroom            @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  subject             Subject?             @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Restrict)
+  homeworkCompletions HomeworkCompletion[]
+
+  @@index([schoolId, classroomId, dueDate])
+}
+
+model HomeworkCompletion {
+  id             String   @id @default(cuid())
+  schoolId       String
+  homeworkId     String
+  studentId      String
+  guardianId     String?
+  markedByUserId String
+  createdAt      DateTime @default(now())
+
+  homework Homework @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([homeworkId, studentId])
   @@index([schoolId, studentId])
 }
 

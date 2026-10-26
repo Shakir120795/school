@@ -7,6 +7,9 @@ const routes = [
   { path: "/people", component: () => import("./views/People.vue") },
   { path: "/attendance", component: () => import("./views/Attendance.vue") },
   { path: "/scanner", component: () => import("./views/Scanner.vue") },
+  { path: "/pickup", component: () => import("./views/Pickup.vue") },
+  { path: "/rollcall", component: () => import("./views/RollCall.vue") },
+  { path: "/homework", component: () => import("./views/Homework.vue") },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
@@ -23,5 +26,7 @@ router.beforeEach((to) => {
   const role = myRole();
   if (to.path === "/parent" && role !== "PARENT") return "/";
   if (["/people", "/settings"].includes(to.path) && !["SCHOOL_ADMIN", "PRINCIPAL", "PLATFORM_ADMIN"].includes(role)) return "/";
+  if (to.path === "/rollcall" && !["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"].includes(role)) return "/";
+  if (to.path === "/scanner" && role === "PARENT") return "/parent";
   return true;
 });

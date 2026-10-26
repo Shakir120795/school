@@ -11,28 +11,16 @@ import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute } from "../utils/http.js";
 import { localParts } from "../utils/time.js";
 import { alertGuardians } from "../services/guardianAlerts.js";
+import { teacherClassIds } from "../services/teacherClasses.js";
 
 const router = Router();
 const ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
 const MARKABLE = ["PRESENT", "LATE", "ABSENT", "ON_LEAVE"];
 
-async function teacherClassIds(req, schoolId) {
-  const profile = await prisma.teacherProfile.findFirst({
-    where: { schoolId, membershipId: req.membership.id },
-    include: { classAssignments: true, inchargeAssignments: true },
-  });
-  if (!profile) return [];
-  const ids = new Set();
-  for (const a of profile.classAssignments) ids.add(a.classroomId);
-  for (const i of profile.inchargeAssignments) {
-    if (!i.effectiveTo || i.effectiveTo > new Date()) ids.add(i.classroomId);
-  }
-  return [...ids];
-}
 
 async function assertClassAccess(req, res, schoolId, classroomId) {
   if (req.membership.role === "TEACHER") {
-    const ids = await teacherClassIds(req, schoolId);
+    const ids = await teacherClassIds(schoolId, req.membership.id);
     if (!ids.includes(classroomId)) {
       res.status(403).json({ error: "CLASS_NOT_ASSIGNED" });
       return false;
@@ -54,7 +42,7 @@ router.get(
     const schoolId = req.params.schoolId;
     let where = { schoolId };
     if (req.membership.role === "TEACHER") {
-      const ids = await teacherClassIds(req, schoolId);
+      const ids = await teacherClassIds(schoolId, req.membership.id);
       where = { schoolId, id: { in: ids } };
     }
     const classes = await prisma.classroom.findMany({ where, orderBy: [{ name: "asc" }, { section: "asc" }] });
