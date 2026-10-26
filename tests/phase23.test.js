@@ -108,15 +108,26 @@ test("operator EDITS a member: name + login email change; new email logs in", as
   crudEmail = newEmail;
 });
 
-test("operator REMOVES a member: membership gone, login fails afterwards", async () => {
-  const r = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${crudMembershipId}`, { token: S.opToken });
+test("operator REMOVES a member with a reason: login fails, removal is recorded", async () => {
+  const noReason = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${crudMembershipId}`, { token: S.opToken });
+  assert.equal(noReason.status, 400);
+  assert.equal(noReason.json.error, "REMOVAL_REASON_REQUIRED");
+  const r = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${crudMembershipId}`, {
+    token: S.opToken, body: { reason: "DUPLICATE" },
+  });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.equal(r.json.removed, true);
+  assert.equal(r.json.reason, "DUPLICATE");
   assert.equal(r.json.userDeactivated, true, "user had no other school — must be deactivated");
   const login = await H.api(base, "POST", "/auth/login", { body: { email: crudEmail, password: "CrudPass1!" } });
   assert.equal(login.status, 401);
   const list = await H.api(base, "GET", `/platform/schools/${S.schoolId}/members`, { token: S.opToken });
-  assert.ok(!list.json.members.TEACHER.some((m) => m.membershipId === crudMembershipId));
+  assert.ok(!list.json.members.TEACHER.some((m) => m.membershipId === crudMembershipId), "gone from the active list");
+  const rec = list.json.removed.find((m) => m.membershipId === crudMembershipId);
+  assert.ok(rec, "present in the removed list");
+  assert.equal(rec.reason, "DUPLICATE");
+  assert.ok(rec.removedBy, "remover is recorded");
+  assert.ok(rec.removedAt, "removal time is recorded");
 });
 
 test("non-operator is denied on add / edit / remove too", async () => {
@@ -130,6 +141,58 @@ test("non-operator is denied on add / edit / remove too", async () => {
   assert.equal(edit.status, 403);
   const del = await H.api(base, "DELETE", `/platform/schools/${S.schoolId}/members/${teacherMembershipId}`, { token: S.adminToken });
   assert.equal(del.status, 403);
+});
+
+let schoolTeacherMid, schoolTeacherEmail;
+test("SCHOOL ADMIN edits a teacher inside their own school", async () => {
+  schoolTeacherEmail = `steam-${Date.now()}@test.dev`;
+  const created = await H.api(base, "POST", `/schools/${S.schoolId}/users`, {
+    token: S.adminToken, schoolId: S.schoolId,
+    body: { email: schoolTeacherEmail, fullName: "School Teacher", password: "SteamPass1!", role: "TEACHER" },
+  });
+  assert.equal(created.status, 201, JSON.stringify(created.json));
+  schoolTeacherMid = created.json.membership.id;
+  const r = await H.api(base, "PATCH", `/schools/${S.schoolId}/users/${schoolTeacherMid}`, {
+    token: S.adminToken, schoolId: S.schoolId, body: { fullName: "Edited By Admin", phone: "9812345678" },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.membership.user.fullName, "Edited By Admin");
+  assert.equal(r.json.membership.user.phone, "9812345678");
+});
+
+test("SCHOOL ADMIN removes a teacher WITH a reason: login fails, record kept", async () => {
+  const noReason = await H.api(base, "DELETE", `/schools/${S.schoolId}/users/${schoolTeacherMid}`, {
+    token: S.adminToken, schoolId: S.schoolId,
+  });
+  assert.equal(noReason.status, 400);
+  const r = await H.api(base, "DELETE", `/schools/${S.schoolId}/users/${schoolTeacherMid}`, {
+    token: S.adminToken, schoolId: S.schoolId, body: { reason: "RESIGNED", note: "Joined another school" },
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(r.json.removed, true);
+  const login = await H.api(base, "POST", "/auth/login", { body: { email: schoolTeacherEmail, password: "SteamPass1!" } });
+  assert.equal(login.status, 401);
+  const removed = await H.api(base, "GET", `/schools/${S.schoolId}/users/removed`, { token: S.adminToken, schoolId: S.schoolId });
+  assert.equal(removed.status, 200);
+  const rec = removed.json.removed.find((m) => m.membershipId === schoolTeacherMid);
+  assert.ok(rec, "school admin can see the removal record");
+  assert.equal(rec.reason, "RESIGNED");
+  assert.equal(rec.note, "Joined another school");
+});
+
+test("a school admin CANNOT touch another school's members", async () => {
+  const S2 = await H.bootstrapSchool(base, "phase23-x");
+  const edit = await H.api(base, "PATCH", `/schools/${S.schoolId}/users/${teacherMembershipId}`, {
+    token: S2.adminToken, schoolId: S.schoolId, body: { fullName: "Hijacked" },
+  });
+  assert.ok([403, 404].includes(edit.status), `expected 403/404, got ${edit.status}`);
+  const del = await H.api(base, "DELETE", `/schools/${S.schoolId}/users/${teacherMembershipId}`, {
+    token: S2.adminToken, schoolId: S.schoolId, body: { reason: "OTHER", note: "cross-school attempt" },
+  });
+  assert.ok([403, 404].includes(del.status), `expected 403/404, got ${del.status}`);
+  const list = await H.api(base, "GET", `/platform/schools/${S.schoolId}/members`, { token: S.opToken });
+  const t = list.json.members.TEACHER.find((m) => m.membershipId === teacherMembershipId);
+  assert.equal(t.fullName, "Teacher One", "teacher untouched by the cross-school attempt");
 });
 
 test("reset for a membership of another school is 404, not a cross-tenant write", async () => {

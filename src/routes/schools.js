@@ -4,6 +4,7 @@ import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
+import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 
 const router = Router();
 const WRITE = ADMIN_ROLES;
@@ -168,23 +169,79 @@ router.get(
   })
 );
 
-// Activate / suspend a member's access to THIS school (admin action).
+// Edit a member of THIS school (Phase 23 school-side CRUD):
+// membership status (activate/suspend) and/or the login profile
+// fields — fullName / login email / phone — on the user record.
 router.patch(
   "/:schoolId/users/:membershipId",
   requireAuth,
   requireSchool(WRITE),
   asyncRoute(async (req, res) => {
-    const { status } = req.body || {};
-    if (!["ACTIVE", "SUSPENDED"].includes(status)) {
-      return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
-    }
+    const { status, fullName, email, phone } = req.body || {};
     const target = await prisma.schoolMembership.findFirst({
       where: { id: req.params.membershipId, schoolId: req.params.schoolId },
     });
     if (!target) return res.status(404).json({ error: "MEMBERSHIP_NOT_FOUND" });
-    if (target.id === req.membership.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_STATUS" });
-    const membership = await prisma.schoolMembership.update({ where: { id: target.id }, data: { status } });
+    if (status !== undefined) {
+      if (!["ACTIVE", "SUSPENDED"].includes(status)) {
+        return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
+      }
+      if (target.id === req.membership.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_STATUS" });
+      await prisma.schoolMembership.update({ where: { id: target.id }, data: { status } });
+    }
+    const userData = {};
+    if (fullName !== undefined) userData.fullName = String(fullName).trim();
+    if (phone !== undefined) userData.phone = phone || null;
+    if (email !== undefined && email !== null && String(email).trim()) {
+      const taken = await prisma.user.findUnique({ where: { email: String(email).trim() } });
+      if (taken && taken.id !== target.userId) return res.status(400).json({ error: "EMAIL_ALREADY_IN_USE" });
+      userData.email = String(email).trim();
+    }
+    if (Object.keys(userData).length) {
+      await prisma.user.update({ where: { id: target.userId }, data: userData });
+    }
+    const membership = await prisma.schoolMembership.findUnique({
+      where: { id: target.id },
+      include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
+    });
     return res.json({ membership });
+  })
+);
+
+// Removed members of THIS school, with their removal records.
+router.get(
+  "/:schoolId/users/removed",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    return res.json({ removed: await removedMembers(req.params.schoolId) });
+  })
+);
+
+// Remove a member from THIS school (Phase 23): a recorded soft
+// removal — reason required ("Other" needs a note). Same shared
+// logic as the operator console remove.
+router.delete(
+  "/:schoolId/users/:membershipId",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const parsed = parseRemoval(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const target = await prisma.schoolMembership.findFirst({
+      where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+      select: { id: true, userId: true, role: true },
+    });
+    if (!target) return res.status(404).json({ error: "MEMBERSHIP_NOT_FOUND" });
+    if (target.id === req.membership.id) return res.status(400).json({ error: "CANNOT_REMOVE_SELF" });
+    const { userDeactivated } = await softRemoveMember({
+      schoolId: req.params.schoolId,
+      membership: target,
+      actorUserId: req.user.id,
+      reason: parsed.reason,
+      note: parsed.note,
+    });
+    return res.json({ removed: true, reason: parsed.reason, userDeactivated, role: target.role });
   })
 );
 

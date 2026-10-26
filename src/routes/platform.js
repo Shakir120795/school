@@ -9,6 +9,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
+import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 
 const router = Router();
 
@@ -83,7 +84,7 @@ router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =>
   });
   if (!school) return res.status(404).json({ error: "NOT_FOUND" });
   const memberships = await prisma.schoolMembership.findMany({
-    where: { schoolId: school.id },
+    where: { schoolId: school.id, status: { not: "INACTIVE" } },
     include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -125,7 +126,8 @@ router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =>
     prisma.student.count({ where: { schoolId: school.id, status: "ACTIVE" } }),
     prisma.classroom.count({ where: { schoolId: school.id } }),
   ]);
-  return res.json({ school: { ...school, students, classes }, members, total: memberships.length });
+  const removed = await removedMembers(school.id);
+  return res.json({ school: { ...school, students, classes }, members, total: memberships.length, removed });
 }));
 
 // Phase 23: the operator ADDS members to a school directly — the
@@ -208,38 +210,21 @@ router.patch("/platform/schools/:schoolId/members/:membershipId", asyncRoute(asy
   } });
 }));
 
-// Phase 23: the operator REMOVES a member from a school. The
-// membership row is deleted (teacher profile + assignments cascade)
-// UNLESS the member has sent notices — Notice.sender is Restrict, and
-// a school's notice history must not be destroyed; those members are
-// deactivated instead (membership INACTIVE). Either way, a user left
-// with no other memberships is deactivated and signed out everywhere.
+// Phase 23: the operator REMOVES a member from a school — always a
+// recorded soft removal (reason required; see utils/memberRemoval).
 router.delete("/platform/schools/:schoolId/members/:membershipId", asyncRoute(async (req, res) => {
+  const parsed = parseRemoval(req.body);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
   const membership = await prisma.schoolMembership.findFirst({
     where: { id: req.params.membershipId, schoolId: req.params.schoolId },
     select: { id: true, userId: true, role: true },
   });
   if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
-  const sentNotices = await prisma.notice.count({
-    where: { schoolId: req.params.schoolId, senderMembershipId: membership.id },
+  const { userDeactivated } = await softRemoveMember({
+    schoolId: req.params.schoolId, membership, actorUserId: req.user.id,
+    reason: parsed.reason, note: parsed.note,
   });
-  let removed = false;
-  if (sentNotices === 0) {
-    await prisma.schoolMembership.delete({ where: { id: membership.id } });
-    removed = true;
-  } else {
-    await prisma.schoolMembership.update({ where: { id: membership.id }, data: { status: "INACTIVE" } });
-  }
-  const remaining = await prisma.schoolMembership.count({
-    where: { userId: membership.userId, status: { not: "INACTIVE" } },
-  });
-  let userDeactivated = false;
-  if (remaining === 0) {
-    await revokeSessions(membership.userId);
-    await prisma.user.update({ where: { id: membership.userId }, data: { isActive: false } });
-    userDeactivated = true;
-  }
-  return res.json({ removed, deactivated: !removed || userDeactivated, userDeactivated, role: membership.role });
+  return res.json({ removed: true, reason: parsed.reason, userDeactivated, role: membership.role });
 }));
 
 // Phase 23: the operator can reset ANY member's password (teacher,

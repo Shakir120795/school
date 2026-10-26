@@ -26,9 +26,13 @@ const filtered = computed(() =>
 const roleChip = (r) =>
   ({ SCHOOL_ADMIN: "bg-violet-100 text-violet-700", PRINCIPAL: "bg-indigo-100 text-indigo-700", TEACHER: "bg-sky-100 text-sky-700", STAFF: "bg-slate-200 text-slate-600", PARENT: "bg-emerald-100 text-emerald-700" })[r];
 
+const removedList = ref([]);
+const REASON_LABEL = { LEFT_SCHOOL: "Naam katwaya — school chhoda", RESIGNED: "Staff ne chhoda", DUPLICATE: "Duplicate ID galti se bani", OTHER: "Other" };
 async function load() {
   const r = await api(`/schools/${sid}/users`);
-  if (r.status === 200) memberships.value = r.json.memberships;
+  if (r.status === 200) memberships.value = r.json.memberships.filter((m) => m.status !== "INACTIVE");
+  const rr = await api(`/schools/${sid}/users/removed`);
+  if (rr.status === 200) removedList.value = rr.json.removed;
 }
 async function createLogin() {
   const r = await api(`/schools/${sid}/users`, { method: "POST", body: form.value });
@@ -51,6 +55,28 @@ async function toggleStatus(m) {
   const r = await api(`/schools/${sid}/users/${m.id}`, { method: "PATCH", body: { status: next } });
   if (r.status === 200) { m.status = next; msg.value = `${m.user.fullName} is now ${next}.`; }
   else msg.value = r.json.error || "Could not change status.";
+}
+async function editMember(m) {
+  const fullName = prompt("Full name:", m.user.fullName); if (fullName === null) return;
+  const email = prompt("Login email / ID:", m.user.email || ""); if (email === null) return;
+  const phone = prompt("Phone (leave blank for none):", m.user.phone || ""); if (phone === null) return;
+  const r = await api(`/schools/${sid}/users/${m.id}`, { method: "PATCH", body: { fullName, email, phone } });
+  if (r.status === 200) { msg.value = `${fullName} updated.`; load(); }
+  else msg.value = r.json.error || "Could not edit member.";
+}
+const removeTarget = ref(null);
+const removeForm = ref({ reason: "LEFT_SCHOOL", note: "" });
+function openRemove(m) {
+  removeTarget.value = m;
+  removeForm.value = { reason: "LEFT_SCHOOL", note: "" };
+}
+async function confirmRemove() {
+  const m = removeTarget.value;
+  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { msg.value = "“Other” ke liye note likhna zaroori hai."; return; }
+  const r = await api(`/schools/${sid}/users/${m.id}`, { method: "DELETE", body: { reason: removeForm.value.reason, note: removeForm.value.note.trim() || undefined } });
+  removeTarget.value = null;
+  if (r.status === 200) { msg.value = `${m.user.fullName} removed (${REASON_LABEL[r.json.reason]}).`; load(); }
+  else msg.value = r.json.error || "Could not remove member.";
 }
 onMounted(load);
 </script>
@@ -107,10 +133,38 @@ onMounted(load);
               <td class="p-3"><div class="font-semibold">{{ m.user.fullName }}</div><div class="text-xs text-slate-400">{{ m.user.email }}<span v-if="m.user.phone"> · {{ m.user.phone }}</span></div></td>
               <td class="p-3"><span class="chip" :class="roleChip(m.role)">{{ m.role.replace("_", " ") }}</span></td>
               <td class="p-3"><span class="chip" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ m.status }}</span></td>
-              <td class="p-3 text-right whitespace-nowrap"><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="resetPassword(m)">Reset password</button><button type="button" class="text-xs font-bold" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button></td>
+              <td class="p-3 text-right whitespace-nowrap"><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="editMember(m)">Edit</button><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="resetPassword(m)">Reset password</button><button type="button" class="text-xs font-bold mr-3" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button><button type="button" class="text-xs font-bold text-rose-700" @click="openRemove(m)">Remove</button></td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div v-if="removedList.length" class="card mt-4">
+    <h2 class="font-bold mb-1">Removed members ({{ removedList.length }})</h2>
+    <p class="text-sm text-slate-500 mb-3">Inke login band hain. Wajah ke saath record rehta hai — kab, kisne, kyun hataya.</p>
+    <div v-for="m in removedList" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0 opacity-70">
+      <span class="font-semibold text-sm">{{ m.fullName }}</span>
+      <span class="chip" :class="roleChip(m.role)">{{ m.role.replace("_", " ") }}</span>
+      <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
+      <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
+    </div>
+  </div>
+
+  <div v-if="removeTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="removeTarget = null">
+    <div class="card w-full max-w-md">
+      <h2 class="font-bold mb-1">Remove {{ removeTarget.user.fullName }}?</h2>
+      <p class="text-sm text-slate-500 mb-3">{{ removeTarget.role.replace("_", " ") }} — unka login band ho jayega. Pehle wajah chuno:</p>
+      <div class="grid gap-2 mb-3">
+        <label v-for="(label, key) in REASON_LABEL" :key="key" class="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 text-sm cursor-pointer">
+          <input type="radio" :value="key" v-model="removeForm.reason" /> {{ label }}
+        </label>
+      </div>
+      <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (zaroori hai)' : 'Note (optional)'" />
+      <div class="flex gap-2">
+        <button class="btn btn-primary flex-1 !bg-rose-600" @click="confirmRemove">Remove member</button>
+        <button class="btn btn-ghost flex-1" @click="removeTarget = null">Cancel</button>
       </div>
     </div>
   </div>

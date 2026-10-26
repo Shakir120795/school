@@ -44,6 +44,9 @@ router.beforeEach((to) => {
   }
   if (!session.accessToken) return "/login";
   const role = myRole();
+  // The console is the platform owner's alone — every other role is
+  // bounced to its own home, the page is never even rendered for them.
+  if (to.path === "/console" && role !== "PLATFORM_ADMIN") return role === "PARENT" ? "/parent" : "/";
   if (to.path === "/parent" && role !== "PARENT") return "/";
   if (["/people", "/settings"].includes(to.path) && !["SCHOOL_ADMIN", "PRINCIPAL", "PLATFORM_ADMIN"].includes(role)) return "/";
   if (to.path === "/rollcall" && !["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"].includes(role)) return "/";

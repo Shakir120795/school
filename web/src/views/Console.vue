@@ -53,7 +53,7 @@ const groups = computed(() => {
 const addForm = ref({ fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" });
 async function refreshMembers(s) {
   const r = await api(`/platform/schools/${s.id}/members`, { school: false });
-  if (r.status === 200) members.value = r.json.members;
+  if (r.status === 200) { members.value = r.json.members; removedList.value = r.json.removed || []; }
 }
 async function addMember(s) {
   err.value = ""; msg.value = "";
@@ -78,11 +78,21 @@ async function toggleMemberStatus(s, m) {
   if (r.status === 200) { msg.value = `${m.fullName} is now ${status} at ${s.name}.`; await refreshMembers(s); }
   else err.value = r.json?.error || "Status change failed";
 }
-async function removeMember(s, m) {
-  if (!confirm(`Remove ${m.fullName} (${m.role}) from ${s.name}? Their login for this school will stop working.`)) return;
-  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "DELETE", school: false });
+const REASON_LABEL = { LEFT_SCHOOL: "Naam katwaya — school chhoda", RESIGNED: "Staff ne chhoda", DUPLICATE: "Duplicate ID galti se bani", OTHER: "Other" };
+const removedList = ref([]);
+const removeTarget = ref(null);
+const removeForm = ref({ reason: "LEFT_SCHOOL", note: "" });
+function openRemove(s, m) {
+  removeTarget.value = { school: s, member: m };
+  removeForm.value = { reason: "LEFT_SCHOOL", note: "" };
+}
+async function confirmRemove() {
+  const { school: s, member: m } = removeTarget.value;
+  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { err.value = "“Other” ke liye note likhna zaroori hai."; return; }
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "DELETE", school: false, body: { reason: removeForm.value.reason, note: removeForm.value.note.trim() || undefined } });
+  removeTarget.value = null;
   if (r.status === 200) {
-    msg.value = r.json.removed ? `${m.fullName} removed from ${s.name}.` : `${m.fullName} deactivated — they had sent notices, so the school's history is kept.`;
+    msg.value = `${m.fullName} removed from ${s.name} (${REASON_LABEL[r.json.reason]}).`;
     await refreshMembers(s); await load();
   } else err.value = r.json?.error || "Remove failed";
 }
@@ -91,7 +101,7 @@ async function toggleMembers(s) {
   openId.value = s.id; members.value = null; membersBusy.value = true; err.value = "";
   const r = await api(`/platform/schools/${s.id}/members`, { school: false });
   membersBusy.value = false;
-  if (r.status === 200) members.value = r.json.members;
+  if (r.status === 200) { members.value = r.json.members; removedList.value = r.json.removed || []; }
   else err.value = r.json?.error || "Could not load members";
 }
 async function resetMember(s, m) {
@@ -154,11 +164,20 @@ onMounted(load);
                   <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>
                   <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="toggleMemberStatus(s, m)">{{ m.status === "ACTIVE" ? "Deactivate" : "Activate" }}</button>
                   <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="resetMember(s, m)">Reset password</button>
-                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="removeMember(s, m)">Remove</button>
+                  <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="openRemove(s, m)">Remove</button>
                 </span>
               </div>
             </div>
             <p v-if="!groups.length" class="text-sm text-slate-400">No members yet — add the first one below.</p>
+            <div v-if="removedList.length" class="mb-3">
+              <div class="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1">Removed members ({{ removedList.length }})</div>
+              <div v-for="m in removedList" :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0 opacity-60">
+                <span class="font-semibold text-sm line-through">{{ m.fullName }}</span>
+                <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
+                <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
+                <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
+              </div>
+            </div>
             <form class="bg-slate-50 rounded-2xl p-3 grid gap-2 mt-2" @submit.prevent="addMember(s)">
               <div class="text-sm font-bold">Add a member to {{ s.name }}</div>
               <div class="grid sm:grid-cols-2 gap-2">
@@ -194,5 +213,22 @@ onMounted(load);
       </div>
       <button class="btn btn-primary">Create school + admin login</button>
     </form>
+
+    <div v-if="removeTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="removeTarget = null">
+      <div class="card w-full max-w-md">
+        <h2 class="font-bold mb-1">Remove {{ removeTarget.member.fullName }}?</h2>
+        <p class="text-sm text-slate-500 mb-3">{{ removeTarget.member.role }} · {{ removeTarget.school.name }} — unka login band ho jayega. Pehle wajah chuno:</p>
+        <div class="grid gap-2 mb-3">
+          <label v-for="(label, key) in REASON_LABEL" :key="key" class="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 text-sm cursor-pointer">
+            <input type="radio" :value="key" v-model="removeForm.reason" /> {{ label }}
+          </label>
+        </div>
+        <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (zaroori hai)' : 'Note (optional)'" />
+        <div class="flex gap-2">
+          <button class="btn btn-primary flex-1 !bg-rose-600" @click="confirmRemove">Remove member</button>
+          <button class="btn btn-ghost flex-1" @click="removeTarget = null">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
