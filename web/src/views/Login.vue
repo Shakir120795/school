@@ -8,8 +8,11 @@ const route = useRoute();
 // Role-specific entry points: /login/parent, /login/teacher,
 // /login/school and /login/admin each lock this page to ONE
 // audience (these URLs are the future separate apps' starting
-// points). Plain /login is only a chooser — four cards, no form,
-// no tabs — so no two audiences ever share a login screen.
+// points). Plain /login is only a chooser — three cards (Parent /
+// Teacher / School), no form, no tabs — so no two audiences ever
+// share a login screen. /login/admin is deliberately NOT linked
+// anywhere in the UI: it is the platform owner's private link,
+// reachable only by typing the URL directly.
 const variant = route.meta.variant || "";
 const locked = computed(() => variant !== "");
 const isChooser = computed(() => variant === "");
@@ -177,7 +180,9 @@ async function submit() {
         <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — it will replace this session.</p>
       </div>
 
-      <!-- CHOOSER (plain /login): four doors, no form -->
+      <!-- CHOOSER (plain /login): three doors, no form. The admin
+           door is unlisted on purpose — /login/admin is the owner's
+           private direct link only. -->
       <template v-if="isChooser">
         <div class="text-lg font-bold mb-1">Choose your login</div>
         <p class="text-sm text-slate-500 mb-4">Har role ka apna alag login page hai — apna wala chuno.</p>
@@ -193,10 +198,6 @@ async function submit() {
           <router-link to="/login/school" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">🏫</span>
             <span><span class="block font-bold">School Login</span><span class="block text-xs text-slate-500">School admin, principal aur office team</span></span>
-          </router-link>
-          <router-link to="/login/admin" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
-            <span class="text-2xl">👑</span>
-            <span><span class="block font-bold">Admin Login</span><span class="block text-xs text-slate-500">Platform owner — saare schools ka control</span></span>
           </router-link>
         </div>
       </template>

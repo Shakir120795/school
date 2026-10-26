@@ -80,7 +80,17 @@ function switchSchool(id) {
 </script>
 
 <template>
-  <div v-if="isLogin"><router-view /></div>
+  <!-- The bare (public) router-view is keyed by fullPath: every
+       /login* route renders the SAME Login.vue component, and Vue
+       Router would otherwise REUSE the mounted instance when moving
+       between login routes — Login.vue reads its variant once in
+       setup (const variant = route.meta.variant), so the URL changed
+       but the chooser/form on screen stayed frozen until a manual
+       refresh. The key forces a fresh mount per login URL, so the
+       correct variant (and signed-in banner state) renders
+       instantly. The shell's router-view below stays UNKEYED, so
+       in-app navigation never remounts the shell. -->
+  <div v-if="isLogin"><router-view :key="route.fullPath" /></div>
   <div v-else class="min-h-screen md:flex" :style="themeStyle">
     <!-- Desktop sidebar -->
     <aside class="hidden md:flex md:w-64 md:flex-col bg-gradient-to-b from-[#0a2436] via-[#0b2e3f] to-[#07332a] text-white p-5 gap-1">
