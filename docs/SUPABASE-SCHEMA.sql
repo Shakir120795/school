@@ -1019,3 +1019,7 @@ CREATE TABLE IF NOT EXISTS "OtpLoginChallenge" (
     CONSTRAINT "OtpLoginChallenge_pkey" PRIMARY KEY ("id")
 );
 CREATE INDEX IF NOT EXISTS "OtpLoginChallenge_phone_createdAt_idx" ON "OtpLoginChallenge"("phone", "createdAt");
+
+-- Phase 10 (26 Oct 2026): student roll number + photo for ID cards.
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "rollNo" TEXT;
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "photoUrl" TEXT;

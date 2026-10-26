@@ -187,6 +187,8 @@ router.post(
         classroomId: req.body.classroomId,
         dateOfBirth: req.body.dateOfBirth ? new Date(req.body.dateOfBirth) : undefined,
         gender: req.body.gender,
+        rollNo: req.body.rollNo || undefined,
+        photoUrl: req.body.photoUrl || undefined,
       },
     });
     return res.status(201).json({ student });

@@ -19,7 +19,7 @@ const schoolName = ref("Smart School");
 const printCards = ref([]);
 const qrFor = ref("");
 
-const newStudent = ref({ admissionNo: "", fullName: "", classroomId: "", academicYearId: "" });
+const newStudent = ref({ admissionNo: "", fullName: "", classroomId: "", academicYearId: "", rollNo: "", photoUrl: "" });
 const link = ref({ studentId: "", guardianId: "", isPrimary: false });
 const newGuardian = ref({ fullName: "", phone: "", email: "" });
 const newTeacher = ref({ email: "", password: "", fullName: "", displayName: "" });
@@ -57,7 +57,7 @@ function note(r, okText) {
 
 async function addStudent() {
   note(await api(`/schools/${sid}/students`, { method: "POST", body: { ...newStudent.value, academicYearId: newStudent.value.academicYearId || years.value[0]?.id, classroomId: newStudent.value.classroomId || undefined } }), "Student added.");
-  newStudent.value = { admissionNo: "", fullName: "", classroomId: "", academicYearId: "" };
+  newStudent.value = { admissionNo: "", fullName: "", classroomId: "", academicYearId: "", rollNo: "", photoUrl: "" };
 }
 async function addGuardian() {
   note(await api(`/schools/${sid}/guardians`, { method: "POST", body: newGuardian.value }), "Guardian added.");
@@ -101,7 +101,7 @@ async function issueAndPrint() {
     const r = await api(`/schools/${sid}/cards`, { method: "POST", body: { ownerType: "STUDENT", studentId } });
     if (r.status === 201) {
       printCards.value.push({
-        name: stu.fullName, adm: stu.admissionNo, cls: className(stu.classroomId),
+        name: stu.fullName, adm: stu.admissionNo, cls: className(stu.classroomId), roll: stu.rollNo || "", photo: stu.photoUrl || "", 
         qr: await QRCode.toDataURL(r.json.qrToken, { width: 200, margin: 1 }),
       });
     }
@@ -144,6 +144,8 @@ function className(id) {
       <form class="card grid md:grid-cols-4 gap-3 mb-4" @submit.prevent="addStudent">
         <div><label class="label">Admission No</label><input v-model="newStudent.admissionNo" required class="input" /></div>
         <div><label class="label">Full name</label><input v-model="newStudent.fullName" required class="input" /></div>
+        <div><label class="label">Roll No (optional)</label><input v-model="newStudent.rollNo" class="input" /></div>
+        <div><label class="label">Photo URL (optional)</label><input v-model="newStudent.photoUrl" class="input" placeholder="https://…" /></div>
         <div><label class="label">Class</label>
           <select v-model="newStudent.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
         <div class="flex items-end"><button class="btn btn-primary w-full">Add student</button></div>
@@ -160,9 +162,11 @@ function className(id) {
         <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div v-for="c in printCards" :key="c.adm" class="id-card border-2 border-brand-600 rounded-xl p-3 text-center">
             <div class="font-bold text-sm">{{ schoolName }}</div>
+            <img v-if="c.photo" :src="c.photo" class="w-16 h-16 rounded-full object-cover mx-auto mb-1 border" alt="Student photo" />
             <img :src="c.qr" class="w-28 h-28 mx-auto" alt="QR" />
             <div class="font-semibold">{{ c.name }}</div>
-            <div class="text-xs text-slate-500">Adm {{ c.adm }} · Class {{ c.cls }}</div>
+            <div class="text-xs text-slate-500">Adm {{ c.adm }}<span v-if="c.roll"> · Roll {{ c.roll }}</span> · Class {{ c.cls }}</div>
+
           </div>
         </div>
       </div>

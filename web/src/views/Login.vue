@@ -66,8 +66,8 @@ async function submit() {
     </div>
     <div class="card w-full max-w-sm !rounded-[28px] !p-6 shadow-2xl">
       <div class="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-2xl mb-5">
-        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'parent' ? 'bg-white shadow text-brand-700' : 'text-slate-500'" @click="tab = 'parent'">👨‍👩‍👧 Parent</button>
-        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'staff' ? 'bg-white shadow text-brand-700' : 'text-slate-500'" @click="tab = 'staff'">🧑‍🏫 Staff</button>
+        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'parent' ? 'bg-white shadow text-blue-700' : 'text-slate-500'" @click="tab = 'parent'">👨‍👩‍👧 Parent</button>
+        <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'staff' ? 'bg-white shadow text-green-700' : 'text-slate-500'" @click="tab = 'staff'">🧑‍🏫 Staff</button>
       </div>
 
       <form v-if="tab === 'parent'" @submit.prevent="otpSent ? verifyOtp() : sendOtp()">

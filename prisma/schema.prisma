@@ -331,6 +331,8 @@ model Student {
   academicYearId String?
   classroomId    String?
   admissionNo    String
+  rollNo         String?
+  photoUrl       String?
   fullName       String
   dateOfBirth    DateTime?    @db.Date
   gender         String?

@@ -57,13 +57,29 @@ onMounted(load);
 
 <template>
   <div>
-    <div class="rounded-3xl bg-gradient-to-r from-[#0a2436] to-[#0b8457] text-white p-5 mb-4 shadow">
+    <div class="rounded-3xl text-white p-5 mb-4 shadow" style="background: linear-gradient(100deg, #1e3a8a, #2563eb)">
       <div class="text-sm text-white/70">Welcome,</div>
       <h1 class="text-2xl font-extrabold">{{ user?.fullName }}</h1>
       <div class="flex flex-wrap gap-2 mt-3">
         <span class="chip bg-white/15 text-white">{{ children.length }} child{{ children.length === 1 ? "" : "ren" }} linked</span>
         <router-link to="/notifications" class="chip bg-white text-emerald-800 font-bold">🔔 {{ unread }} new notification{{ unread === 1 ? "" : "s" }}</router-link>
       </div>
+    </div>
+
+    <!-- Quick tiles (UI reference layout) -->
+    <div class="grid grid-cols-4 gap-2.5 mb-5">
+      <router-link to="/parent" class="tile"><span class="tile-ico" style="background:#dbeafe">📅</span>Attendance</router-link>
+      <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#fef3c7">🔔</span>Alerts<span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
+      <router-link to="/notices" class="tile"><span class="tile-ico" style="background:#e0e7ff">📣</span>Notices</router-link>
+      <a href="#teachers" class="tile"><span class="tile-ico" style="background:#dcfce7">🧑‍🏫</span>Teachers</a>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#ffedd5">📚</span>Homework<span class="soon">Soon</span></div>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees<span class="soon">Soon</span></div>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#e0f2fe">🗓️</span>Time Table<span class="soon">Soon</span></div>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#fef9c3">🚌</span>Pickup<span class="soon">Soon</span></div>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#ede9fe">✉️</span>Leave<span class="soon">Soon</span></div>
+      <div class="tile tile-soon"><span class="tile-ico" style="background:#f1f5f9">🖼️</span>Gallery<span class="soon">Soon</span></div>
+      <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#ffe4e6">📩</span>Inbox</router-link>
+      <a href="#prefs" class="tile"><span class="tile-ico" style="background:#f1f5f9">⚙️</span>More</a>
     </div>
 
     <div v-if="!children.length" class="card text-slate-500 text-sm mb-4">
@@ -122,7 +138,7 @@ onMounted(load);
       </div>
 
       <div class="space-y-4">
-        <div class="card">
+        <div class="card" id="teachers">
           <h3 class="font-bold mb-2">🧑‍🏫 Teachers</h3>
           <div v-if="!teachers.length" class="text-sm text-slate-500">No teacher contacts published yet.</div>
           <div v-for="t in teachers" :key="t.id" class="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
@@ -135,7 +151,7 @@ onMounted(load);
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="prefs">
           <h3 class="font-bold mb-2">Communication preferences</h3>
           <label class="flex items-center gap-2 text-sm">
             <input type="checkbox" v-model="whatsapp" class="w-4 h-4 accent-emerald-600" />
@@ -148,3 +164,10 @@ onMounted(load);
     </div>
   </div>
 </template>
+<style scoped>
+.tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; background: #fff; border: 1px solid #e8edf3; border-radius: 18px; padding: 10px 2px 8px; font-size: 11px; font-weight: 600; color: #334155; box-shadow: 0 1px 2px rgba(16,24,40,.05); }
+.tile-ico { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-size: 19px; }
+.tile-soon { opacity: .75; }
+.tile .soon { position: absolute; top: 6px; right: 6px; font-size: 8px; font-weight: 800; letter-spacing: .03em; background: #f59e0b; color: #fff; border-radius: 999px; padding: 1px 5px; text-transform: uppercase; }
+.tile-badge { position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 9px; font-weight: 800; display: grid; place-items: center; }
+</style>

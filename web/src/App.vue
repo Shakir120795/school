@@ -35,6 +35,16 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: "⚙", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
+// Role themes from the UI reference: Parent = blue, Teacher = green,
+// Admin/Principal = navy blue. Brand utilities read these CSS vars.
+const THEME_VARS = {
+  PARENT: { "--brand-50": "#eff6ff", "--brand-100": "#dbeafe", "--brand-500": "#3b82f6", "--brand-600": "#2563eb", "--brand-700": "#1d4ed8" },
+  TEACHER: { "--brand-50": "#f0fdf4", "--brand-100": "#dcfce7", "--brand-500": "#22c55e", "--brand-600": "#16a34a", "--brand-700": "#15803d" },
+  STAFF: { "--brand-50": "#f0fdfa", "--brand-100": "#ccfbf1", "--brand-500": "#14b8a6", "--brand-600": "#0d9488", "--brand-700": "#0f766e" },
+  SCHOOL_ADMIN: { "--brand-50": "#eef4ff", "--brand-100": "#dbe4ff", "--brand-500": "#2563eb", "--brand-600": "#1e40af", "--brand-700": "#1e3a8a" },
+  PRINCIPAL: { "--brand-50": "#eef4ff", "--brand-100": "#dbe4ff", "--brand-500": "#2563eb", "--brand-600": "#1e40af", "--brand-700": "#1e3a8a" },
+};
+const themeStyle = computed(() => THEME_VARS[role.value] || {});
 const mobileNav = computed(() => {
   const items = nav.value.slice(0, 5);
   const scanIdx = items.findIndex((n) => n.to === "/scanner");
@@ -58,7 +68,7 @@ function switchSchool(id) {
 
 <template>
   <div v-if="isLogin"><router-view /></div>
-  <div v-else class="min-h-screen md:flex">
+  <div v-else class="min-h-screen md:flex" :style="themeStyle">
     <!-- Desktop sidebar -->
     <aside class="hidden md:flex md:w-64 md:flex-col bg-gradient-to-b from-[#0a2436] via-[#0b2e3f] to-[#07332a] text-white p-5 gap-1">
       <div class="mb-6">
