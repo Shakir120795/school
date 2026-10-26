@@ -186,5 +186,5 @@ export async function processScan(input) {
     return { outcome: "RECORDED", eventId: event.id, dayId: day.id, evaluation, reviewFlag, kind };
   });
 
-  return { ...result, personId, localDate: parts.dateStr };
+  return { ...result, personId, kind, localDate: parts.dateStr };
 }

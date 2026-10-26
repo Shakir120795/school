@@ -4,6 +4,8 @@ import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashToken } from "../utils/security.js";
 import { processScan } from "../services/attendance.js";
+import { alertGuardiansForScan } from "../services/scanAlerts.js";
+import { localParts } from "../utils/time.js";
 
 const router = Router();
 const STAFF_READ = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -33,6 +35,12 @@ router.post(
       source: req.body.source || "QR",
       idempotencyKey: req.body.idempotencyKey,
     });
+    if (result.outcome === "RECORDED" && result.kind === "STUDENT") {
+      // Fire-and-await the parent gate alert; it never fails the scan.
+      await alertGuardiansForScan({
+        schoolId, studentId: result.personId, eventType: req.body.eventType, scannedAt: new Date(),
+      });
+    }
     const httpStatus = result.outcome === "INVALID" ? 422 : 200;
     return res.status(httpStatus).json(result);
   })
@@ -120,6 +128,39 @@ router.post(
       },
     });
     return res.status(201).json({ holiday });
+  })
+);
+
+// --- On campus now (Phase 11) ---------------------------------------------------
+router.get(
+  "/schools/:schoolId/attendance/on-campus",
+  requireAuth,
+  requireSchool(STAFF_READ),
+  asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
+    const today = localParts(new Date(), req.school.timezone).dateStr;
+    const rows = await prisma.studentAttendance.findMany({
+      where: { schoolId, localDate: new Date(`${today}T00:00:00.000Z`), entryAt: { not: null } },
+      include: { student: { select: { id: true, fullName: true, admissionNo: true, classroom: { select: { name: true, section: true } } } } },
+      orderBy: { entryAt: "desc" },
+    });
+    const totalStudents = await prisma.student.count({ where: { schoolId, status: "ACTIVE" } });
+    const list = rows.map((r) => ({
+      studentId: r.student.id, name: r.student.fullName, admissionNo: r.student.admissionNo,
+      className: r.student.classroom ? `${r.student.classroom.name}${r.student.classroom.section ? "-" + r.student.classroom.section : ""}` : "",
+      entryAt: r.entryAt, exitAt: r.exitAt, onCampus: !r.exitAt, status: r.status,
+    }));
+    return res.json({
+      date: today,
+      totals: {
+        expected: totalStudents,
+        arrived: rows.length,
+        onCampus: list.filter((x) => x.onCampus).length,
+        departed: list.filter((x) => !x.onCampus).length,
+        notArrived: totalStudents - rows.length,
+      },
+      students: list,
+    });
   })
 );
 

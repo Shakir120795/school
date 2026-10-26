@@ -1,7 +1,7 @@
 <script setup>
-import { onBeforeUnmount, ref } from "vue";
+import { onBeforeUnmount, onMounted, onUnmounted, ref } from "vue";
 import { Html5Qrcode } from "html5-qrcode";
-import { session } from "../api.js";
+import { session, api } from "../api.js";
 
 // Gate scanner: this browser acts as a scanning device. The device key is
 // created once in Settings (admin) and stored only in this browser.
@@ -13,6 +13,17 @@ const manualToken = ref("");
 const result = ref(null);
 const scanning = ref(false);
 let scanner = null;
+
+// On-campus live panel (Phase 11)
+const campus = ref(null);
+let campusTimer = null;
+async function loadCampus() {
+  if (!session.schoolId) return;
+  const r = await api(`/schools/${session.schoolId}/attendance/on-campus`).catch(() => null);
+  if (r?.status === 200) campus.value = r.json;
+}
+onMounted(() => { loadCampus(); campusTimer = setInterval(loadCampus, 30000); });
+onUnmounted(() => { if (campusTimer) clearInterval(campusTimer); });
 
 function saveDevice() {
   localStorage.setItem("ss_device_key", deviceKey.value);
@@ -43,6 +54,7 @@ async function scanWithSchool(token) {
   });
   const json = await res.json().catch(() => ({}));
   result.value = { status: res.status, ...json };
+  if (json.outcome === "RECORDED") loadCampus();
 }
 
 async function start() {
@@ -121,6 +133,28 @@ function outcomeClass() {
           <span v-if="result.reviewFlag"> · Flag: {{ result.reviewFlag }}</span>
         </div>
         <button class="btn btn-primary mt-3" @click="result = null; start()">Scan next</button>
+      </div>
+
+      <div v-if="campus" class="card mt-4 !p-0 overflow-hidden text-left">
+        <div class="p-4 pb-2 flex items-center justify-between">
+          <h3 class="font-bold">🏫 On campus now</h3>
+          <button type="button" class="text-xs font-semibold text-brand-700" @click="loadCampus">Refresh</button>
+        </div>
+        <div class="grid grid-cols-4 gap-2 px-4 pb-3 text-center">
+          <div class="rounded-xl bg-emerald-50 py-2"><div class="font-extrabold text-emerald-700">{{ campus.totals.onCampus }}</div><div class="text-[10px] font-semibold text-slate-500">INSIDE</div></div>
+          <div class="rounded-xl bg-slate-50 py-2"><div class="font-extrabold">{{ campus.totals.arrived }}</div><div class="text-[10px] font-semibold text-slate-500">ARRIVED</div></div>
+          <div class="rounded-xl bg-sky-50 py-2"><div class="font-extrabold text-sky-700">{{ campus.totals.departed }}</div><div class="text-[10px] font-semibold text-slate-500">LEFT</div></div>
+          <div class="rounded-xl bg-amber-50 py-2"><div class="font-extrabold text-amber-600">{{ campus.totals.notArrived }}</div><div class="text-[10px] font-semibold text-slate-500">NOT YET</div></div>
+        </div>
+        <div class="max-h-64 overflow-y-auto border-t border-slate-100">
+          <div v-for="st in campus.students" :key="st.studentId" class="flex items-center gap-2 px-4 py-2 border-b border-slate-50 text-sm">
+            <span class="w-2 h-2 rounded-full" :class="st.onCampus ? 'bg-emerald-500' : 'bg-slate-300'"></span>
+            <span class="font-medium">{{ st.name }}</span>
+            <span class="text-xs text-slate-400">Class {{ st.className }}</span>
+            <span class="ml-auto text-xs text-slate-500">in {{ st.entryAt ? new Date(st.entryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }}<span v-if="st.exitAt"> · out {{ new Date(st.exitAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span></span>
+          </div>
+          <div v-if="!campus.students.length" class="px-4 py-3 text-sm text-slate-400">No arrivals yet today.</div>
+        </div>
       </div>
 
       <button class="btn btn-ghost mt-4" @click="resetDevice">Reconfigure device</button>
