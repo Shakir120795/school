@@ -30,6 +30,7 @@ const NAV = [
   { to: "/pickup", label: "Pickup", icon: "🛡️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
   { to: "/rollcall", label: "Roll-Call", icon: "📋", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/homework", label: "Homework", icon: "📚", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
+  { to: "/leave", label: "Leave", icon: "✉️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/parent", label: "My Children", icon: "🏠", roles: ["PARENT"] },
   { to: "/notices", label: "Notices", icon: "✉", roles: ["PARENT"] },

@@ -76,7 +76,7 @@ onMounted(load);
       <div class="tile tile-soon"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees<span class="soon">Soon</span></div>
       <div class="tile tile-soon"><span class="tile-ico" style="background:#e0f2fe">🗓️</span>Time Table<span class="soon">Soon</span></div>
       <router-link to="/pickup" class="tile"><span class="tile-ico" style="background:#fef9c3">🚌</span>Pickup</router-link>
-      <div class="tile tile-soon"><span class="tile-ico" style="background:#ede9fe">✉️</span>Leave<span class="soon">Soon</span></div>
+      <router-link to="/leave" class="tile"><span class="tile-ico" style="background:#ede9fe">✉️</span>Leave</router-link>
       <div class="tile tile-soon"><span class="tile-ico" style="background:#f1f5f9">🖼️</span>Gallery<span class="soon">Soon</span></div>
       <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#ffe4e6">📩</span>Inbox</router-link>
       <a href="#prefs" class="tile"><span class="tile-ico" style="background:#f1f5f9">⚙️</span>More</a>

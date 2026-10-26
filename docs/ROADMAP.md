@@ -28,7 +28,7 @@ UI reference image (3 role themes). Status as of Phase 9.
   approvals, staff release log, parent release alert, audit trail
 - Phase 13 — DONE (26 Oct): teacher roll-call attendance (own classes only, gate-scan merge, absent alerts)
 - Phase 14 — DONE (26 Oct): homework assign + parent notice, per-child done toggle, teacher completion tracking
-- Phase 15 — Leave & permissions (§14): parent submits, staff decides
+- Phase 15 — DONE (26 Oct): leave applications (parent applies, teacher/manager decides, ON_LEAVE auto-applied without overwriting attended days, decision alerts)
 - Phase 16 — Fees (§13): fee heads, student ledger, dues, manual payment
   recording + receipts, parent fee view; gateway integration after
 - Phase 17 — Timetable + school calendar/events (§8/§22)

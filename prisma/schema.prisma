@@ -207,6 +207,7 @@ model School {
   pickupApprovals        PickupApproval[]
   pickupLogs             PickupLog[]
   homework               Homework[]
+  leaveApplications      LeaveApplication[]
 
   @@index([status])
 }
@@ -357,6 +358,7 @@ model Student {
   scanEvents          StudentScanEvent[]
   attendances         StudentAttendance[]
   homeworkCompletions HomeworkCompletion[]
+  leaveApplications   LeaveApplication[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -984,6 +986,39 @@ model HomeworkCompletion {
   student  Student  @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
 
   @@unique([homeworkId, studentId])
+  @@index([schoolId, studentId])
+}
+
+// Leave applications (Phase 15, PDF §14). A parent applies for their
+// child; the class teacher or a manager approves/rejects. Approval
+// writes ON_LEAVE into the daily attendance rows for the range —
+// without ever overwriting a day the child actually attended.
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveApplication {
+  id                    String      @id @default(cuid())
+  schoolId              String
+  studentId             String
+  guardianId            String?
+  fromDate              DateTime    @db.Date
+  toDate                DateTime    @db.Date
+  category              String?
+  reason                String
+  status                LeaveStatus @default(PENDING)
+  decidedByMembershipId String?
+  decisionNote          String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  school  School  @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([schoolId, status])
   @@index([schoolId, studentId])
 }
 

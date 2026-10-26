@@ -10,6 +10,7 @@ const routes = [
   { path: "/pickup", component: () => import("./views/Pickup.vue") },
   { path: "/rollcall", component: () => import("./views/RollCall.vue") },
   { path: "/homework", component: () => import("./views/Homework.vue") },
+  { path: "/leave", component: () => import("./views/Leave.vue") },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
