@@ -73,7 +73,7 @@ router.post("/platform/schools/:schoolId/reset-admin-password", asyncRoute(async
 }));
 
 // Permanent delete: every school-scoped table, children before
-// parents, in one transaction; then the school row itself.
+// parents; then the school row itself.
 const PURGE_TIERS = [
   ["notificationDelivery", "ticketMessage", "homeworkCompletion", "feePayment", "examMark", "ptmBooking", "pickupLog", "noticeRecipient", "noticeTarget", "studentGuardian", "communicationConsent", "cardCredential", "studentScanEvent", "staffScanEvent", "studentAttendance", "staffAttendance", "attendanceAudit", "attendanceCorrectionRequest", "teacherClassAssignment", "classInchargeAssignment", "timetableSlot"],
   ["notificationOutbox", "supportTicket", "ptmSlot", "pickupApproval", "pickupPerson", "homework", "leaveApplication", "feeInvoice", "exam", "feeStructure", "notice", "holiday", "calendarEvent"],
@@ -84,19 +84,21 @@ router.delete("/platform/schools/:schoolId", asyncRoute(async (req, res) => {
   const schoolId = req.params.schoolId;
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!school) return res.status(404).json({ error: "NOT_FOUND" });
-  await prisma.$transaction(async (tx) => {
-    // FeeInvoiceItem has no schoolId column — purge via its invoices.
-    await tx.$executeRawUnsafe(
-      'DELETE FROM "FeeInvoiceItem" WHERE "invoiceId" IN (SELECT "id" FROM "FeeInvoice" WHERE "schoolId" = $1)',
-      schoolId
-    );
-    for (const tier of PURGE_TIERS) {
-      for (const model of tier) {
-        await tx[model].deleteMany({ where: { schoolId } });
-      }
+  // No single mega-transaction: ~46 sequential deletes over the hosted
+  // pooler outlive Prisma's interactive-tx timeout (learned live,
+  // Phase 21). Each deleteMany is its own implicit transaction and
+  // every step is idempotent, so a failed delete can simply be
+  // retried — already-purged tables no-op.
+  await prisma.$executeRawUnsafe(
+    'DELETE FROM "FeeInvoiceItem" WHERE "invoiceId" IN (SELECT "id" FROM "FeeInvoice" WHERE "schoolId" = $1)',
+    schoolId
+  );
+  for (const tier of PURGE_TIERS) {
+    for (const model of tier) {
+      await prisma[model].deleteMany({ where: { schoolId } });
     }
-    await tx.school.delete({ where: { id: schoolId } });
-  });
+  }
+  await prisma.school.delete({ where: { id: schoolId } });
   return res.json({ deleted: true, schoolId });
 }));
 
