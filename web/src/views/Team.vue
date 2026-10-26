@@ -6,6 +6,7 @@ import MemberEditModal from "../components/MemberEditModal.vue";
 import MemberCard from "../components/MemberCard.vue";
 
 const sid = session.schoolId;
+const loading = ref(true);
 const memberships = ref([]);
 const msg = ref("");
 const form = ref({ fullName: "", email: "", password: "", role: "TEACHER", phone: "", guardianPhone: "" });
@@ -50,10 +51,15 @@ const roleChip = (r) =>
 const removedList = ref([]);
 const REASON_LABEL = { LEFT_SCHOOL: "Naam katwaya — school chhoda", RESIGNED: "Staff ne chhoda", DUPLICATE: "Duplicate ID galti se bani", OTHER: "Other" };
 async function load() {
-  const r = await api(`/schools/${sid}/users`);
-  if (r.status === 200) memberships.value = r.json.memberships.filter((m) => m.status !== "INACTIVE");
-  const rr = await api(`/schools/${sid}/users/removed`);
-  if (rr.status === 200) removedList.value = rr.json.removed;
+  loading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/users`);
+    if (r.status === 200) memberships.value = r.json.memberships.filter((m) => m.status !== "INACTIVE");
+    const rr = await api(`/schools/${sid}/users/removed`);
+    if (rr.status === 200) removedList.value = rr.json.removed;
+  } finally {
+    loading.value = false;
+  }
 }
 async function createLogin() {
   const r = await api(`/schools/${sid}/users`, { method: "POST", body: form.value });
@@ -127,7 +133,7 @@ onMounted(load);
 
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
     <div v-for="r in ROLES" :key="r" class="card text-center !py-3">
-      <div class="text-2xl font-extrabold">{{ counts[r] }}</div>
+      <div class="text-2xl font-extrabold">{{ loading ? "…" : counts[r] }}</div>
       <div class="text-[11px] font-semibold text-slate-500">{{ r.replace("_", " ") }}</div>
     </div>
   </div>
@@ -160,13 +166,15 @@ onMounted(load);
     </form>
 
     <div class="card lg:col-span-2">
-      <h2 class="font-bold mb-3">All members ({{ memberships.length }})</h2>
+      <h2 class="font-bold mb-3">All members<span v-if="!loading"> ({{ memberships.length }})</span></h2>
       <p v-if="msg" class="pb-2 text-sm text-brand-700">{{ msg }}</p>
       <TabbedList
         :groups="memberGroups"
         :search-text="memberSearchText"
         :status-of="memberStatusOf"
         :row-key="memberRowKey"
+        :loading="loading"
+        loading-text="Loading members…"
         search-placeholder="Search name, email, phone…"
       >
         <template #row="{ item: m, group }">

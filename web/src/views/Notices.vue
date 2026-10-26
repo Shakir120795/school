@@ -4,6 +4,7 @@ import { api, session, myRole } from "../api.js";
 
 const sid = session.schoolId;
 const role = myRole();
+const loading = ref(true);
 const notices = ref([]);
 const classrooms = ref([]);
 const students = ref([]);
@@ -22,14 +23,19 @@ const adminAudiences = ["ALL_PARENTS", "ALL_TEACHERS", "ALL_PARENTS_AND_TEACHERS
 const audienceOptions = computed(() => (role === "TEACHER" ? teacherAudiences : adminAudiences));
 
 async function load() {
-  const [n, c, s] = await Promise.all([
-    api(`/schools/${sid}/notices`),
-    api(`/schools/${sid}/classrooms`),
-    api(`/schools/${sid}/students`),
-  ]);
-  notices.value = n.json.notices || [];
-  classrooms.value = c.json.classrooms || [];
-  students.value = s.json.students || [];
+  loading.value = true;
+  try {
+    const [n, c, s] = await Promise.all([
+      api(`/schools/${sid}/notices`),
+      api(`/schools/${sid}/classrooms`),
+      api(`/schools/${sid}/students`),
+    ]);
+    notices.value = n.json.notices || [];
+    classrooms.value = c.json.classrooms || [];
+    students.value = s.json.students || [];
+  } finally {
+    loading.value = false;
+  }
 }
 onMounted(load);
 
@@ -149,7 +155,8 @@ function deliverySummary(rec) {
           </div>
         </div>
       </div>
-      <div v-if="!notices.length" class="card text-slate-500 text-sm">No notices yet.</div>
+      <div v-if="loading" class="card text-slate-500 text-sm animate-pulse">Loading notices…</div>
+      <div v-else-if="!notices.length" class="card text-slate-500 text-sm">No notices yet.</div>
     </div>
   </div>
 </template>

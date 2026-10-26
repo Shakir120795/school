@@ -4,6 +4,7 @@ import { api, session, currentUser } from "../api.js";
 
 const sid = session.schoolId;
 const user = currentUser();
+const loading = ref(true);
 const children = ref([]);
 const teachers = ref([]);
 const inbox = ref([]);
@@ -33,16 +34,21 @@ const dotClass = (s) =>
 const todayStatus = (child) => (child.attendances || [])[0] || null;
 
 async function load() {
-  const [c, t, n] = await Promise.all([
-    api(`/schools/${sid}/my-children`),
-    api(`/schools/${sid}/teachers`),
-    api(`/schools/${sid}/my-notifications`),
-  ]);
-  children.value = c.json.children || [];
-  teachers.value = t.json.teachers || [];
-  if (n.status === 200) {
-    inbox.value = n.json.notifications.slice(0, 3);
-    unread.value = n.json.unread;
+  loading.value = true;
+  try {
+    const [c, t, n] = await Promise.all([
+      api(`/schools/${sid}/my-children`),
+      api(`/schools/${sid}/teachers`),
+      api(`/schools/${sid}/my-notifications`),
+    ]);
+    children.value = c.json.children || [];
+    teachers.value = t.json.teachers || [];
+    if (n.status === 200) {
+      inbox.value = n.json.notifications.slice(0, 3);
+      unread.value = n.json.unread;
+    }
+  } finally {
+    loading.value = false;
   }
 }
 async function savePref() {
@@ -61,7 +67,7 @@ onMounted(load);
       <div class="text-sm text-white/70">Welcome,</div>
       <h1 class="text-2xl font-extrabold">{{ user?.fullName }}</h1>
       <div class="flex flex-wrap gap-2 mt-3">
-        <span class="chip bg-white/15 text-white">{{ children.length }} child{{ children.length === 1 ? "" : "ren" }} linked</span>
+        <span class="chip bg-white/15 text-white">{{ loading ? "Loading…" : `${children.length} child${children.length === 1 ? "" : "ren"} linked` }}</span>
         <router-link to="/notifications" class="chip bg-white text-emerald-800 font-bold">🔔 {{ unread }} new notification{{ unread === 1 ? "" : "s" }}</router-link>
       </div>
     </div>
@@ -82,7 +88,8 @@ onMounted(load);
       <a href="#prefs" class="tile"><span class="tile-ico" style="background:#f1f5f9">⚙️</span>More</a>
     </div>
 
-    <div v-if="!children.length" class="card text-slate-500 text-sm mb-4">
+    <div v-if="loading" class="card text-slate-500 text-sm mb-4 animate-pulse">Loading your children…</div>
+    <div v-else-if="!children.length" class="card text-slate-500 text-sm mb-4">
       No children are linked to your account yet. Ask the school office to link your guardian profile.
     </div>
 
@@ -130,7 +137,7 @@ onMounted(load);
           <h3 class="font-bold">🔔 Latest from school</h3>
           <router-link to="/notifications" class="text-sm text-brand-700 font-semibold">Open inbox →</router-link>
         </div>
-        <div v-if="!inbox.length" class="text-sm text-slate-500">No notifications yet.</div>
+        <div v-if="!loading && !inbox.length" class="text-sm text-slate-500">No notifications yet.</div>
         <div v-for="n in inbox" :key="n.recipientId" class="py-2 border-b border-slate-100 last:border-0">
           <div class="text-sm font-semibold">{{ n.notice.title }} <span v-if="!n.read" class="chip bg-brand-600 text-white ml-1">NEW</span></div>
           <p class="text-sm text-slate-500 line-clamp-2">{{ n.notice.body }}</p>
@@ -140,7 +147,7 @@ onMounted(load);
       <div class="space-y-4">
         <div class="card" id="teachers">
           <h3 class="font-bold mb-2">🧑‍🏫 Teachers</h3>
-          <div v-if="!teachers.length" class="text-sm text-slate-500">No teacher contacts published yet.</div>
+          <div v-if="!loading && !teachers.length" class="text-sm text-slate-500">No teacher contacts published yet.</div>
           <div v-for="t in teachers" :key="t.id" class="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
             <div class="avatar w-9 h-9 text-xs" style="background:#2563eb">{{ initials(t.displayName) }}</div>
             <div class="text-sm">

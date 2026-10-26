@@ -8,14 +8,20 @@ import MemberCard from "../components/MemberCard.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
 const schools = ref([]);
+const loading = ref(true);
 const msg = ref("");
 const err = ref("");
 const form = ref({ name: "", slug: "", adminName: "", adminEmail: "", adminPassword: "" });
 
 async function load() {
-  const r = await api("/platform/schools", { school: false });
-  if (r.status === 200) schools.value = r.json.schools;
-  else err.value = r.json?.error || "Could not load schools";
+  loading.value = true;
+  try {
+    const r = await api("/platform/schools", { school: false });
+    if (r.status === 200) schools.value = r.json.schools;
+    else err.value = r.json?.error || "Could not load schools";
+  } finally {
+    loading.value = false;
+  }
 }
 async function createSchool() {
   err.value = ""; msg.value = "";
@@ -187,7 +193,8 @@ onMounted(async () => {
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
-    <div class="grid gap-3 mb-4">
+    <div v-if="loading" class="card text-slate-500 animate-pulse mb-4">Loading schools…</div>
+    <div v-else class="grid gap-3 mb-4">
       <div v-for="s in schools" :key="s.id" :id="`school-card-${s.id}`" class="card !py-3">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-bold">{{ s.name }}</span>

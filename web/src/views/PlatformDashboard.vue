@@ -29,10 +29,14 @@ const totals = computed(() => {
 });
 
 async function load() {
-  const r = await api("/platform/schools", { school: false });
-  if (r.status === 200) schools.value = r.json.schools || [];
-  else err.value = r.json?.error || "Could not load platform data";
-  loading.value = false;
+  loading.value = true;
+  try {
+    const r = await api("/platform/schools", { school: false });
+    if (r.status === 200) schools.value = r.json.schools || [];
+    else err.value = r.json?.error || "Could not load platform data";
+  } finally {
+    loading.value = false;
+  }
 }
 onMounted(load);
 

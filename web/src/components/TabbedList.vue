@@ -31,6 +31,11 @@ const props = defineProps({
   // search lands here with a chosen tab + prefilled search text.
   initialTab: { type: String, default: "" },
   initialQuery: { type: String, default: "" },
+  // Phase 29: while the parent view's fetch is in flight, render a
+  // loading block INSTEAD of rows / empty text / pager, and hide the
+  // per-tab counts (which would otherwise flash "(0)").
+  loading: { type: Boolean, default: false },
+  loadingText: { type: String, default: "Loading…" },
 });
 
 const startTab = () =>
@@ -84,7 +89,7 @@ watch(
         :class="activeKey === g.key ? 'btn-primary' : 'btn-ghost'"
         @click="activeKey = g.key"
       >
-        {{ g.label }} ({{ g.items.length }})
+        {{ g.label }}<span v-if="!loading"> ({{ g.items.length }})</span>
       </button>
     </div>
     <div class="flex flex-wrap gap-2 mb-2">
@@ -95,17 +100,27 @@ watch(
         <option value="INACTIVE">Inactive</option>
       </select>
     </div>
-    <slot v-for="item in pageItems" :key="rowKey(item)" name="row" :item="item" :group="activeGroup" />
-    <p v-if="!filtered.length" class="text-sm text-slate-400 py-2">
-      {{ query || statusFilter ? "No matches — try a different search or filter." : "Nothing here yet." }}
-    </p>
-    <Pager
-      :page="page"
-      :total-pages="totalPages"
-      :from="from"
-      :to="to"
-      :total="total"
-      @update:page="page = $event"
-    />
+    <div v-if="loading" class="py-2" aria-busy="true">
+      <p class="text-sm text-slate-500 mb-2">{{ loadingText }}</p>
+      <div class="grid gap-2 animate-pulse">
+        <div class="h-10 rounded-xl bg-slate-100"></div>
+        <div class="h-10 rounded-xl bg-slate-100"></div>
+        <div class="h-10 rounded-xl bg-slate-100"></div>
+      </div>
+    </div>
+    <template v-else>
+      <slot v-for="item in pageItems" :key="rowKey(item)" name="row" :item="item" :group="activeGroup" />
+      <p v-if="!filtered.length" class="text-sm text-slate-400 py-2">
+        {{ query || statusFilter ? "No matches — try a different search or filter." : "Nothing here yet." }}
+      </p>
+      <Pager
+        :page="page"
+        :total-pages="totalPages"
+        :from="from"
+        :to="to"
+        :total="total"
+        @update:page="page = $event"
+      />
+    </template>
   </div>
 </template>

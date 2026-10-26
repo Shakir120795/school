@@ -12,6 +12,7 @@ const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
 
+const loading = ref(true);
 const classes = ref([]);
 const subjects = ref([]);
 const exams = ref([]);
@@ -46,14 +47,19 @@ const stats = computed(() => {
 });
 
 async function loadStaff() {
-  const [c, s, e] = await Promise.all([
-    api(`/schools/${sid}/rollcall/classes`),
-    api(`/schools/${sid}/subjects`),
-    api(`/schools/${sid}/exams`),
-  ]);
-  if (c.status === 200) { classes.value = c.json.classes; if (classes.value.length && !form.value.classroomId) form.value.classroomId = classes.value[0].id; }
-  if (s.status === 200) { subjects.value = s.json.subjects || []; if (subjects.value.length && !form.value.subjectId) form.value.subjectId = subjects.value[0].id; }
-  if (e.status === 200) exams.value = e.json.exams;
+  loading.value = true;
+  try {
+    const [c, s, e] = await Promise.all([
+      api(`/schools/${sid}/rollcall/classes`),
+      api(`/schools/${sid}/subjects`),
+      api(`/schools/${sid}/exams`),
+    ]);
+    if (c.status === 200) { classes.value = c.json.classes; if (classes.value.length && !form.value.classroomId) form.value.classroomId = classes.value[0].id; }
+    if (s.status === 200) { subjects.value = s.json.subjects || []; if (subjects.value.length && !form.value.subjectId) form.value.subjectId = subjects.value[0].id; }
+    if (e.status === 200) exams.value = e.json.exams;
+  } finally {
+    loading.value = false;
+  }
 }
 async function createExam() {
   err.value = ""; msg.value = "";
@@ -91,10 +97,15 @@ async function removeExam(exam) {
   if (r.status === 200) { selected.value = null; await loadStaff(); } else err.value = r.json?.error || "Delete failed";
 }
 async function loadParent() {
-  const c = await api(`/schools/${sid}/my-children`);
-  if (c.status === 200) {
-    children.value = c.json.children || [];
-    if (children.value.length) { reportChild.value = children.value[0].id; await loadReport(); }
+  loading.value = true;
+  try {
+    const c = await api(`/schools/${sid}/my-children`);
+    if (c.status === 200) {
+      children.value = c.json.children || [];
+      if (children.value.length) { reportChild.value = children.value[0].id; await loadReport(); }
+    }
+  } finally {
+    loading.value = false;
   }
 }
 async function loadReport() {
@@ -142,7 +153,8 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           <button class="btn btn-ghost !py-1.5" @click.stop="togglePublish(e)">{{ e.resultsPublished ? "Unpublish" : "Publish results" }}</button>
           <button class="btn btn-ghost !py-1.5 text-red-600" @click.stop="removeExam(e)">Delete</button>
         </div>
-        <p v-if="!exams.length" class="card text-sm text-slate-400">No exams yet.</p>
+        <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading exams…</p>
+        <p v-else-if="!exams.length" class="card text-sm text-slate-400">No exams yet.</p>
       </div>
 
       <section v-if="selected" class="card">
@@ -171,7 +183,8 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           <option v-for="c in children" :key="c.id" :value="c.id">{{ c.fullName }}</option>
         </select>
       </div>
-      <div v-if="report" class="card !p-0 overflow-hidden">
+      <div v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading report card…</div>
+      <div v-else-if="report" class="card !p-0 overflow-hidden">
         <div class="bg-gradient-to-r from-brand-700 to-brand-500 text-white p-4">
           <div class="text-xs font-bold opacity-80">REPORT CARD</div>
           <div class="text-lg font-extrabold">{{ report.student.fullName }}</div>

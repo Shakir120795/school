@@ -2,16 +2,22 @@
 import { onMounted, ref } from "vue";
 import { api, session } from "../api.js";
 
+const loading = ref(true);
 const items = ref([]);
 const unread = ref(0);
 const msg = ref("");
 const sid = session.schoolId;
 
 async function load() {
-  const r = await api(`/schools/${sid}/my-notifications`);
-  if (r.status === 200) {
-    items.value = r.json.notifications;
-    unread.value = r.json.unread;
+  loading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/my-notifications`);
+    if (r.status === 200) {
+      items.value = r.json.notifications;
+      unread.value = r.json.unread;
+    }
+  } finally {
+    loading.value = false;
   }
 }
 async function markRead(n) {
@@ -36,7 +42,8 @@ onMounted(load);
     <button v-if="unread" type="button" class="btn btn-ghost" @click="markAll">Mark all read</button>
   </div>
   <p v-if="msg" class="text-sm text-brand-700 mb-3">{{ msg }}</p>
-  <div v-if="!items.length" class="card text-slate-500 text-sm">No notifications yet. School notices will appear here.</div>
+  <div v-if="loading" class="card text-slate-500 text-sm animate-pulse">Loading notifications…</div>
+  <div v-else-if="!items.length" class="card text-slate-500 text-sm">No notifications yet. School notices will appear here.</div>
   <div class="space-y-2">
     <button v-for="n in items" :key="n.recipientId" type="button" @click="markRead(n)"
       class="card w-full text-left block" :class="n.read ? 'opacity-70' : 'border-l-4 !border-l-brand-600'">

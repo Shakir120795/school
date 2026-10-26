@@ -13,6 +13,7 @@ const isManager = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(role);
 const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
+const loading = ref(true);
 const summary = ref(null);
 const invoices = ref([]);
 const myInvoices = ref([]);
@@ -30,6 +31,8 @@ const STATUS_CLS = { UNPAID: "bg-rose-50 text-rose-600", PARTIAL: "bg-amber-50 t
 const inr = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
 
 async function loadStaff() {
+  loading.value = true;
+  try {
   const [s, inv, c, h, st] = await Promise.all([
     api(`/schools/${sid}/fees/summary`),
     api(`/schools/${sid}/fees/invoices${classFilter.value ? `?classroomId=${classFilter.value}` : ""}`),
@@ -42,10 +45,18 @@ async function loadStaff() {
   if (c.status === 200) { classes.value = c.json.classes; if (classes.value.length) { gen.value.classroomId = classes.value[0].id; newStruct.value.classroomId = classes.value[0].id; } }
   if (h.status === 200) { heads.value = h.json.heads; if (heads.value.length) newStruct.value.feeHeadId = heads.value[0].id; }
   if (st.status === 200) structures.value = st.json.structures;
+  } finally {
+    loading.value = false;
+  }
 }
 async function loadParent() {
-  const r = await api(`/schools/${sid}/fees/my-invoices`);
-  if (r.status === 200) myInvoices.value = r.json.invoices;
+  loading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/fees/my-invoices`);
+    if (r.status === 200) myInvoices.value = r.json.invoices;
+  } finally {
+    loading.value = false;
+  }
 }
 async function generate() {
   err.value = ""; msg.value = "";
@@ -150,7 +161,8 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
               <p v-if="!detail.payments.length" class="text-xs text-slate-400">No payments yet.</p>
             </div>
           </div>
-          <p v-if="!invoices.length" class="text-sm text-slate-400">No invoices yet — generate a period above.</p>
+          <p v-if="loading" class="text-sm text-slate-400 animate-pulse">Loading invoices…</p>
+          <p v-else-if="!invoices.length" class="text-sm text-slate-400">No invoices yet — generate a period above.</p>
         </div>
       </section>
 
@@ -178,7 +190,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
             <span>Class {{ s.classroom.name }}{{ s.classroom.section ? "-" + s.classroom.section : "" }} · {{ s.feeHead.name }}</span>
             <span class="ml-auto font-semibold">{{ inr(s.amountPaise) }} <span class="text-slate-400 font-normal">{{ s.frequency }}</span></span>
           </div>
-          <p v-if="!structures.length" class="text-sm text-slate-400">No structures yet.</p>
+          <p v-if="!loading && !structures.length" class="text-sm text-slate-400">No structures yet.</p>
         </div>
       </section>
     </template>
@@ -205,7 +217,8 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
             </div>
           </div>
         </div>
-        <p v-if="!myInvoices.length" class="card text-sm text-slate-400">No fee invoices yet.</p>
+        <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading invoices…</p>
+        <p v-else-if="!myInvoices.length" class="card text-sm text-slate-400">No fee invoices yet.</p>
       </div>
     </template>
   </div>

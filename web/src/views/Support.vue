@@ -10,6 +10,7 @@ const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
 
+const loading = ref(true);
 const children = ref([]);
 const tickets = ref([]);
 const open = ref(null);
@@ -59,6 +60,7 @@ async function loadPtm() {
   ]);
   if (p.status === 200) ptms.value = p.json.slots;
   if (c && c.status === 200) classes.value = c.json.classes;
+  loading.value = false;
 }
 async function createPtm() {
   err.value = ""; msg.value = "";
@@ -134,7 +136,8 @@ onMounted(async () => {
           </div>
           <div class="text-xs text-slate-400 mt-0.5">{{ t.category }}<span v-if="t.studentName"> · {{ t.studentName }}</span> · {{ String(t.updatedAt).slice(0, 10) }}</div>
         </div>
-        <p v-if="!tickets.length" class="card text-sm text-slate-400">No tickets yet.</p>
+        <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading tickets…</p>
+        <p v-else-if="!tickets.length" class="card text-sm text-slate-400">No tickets yet.</p>
       </div>
 
       <div v-if="open" class="card content-start">
@@ -192,7 +195,8 @@ onMounted(async () => {
             <button class="btn btn-primary !py-2" @click="book(s)">Book</button>
           </div>
         </div>
-        <p v-if="!ptms.length" class="text-sm text-slate-400">No PTM scheduled right now.</p>
+        <p v-if="loading" class="text-sm text-slate-400 animate-pulse">Loading PTMs…</p>
+        <p v-else-if="!ptms.length" class="text-sm text-slate-400">No PTM scheduled right now.</p>
       </div>
 
       <form v-if="isManager" class="grid md:grid-cols-3 gap-2 mt-4 border-t border-slate-100 pt-3" @submit.prevent="createPtm">

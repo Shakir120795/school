@@ -44,11 +44,15 @@ const pager = usePager(visible, 25);
 watch([query, classFilter], () => pager.reset());
 
 async function load() {
-  const [s, c] = await Promise.all([api(`/schools/${sid}/students`), api(`/schools/${sid}/classrooms`)]);
-  if (s.status === 200) students.value = s.json.students || [];
-  else err.value = s.json?.error || "Could not load students";
-  classrooms.value = c.json.classrooms || [];
-  loading.value = false;
+  loading.value = true;
+  try {
+    const [s, c] = await Promise.all([api(`/schools/${sid}/students`), api(`/schools/${sid}/classrooms`)]);
+    if (s.status === 200) students.value = s.json.students || [];
+    else err.value = s.json?.error || "Could not load students";
+    classrooms.value = c.json.classrooms || [];
+  } finally {
+    loading.value = false;
+  }
 }
 onMounted(load);
 </script>

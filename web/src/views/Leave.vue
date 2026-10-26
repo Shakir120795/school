@@ -10,6 +10,7 @@ const isParent = role === "PARENT";
 const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
+const loading = ref(true);
 const apps = ref([]);
 const children = ref([]);
 const form = ref({ studentId: "", fromDate: "", toDate: "", category: "SICK", reason: "" });
@@ -24,14 +25,19 @@ const STATUS_CLS = {
 const fmt = (d) => (d ? String(d).slice(0, 10) : "");
 
 async function load() {
-  const r = await api(`/schools/${sid}/leave-applications`);
-  if (r.status === 200) apps.value = r.json.applications;
-  if (isParent) {
-    const c = await api(`/schools/${sid}/my-children`);
-    if (c.status === 200) {
-      children.value = c.json.children || [];
-      if (children.value.length) form.value.studentId = children.value[0].id;
+  loading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/leave-applications`);
+    if (r.status === 200) apps.value = r.json.applications;
+    if (isParent) {
+      const c = await api(`/schools/${sid}/my-children`);
+      if (c.status === 200) {
+        children.value = c.json.children || [];
+        if (children.value.length) form.value.studentId = children.value[0].id;
+      }
     }
+  } finally {
+    loading.value = false;
   }
 }
 async function apply() {
@@ -111,7 +117,8 @@ onMounted(load);
           <button class="btn btn-ghost !py-1.5 text-red-600" @click="cancel(a)">Cancel application</button>
         </div>
       </div>
-      <p v-if="!apps.length" class="card text-sm text-slate-400">No leave applications.</p>
+      <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading leave applications…</p>
+      <p v-else-if="!apps.length" class="card text-sm text-slate-400">No leave applications.</p>
     </div>
   </div>
 </template>

@@ -8,6 +8,7 @@ const sid = session.schoolId;
 const role = myRole();
 const date = ref(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }));
 const tab = ref("students");
+const loading = ref(true);
 const rows = ref([]);
 const staffRows = ref([]);
 const corrections = ref([]);
@@ -41,19 +42,24 @@ const attPager = usePager(visibleRows, 25);
 watch([attQuery, classFilter, date, tab], () => attPager.reset());
 
 async function load() {
-  const [a, b] = await Promise.all([
-    api(`/schools/${sid}/attendance/students?date=${date.value}`),
-    api(`/schools/${sid}/attendance/staff?date=${date.value}`),
-  ]);
-  rows.value = a.json.attendance || [];
-  staffRows.value = b.json.attendance || [];
-  if (!classes.value.length) {
-    const c = await api(`/schools/${sid}/classrooms`);
-    classes.value = c.json.classrooms || [];
-  }
-  if (canDecide) {
-    const au = await api(`/schools/${sid}/attendance/audit`);
-    audits.value = (au.json.audit || []).slice(0, 10);
+  loading.value = true;
+  try {
+    const [a, b] = await Promise.all([
+      api(`/schools/${sid}/attendance/students?date=${date.value}`),
+      api(`/schools/${sid}/attendance/staff?date=${date.value}`),
+    ]);
+    rows.value = a.json.attendance || [];
+    staffRows.value = b.json.attendance || [];
+    if (!classes.value.length) {
+      const c = await api(`/schools/${sid}/classrooms`);
+      classes.value = c.json.classrooms || [];
+    }
+    if (canDecide) {
+      const au = await api(`/schools/${sid}/attendance/audit`);
+      audits.value = (au.json.audit || []).slice(0, 10);
+    }
+  } finally {
+    loading.value = false;
   }
 }
 onMounted(load);
@@ -98,8 +104,8 @@ function statusBadge(s) {
     <p v-if="msg" class="card mb-3 !py-2 text-sm">{{ msg }}</p>
     <div class="flex flex-wrap gap-2 items-center mb-4">
       <input type="date" v-model="date" class="input !w-auto" @change="load" />
-      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students ({{ rows.length }})</button>
-      <button class="btn" :class="tab === 'staff' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'staff'">Staff ({{ staffRows.length }})</button>
+      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students<span v-if="!loading"> ({{ rows.length }})</span></button>
+      <button class="btn" :class="tab === 'staff' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'staff'">Staff<span v-if="!loading"> ({{ staffRows.length }})</span></button>
       <button class="btn btn-ghost" @click="load">Refresh</button>
       <select v-if="tab === 'students'" v-model="classFilter" class="input !w-auto">
         <option value="">All classes</option>
@@ -109,11 +115,11 @@ function statusBadge(s) {
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-      <div class="card !py-3 text-center"><div class="text-xl font-extrabold">{{ summary.total }}</div><div class="text-[11px] font-semibold text-slate-500">MARKED</div></div>
-      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-emerald-600">{{ summary.present }}</div><div class="text-[11px] font-semibold text-slate-500">PRESENT</div></div>
-      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-amber-600">{{ summary.late }}</div><div class="text-[11px] font-semibold text-slate-500">LATE</div></div>
-      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-rose-600">{{ summary.absent }}</div><div class="text-[11px] font-semibold text-slate-500">ABSENT</div></div>
-      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-orange-500">{{ summary.flagged }}</div><div class="text-[11px] font-semibold text-slate-500">FLAGGED ⚠</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold">{{ loading ? "…" : summary.total }}</div><div class="text-[11px] font-semibold text-slate-500">MARKED</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-emerald-600">{{ loading ? "…" : summary.present }}</div><div class="text-[11px] font-semibold text-slate-500">PRESENT</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-amber-600">{{ loading ? "…" : summary.late }}</div><div class="text-[11px] font-semibold text-slate-500">LATE</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-rose-600">{{ loading ? "…" : summary.absent }}</div><div class="text-[11px] font-semibold text-slate-500">ABSENT</div></div>
+      <div class="card !py-3 text-center"><div class="text-xl font-extrabold text-orange-500">{{ loading ? "…" : summary.flagged }}</div><div class="text-[11px] font-semibold text-slate-500">FLAGGED ⚠</div></div>
     </div>
 
     <div v-if="tab === 'students'" class="card !p-0 overflow-x-auto">
@@ -126,11 +132,12 @@ function statusBadge(s) {
             <td class="p-3">{{ fmt(r.entryAt) }}</td><td class="p-3">{{ fmt(r.exitAt) }}</td>
             <td class="p-3 text-amber-600">{{ r.reviewFlag || "" }}</td>
           </tr>
-          <tr v-if="!rows.length"><td class="p-3 text-slate-500" colspan="5">No student attendance for this date yet.</td></tr>
+          <tr v-if="loading"><td class="p-3 text-slate-500 animate-pulse" colspan="5">Loading attendance…</td></tr>
+          <tr v-else-if="!rows.length"><td class="p-3 text-slate-500" colspan="5">No student attendance for this date yet.</td></tr>
           <tr v-else-if="!visibleRows.length"><td class="p-3 text-slate-500" colspan="5">No students match your search or class filter.</td></tr>
         </tbody>
       </table>
-      <div class="px-3 pb-3">
+      <div v-if="!loading" class="px-3 pb-3">
         <Pager :page="attPager.page.value" :total-pages="attPager.totalPages.value" :from="attPager.from.value" :to="attPager.to.value" :total="attPager.total.value" @update:page="attPager.page.value = $event" />
       </div>
     </div>
@@ -145,7 +152,8 @@ function statusBadge(s) {
             <td class="p-3">{{ fmt(r.checkInAt) }}</td><td class="p-3">{{ fmt(r.checkOutAt) }}</td>
             <td class="p-3 text-amber-600">{{ r.reviewFlag || "" }}</td>
           </tr>
-          <tr v-if="!staffRows.length"><td class="p-3 text-slate-500" colspan="5">No staff attendance for this date yet.</td></tr>
+          <tr v-if="loading"><td class="p-3 text-slate-500 animate-pulse" colspan="5">Loading attendance…</td></tr>
+          <tr v-else-if="!staffRows.length"><td class="p-3 text-slate-500" colspan="5">No staff attendance for this date yet.</td></tr>
         </tbody>
       </table>
     </div>

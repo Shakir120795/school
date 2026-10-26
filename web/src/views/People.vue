@@ -7,6 +7,7 @@ import Pager from "../components/Pager.vue";
 import StudentCard from "../components/StudentCard.vue";
 
 const sid = session.schoolId;
+const loading = ref(true);
 const tab = ref("students");
 const students = ref([]);
 const teachers = ref([]);
@@ -63,6 +64,8 @@ const assign = ref({ teacherId: "", classroomId: "", subjectId: "", academicYear
 const incharge = ref({ teacherId: "", classroomId: "", academicYearId: "", effectiveFrom: "" });
 
 async function load() {
+  loading.value = true;
+  try {
   const [s, t, c, sub, y, m, g] = await Promise.all([
     api(`/schools/${sid}/students`),
     api(`/schools/${sid}/teachers`),
@@ -79,6 +82,9 @@ async function load() {
   years.value = y.json.academicYears || [];
   memberships.value = m.json.memberships || [];
   guardians.value = g.json.guardians || [];
+  } finally {
+    loading.value = false;
+  }
 }
 onMounted(async () => {
   const sres = await api(`/schools/${sid}`).catch(() => null);
@@ -226,9 +232,9 @@ watch(guardQuery, () => guardPager.reset());
     </div>
 
     <div class="flex gap-2 mb-4">
-      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students ({{ students.length }})</button>
-      <button class="btn" :class="tab === 'teachers' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'teachers'">Teachers ({{ teachers.length }})</button>
-      <button class="btn" :class="tab === 'guardians' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'guardians'">Guardians ({{ guardians.length }})</button>
+      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students<span v-if="!loading"> ({{ students.length }})</span></button>
+      <button class="btn" :class="tab === 'teachers' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'teachers'">Teachers<span v-if="!loading"> ({{ teachers.length }})</span></button>
+      <button class="btn" :class="tab === 'guardians' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'guardians'">Guardians<span v-if="!loading"> ({{ guardians.length }})</span></button>
     </div>
 
     <div v-if="tab === 'students'">
@@ -297,7 +303,8 @@ watch(guardQuery, () => guardPager.reset());
           <option value="INACTIVE">Inactive</option>
         </select>
       </div>
-      <div v-if="filteredStudents.length" class="grid sm:grid-cols-2 gap-3">
+      <div v-if="loading" class="card text-slate-500 animate-pulse mb-4">Loading students…</div>
+      <div v-else-if="filteredStudents.length" class="grid sm:grid-cols-2 gap-3">
         <StudentCard v-for="s in stuPager.pageItems.value" :key="s.id" :student="s" :class-label="className(s.classroomId)">
           <template #actions>
             <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="issueCard({ ownerType: 'STUDENT', studentId: s.id }, s.fullName)">Issue QR card</button>
@@ -305,8 +312,8 @@ watch(guardQuery, () => guardPager.reset());
           </template>
         </StudentCard>
       </div>
-      <p v-else class="card text-sm text-slate-400">No students match — try a different search or filter.</p>
-      <div class="mt-3">
+      <p v-else class="card text-sm text-slate-400">{{ students.length ? "No students match — try a different search or filter." : "No students yet." }}</p>
+      <div v-if="!loading" class="mt-3">
         <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
       </div>
     </div>
@@ -339,7 +346,8 @@ watch(guardQuery, () => guardPager.reset());
 
       <div class="card mb-4">
         <input v-model="teacherQuery" class="input" placeholder="Search teacher by name…" />
-        <p v-if="!filteredTeachers.length" class="text-sm text-slate-400 mt-2">No teachers match your search.</p>
+        <p v-if="loading" class="text-sm text-slate-400 mt-2 animate-pulse">Loading teachers…</p>
+        <p v-else-if="!filteredTeachers.length" class="text-sm text-slate-400 mt-2">{{ teachers.length ? "No teachers match your search." : "No teachers yet." }}</p>
       </div>
       <div class="grid md:grid-cols-2 gap-3">
         <div v-for="t in filteredTeachers" :key="t.id" class="card">
@@ -385,10 +393,11 @@ watch(guardQuery, () => guardPager.reset());
               <td class="p-3 font-medium">{{ g.fullName }}</td><td class="p-3">{{ g.phone || "—" }}</td>
               <td class="p-3">{{ (g.studentLinks || []).length }}</td>
             </tr>
-            <tr v-if="!filteredGuardians.length"><td class="p-3 text-slate-400" colspan="3">No guardians match your search.</td></tr>
+            <tr v-if="loading"><td class="p-3 text-slate-400 animate-pulse" colspan="3">Loading guardians…</td></tr>
+            <tr v-else-if="!filteredGuardians.length"><td class="p-3 text-slate-400" colspan="3">{{ guardians.length ? "No guardians match your search." : "No guardians yet." }}</td></tr>
           </tbody>
         </table>
-        <div class="px-3 pb-3">
+        <div v-if="!loading" class="px-3 pb-3">
           <Pager :page="guardPager.page.value" :total-pages="guardPager.totalPages.value" :from="guardPager.from.value" :to="guardPager.to.value" :total="guardPager.total.value" @update:page="guardPager.page.value = $event" />
         </div>
       </div>

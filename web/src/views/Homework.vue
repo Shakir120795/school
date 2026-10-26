@@ -9,6 +9,7 @@ const isStaff = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"].includes(role);
 const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
+const loading = ref(true);
 const list = ref([]);
 const children = ref([]);
 const classes = ref([]);
@@ -26,10 +27,15 @@ function dueBadge(h) {
 }
 
 async function load() {
-  const r = await api(`/schools/${sid}/homework`);
-  if (r.status === 200) {
-    list.value = r.json.homework || [];
-    children.value = r.json.children || [];
+  loading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/homework`);
+    if (r.status === 200) {
+      list.value = r.json.homework || [];
+      children.value = r.json.children || [];
+    }
+  } finally {
+    loading.value = false;
   }
 }
 async function loadMeta() {
@@ -139,7 +145,8 @@ onMounted(async () => { await load(); if (isStaff) await loadMeta(); });
           </div>
         </div>
       </div>
-      <p v-if="!list.length" class="card text-sm text-slate-400">No homework yet.</p>
+      <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading homework…</p>
+      <p v-else-if="!list.length" class="card text-sm text-slate-400">No homework yet.</p>
     </div>
   </div>
 </template>
