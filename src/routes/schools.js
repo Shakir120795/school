@@ -78,13 +78,14 @@ router.patch(
 );
 
 // --- Academic years / classrooms / subjects ---------------------------------
-function simpleCollection(model, fields, orderBy = { createdAt: "asc" }) {
+function simpleCollection(model, fields, orderBy = { createdAt: "asc" }, optionalFields = []) {
   return {
     create: asyncRoute(async (req, res) => {
       const missing = requireFields(req.body, fields);
       if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
       const data = { schoolId: req.params.schoolId };
       for (const f of fields) data[f] = req.body[f];
+      for (const f of optionalFields) if (req.body[f] !== undefined && req.body[f] !== "") data[f] = req.body[f];
       if (model === "academicYear") {
         data.startsOn = new Date(req.body.startsOn);
         data.endsOn = new Date(req.body.endsOn);
@@ -103,7 +104,10 @@ const years = simpleCollection("academicYear", ["name", "startsOn", "endsOn"]);
 router.post("/:schoolId/academic-years", requireAuth, requireSchool(WRITE), years.create);
 router.get("/:schoolId/academic-years", requireAuth, requireSchool(READ), years.list);
 
-const rooms = simpleCollection("classroom", ["academicYearId", "name"]);
+// section/gradeLevel are OPTIONAL pass-throughs: the Settings UI
+// has always sent a section ("A"/"B") that used to be silently
+// dropped here, leaving every classroom section-less.
+const rooms = simpleCollection("classroom", ["academicYearId", "name"], { createdAt: "asc" }, ["section", "gradeLevel"]);
 router.post("/:schoolId/classrooms", requireAuth, requireSchool(WRITE), rooms.create);
 router.get("/:schoolId/classrooms", requireAuth, requireSchool(READ), rooms.list);
 
@@ -172,6 +176,12 @@ router.get(
 // Edit a member of THIS school (Phase 23 school-side CRUD):
 // membership status (activate/suspend) and/or the login profile
 // fields — fullName / login email / phone — on the user record.
+// Same validation contract as the operator endpoint (platform.js):
+// profile fields are validated BEFORE anything is saved — name
+// non-empty, email well-formed, an email owned by another user is a
+// 409 conflict — and an actual email change revokes the member's
+// sessions (the reset-password precedent), since the login ID moved.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 router.patch(
   "/:schoolId/users/:membershipId",
   requireAuth,
@@ -182,6 +192,25 @@ router.patch(
       where: { id: req.params.membershipId, schoolId: req.params.schoolId },
     });
     if (!target) return res.status(404).json({ error: "MEMBERSHIP_NOT_FOUND" });
+    const userData = {};
+    if (fullName !== undefined) {
+      const name = String(fullName).trim();
+      if (!name) return res.status(400).json({ error: "FULL_NAME_REQUIRED" });
+      userData.fullName = name;
+    }
+    if (phone !== undefined) userData.phone = phone || null;
+    let emailChanged = false;
+    if (email !== undefined) {
+      const newEmail = String(email || "").trim();
+      if (!EMAIL_RE.test(newEmail)) return res.status(400).json({ error: "INVALID_EMAIL" });
+      const current = await prisma.user.findUnique({ where: { id: target.userId }, select: { email: true } });
+      if (newEmail !== current?.email) {
+        const taken = await prisma.user.findUnique({ where: { email: newEmail } });
+        if (taken) return res.status(409).json({ error: "EMAIL_ALREADY_IN_USE" });
+        userData.email = newEmail;
+        emailChanged = true;
+      }
+    }
     if (status !== undefined) {
       if (!["ACTIVE", "SUSPENDED"].includes(status)) {
         return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
@@ -189,16 +218,14 @@ router.patch(
       if (target.id === req.membership.id) return res.status(400).json({ error: "CANNOT_CHANGE_OWN_STATUS" });
       await prisma.schoolMembership.update({ where: { id: target.id }, data: { status } });
     }
-    const userData = {};
-    if (fullName !== undefined) userData.fullName = String(fullName).trim();
-    if (phone !== undefined) userData.phone = phone || null;
-    if (email !== undefined && email !== null && String(email).trim()) {
-      const taken = await prisma.user.findUnique({ where: { email: String(email).trim() } });
-      if (taken && taken.id !== target.userId) return res.status(400).json({ error: "EMAIL_ALREADY_IN_USE" });
-      userData.email = String(email).trim();
-    }
     if (Object.keys(userData).length) {
       await prisma.user.update({ where: { id: target.userId }, data: userData });
+    }
+    if (emailChanged) {
+      await prisma.authSession.updateMany({
+        where: { userId: target.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     }
     const membership = await prisma.schoolMembership.findUnique({
       where: { id: target.id },

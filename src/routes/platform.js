@@ -179,27 +179,46 @@ router.post("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =
 
 // Phase 23: the operator EDITS a member — name / login email /
 // phone on the user record, membership status on the membership.
+// The login-profile fields are validated BEFORE anything is saved
+// (a rejected edit changes nothing): name must be non-empty, the
+// login email must be well-formed, and an email owned by another
+// user is a 409 conflict. Changing the login email is a credential
+// change — like a password reset, the member's sessions are revoked
+// so they sign in fresh with the new email.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 router.patch("/platform/schools/:schoolId/members/:membershipId", asyncRoute(async (req, res) => {
   const membership = await prisma.schoolMembership.findFirst({
     where: { id: req.params.membershipId, schoolId: req.params.schoolId },
   });
   if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
   const { fullName, email, phone, status } = req.body || {};
+  const userData = {};
+  if (fullName !== undefined) {
+    const name = String(fullName).trim();
+    if (!name) return res.status(400).json({ error: "FULL_NAME_REQUIRED" });
+    userData.fullName = name;
+  }
+  if (phone !== undefined) userData.phone = phone || null;
+  let emailChanged = false;
+  if (email !== undefined) {
+    const newEmail = String(email || "").trim();
+    if (!EMAIL_RE.test(newEmail)) return res.status(400).json({ error: "INVALID_EMAIL" });
+    const current = await prisma.user.findUnique({ where: { id: membership.userId }, select: { email: true } });
+    if (newEmail !== current?.email) {
+      const taken = await prisma.user.findUnique({ where: { email: newEmail } });
+      if (taken) return res.status(409).json({ error: "EMAIL_ALREADY_IN_USE" });
+      userData.email = newEmail;
+      emailChanged = true;
+    }
+  }
   if (status !== undefined) {
     if (!["ACTIVE", "SUSPENDED"].includes(status)) return res.status(400).json({ error: "STATUS_MUST_BE_ACTIVE_OR_SUSPENDED" });
     await prisma.schoolMembership.update({ where: { id: membership.id }, data: { status } });
   }
-  const userData = {};
-  if (fullName !== undefined) userData.fullName = String(fullName).trim();
-  if (phone !== undefined) userData.phone = phone || null;
-  if (email !== undefined && email !== null && String(email).trim()) {
-    const taken = await prisma.user.findUnique({ where: { email: String(email).trim() } });
-    if (taken && taken.id !== membership.userId) return res.status(400).json({ error: "EMAIL_ALREADY_IN_USE" });
-    userData.email = String(email).trim();
-  }
   if (Object.keys(userData).length) {
     await prisma.user.update({ where: { id: membership.userId }, data: userData });
   }
+  if (emailChanged) await revokeSessions(membership.userId);
   const fresh = await prisma.schoolMembership.findUnique({
     where: { id: membership.id },
     include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },

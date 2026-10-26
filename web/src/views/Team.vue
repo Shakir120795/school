@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { api, session } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
+import MemberEditModal from "../components/MemberEditModal.vue";
 
 const sid = session.schoolId;
 const memberships = ref([]);
@@ -71,13 +72,32 @@ async function toggleStatus(m) {
   if (r.status === 200) { m.status = next; msg.value = `${m.user.fullName} is now ${next}.`; }
   else msg.value = r.json.error || "Could not change status.";
 }
-async function editMember(m) {
-  const fullName = prompt("Full name:", m.user.fullName); if (fullName === null) return;
-  const email = prompt("Login email / ID:", m.user.email || ""); if (email === null) return;
-  const phone = prompt("Phone (leave blank for none):", m.user.phone || ""); if (phone === null) return;
-  const r = await api(`/schools/${sid}/users/${m.id}`, { method: "PATCH", body: { fullName, email, phone } });
-  if (r.status === 200) { msg.value = `${fullName} updated.`; load(); }
-  else msg.value = r.json.error || "Could not edit member.";
+// Edit = one in-app modal form (Full name / Login email / Phone),
+// shared with the owner Console via <MemberEditModal>. Server errors
+// (e.g. the 409 email conflict) show INSIDE the form and nothing is
+// saved; on success the list reloads in place.
+const EDIT_ERRORS = {
+  EMAIL_ALREADY_IN_USE: "This login email is already used by another account — nothing was saved.",
+  INVALID_EMAIL: "Please enter a valid email address.",
+  FULL_NAME_REQUIRED: "Full name cannot be empty.",
+};
+const editTarget = ref(null); // membership (with .user)
+const editError = ref("");
+const editSaving = ref(false);
+function editMember(m) {
+  editError.value = "";
+  editTarget.value = m;
+}
+async function saveEditMember(values) {
+  const m = editTarget.value;
+  editSaving.value = true; editError.value = "";
+  const r = await api(`/schools/${sid}/users/${m.id}`, { method: "PATCH", body: values });
+  editSaving.value = false;
+  if (r.status === 200) {
+    editTarget.value = null;
+    msg.value = `${values.fullName} updated.`;
+    load();
+  } else editError.value = EDIT_ERRORS[r.json?.error] || r.json?.error || "Could not edit member.";
 }
 const removeTarget = ref(null);
 const removeForm = ref({ reason: "LEFT_SCHOOL", note: "" });
@@ -167,6 +187,17 @@ onMounted(load);
       <p class="text-[11px] text-slate-400 mt-3">Removed members ke login band hain — unka record Removed tab me rehta hai: kab, kisne, kyun hataya.</p>
     </div>
   </div>
+
+  <MemberEditModal
+    v-if="editTarget"
+    title="Edit member"
+    :subtitle="editTarget.role.replace('_', ' ')"
+    :initial="{ fullName: editTarget.user.fullName, email: editTarget.user.email, phone: editTarget.user.phone }"
+    :error="editError"
+    :saving="editSaving"
+    @save="saveEditMember"
+    @close="editTarget = null"
+  />
 
   <div v-if="removeTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="removeTarget = null">
     <div class="card w-full max-w-md">

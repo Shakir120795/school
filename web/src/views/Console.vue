@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { api } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
+import MemberEditModal from "../components/MemberEditModal.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
 const schools = ref([]);
@@ -73,13 +74,32 @@ async function addMember(s) {
     await refreshMembers(s); await load();
   } else err.value = r.json?.error || "Could not add member";
 }
-async function editMember(s, m) {
-  const fullName = prompt("Full name:", m.fullName); if (fullName === null) return;
-  const email = prompt("Login email / ID:", m.email || ""); if (email === null) return;
-  const phone = prompt("Phone (leave blank for none):", m.phone || ""); if (phone === null) return;
-  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "PATCH", school: false, body: { fullName, email, phone } });
-  if (r.status === 200) { msg.value = `${fullName} updated.`; await refreshMembers(s); }
-  else err.value = r.json?.error || "Edit failed";
+// Edit = one in-app modal form (Full name / Login email / Phone),
+// shared with the school-side Team page via <MemberEditModal>. Server
+// errors (e.g. the 409 email conflict) show INSIDE the form and
+// nothing is saved; on success the list refreshes in place.
+const EDIT_ERRORS = {
+  EMAIL_ALREADY_IN_USE: "This login email is already used by another account — nothing was saved.",
+  INVALID_EMAIL: "Please enter a valid email address.",
+  FULL_NAME_REQUIRED: "Full name cannot be empty.",
+};
+const editTarget = ref(null); // { school, member }
+const editError = ref("");
+const editSaving = ref(false);
+function editMember(s, m) {
+  editError.value = "";
+  editTarget.value = { school: s, member: m };
+}
+async function saveEditMember(values) {
+  const { school: s, member: m } = editTarget.value;
+  editSaving.value = true; editError.value = "";
+  const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "PATCH", school: false, body: values });
+  editSaving.value = false;
+  if (r.status === 200) {
+    editTarget.value = null;
+    msg.value = `${values.fullName} updated.`;
+    await refreshMembers(s);
+  } else editError.value = EDIT_ERRORS[r.json?.error] || r.json?.error || "Edit failed";
 }
 async function toggleMemberStatus(s, m) {
   const status = m.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
@@ -225,6 +245,17 @@ onMounted(load);
       </div>
       <button class="btn btn-primary">Create school + admin login</button>
     </form>
+
+    <MemberEditModal
+      v-if="editTarget"
+      title="Edit member"
+      :subtitle="`${editTarget.member.role} · ${editTarget.school.name}`"
+      :initial="{ fullName: editTarget.member.fullName, email: editTarget.member.email, phone: editTarget.member.phone }"
+      :error="editError"
+      :saving="editSaving"
+      @save="saveEditMember"
+      @close="editTarget = null"
+    />
 
     <div v-if="removeTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="removeTarget = null">
       <div class="card w-full max-w-md">
