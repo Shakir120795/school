@@ -1532,3 +1532,8 @@ ALTER TABLE "PtmBooking" ADD CONSTRAINT "PtmBooking_slotId_fkey" FOREIGN KEY ("s
 
 -- AddForeignKey
 ALTER TABLE "PtmBooking" ADD CONSTRAINT "PtmBooking_schoolId_studentId_fkey" FOREIGN KEY ("schoolId", "studentId") REFERENCES "Student"("schoolId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Phase 27: student family details (father / mother / address) — nullable, additive.
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "fatherName" TEXT;
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "motherName" TEXT;
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "address" TEXT;

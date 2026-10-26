@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api, session, myRole, currentUser } from "../api.js";
 import ParentView from "./Parent.vue";
+import PlatformDashboard from "./PlatformDashboard.vue";
 
 const role = myRole();
 const router = useRouter();
@@ -53,11 +54,15 @@ async function removeHoliday(id) {
   await api(`/schools/${sid}/holidays/${id}`, { method: "DELETE" });
   holidays.value = holidays.value.filter((x) => x.id !== id);
 }
-onMounted(() => { if (role !== "PARENT") load(); else loading.value = false; });
+// The operator has no school context — the school dashboard below
+// would render an empty page for them (Phase 27 complaint). They
+// get the platform overview instead; school loading is skipped.
+onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") load(); else loading.value = false; });
 </script>
 
 <template>
-  <ParentView v-if="role === 'PARENT'" />
+  <PlatformDashboard v-if="role === 'PLATFORM_ADMIN'" />
+  <ParentView v-else-if="role === 'PARENT'" />
   <div v-else>
     <!-- Header -->
     <div class="flex flex-wrap items-end justify-between gap-3 mb-5">

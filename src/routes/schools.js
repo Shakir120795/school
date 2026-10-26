@@ -11,6 +11,18 @@ const router = Router();
 const WRITE = ADMIN_ROLES;
 const READ = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT", "STAFF"];
 
+// Optional free-text field (Phase 27 family details etc.): a provided
+// value must be a string; it is trimmed and an empty string clears
+// the field (null). Returns undefined when the field was not sent.
+function optStr(body, field) {
+  const v = body?.[field];
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v !== "string") return { error: `${field.toUpperCase()}_MUST_BE_A_STRING` };
+  const s = v.trim();
+  return s ? s : null;
+}
+
 // --- Platform level -------------------------------------------------------
 router.post(
   "/",
@@ -318,6 +330,14 @@ router.post(
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["admissionNo", "fullName"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    // Family details (Phase 27): optional strings, validated the
+    // same way as the PATCH endpoint below.
+    const family = {};
+    for (const f of ["fatherName", "motherName", "address"]) {
+      const v = optStr(req.body, f);
+      if (v && typeof v === "object") return res.status(400).json({ error: v.error });
+      if (v !== undefined) family[f] = v;
+    }
     const student = await prisma.student.create({
       data: {
         schoolId: req.params.schoolId,
@@ -329,6 +349,7 @@ router.post(
         gender: req.body.gender,
         rollNo: req.body.rollNo || undefined,
         photoUrl: req.body.photoUrl || undefined,
+        ...family,
       },
     });
     return res.status(201).json({ student });
@@ -366,8 +387,78 @@ router.get(
       });
       where.id = { in: links.map((l) => l.studentId) };
     }
-    const students = await prisma.student.findMany({ where, orderBy: { fullName: "asc" } });
+    const rows = await prisma.student.findMany({
+      where,
+      orderBy: { fullName: "asc" },
+      // Phase 27: each student carries their primary guardian's
+      // name + phone — the "Mobile" on the student detail cards
+      // (People page + teacher My Students). One joined query,
+      // primary link first; the raw links are not exposed.
+      include: {
+        guardianLinks: {
+          include: { guardian: { select: { fullName: true, phone: true, relationship: true } } },
+          orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+        },
+      },
+    });
+    const students = rows.map(({ guardianLinks, ...s }) => ({
+      ...s,
+      guardian: guardianLinks?.[0]
+        ? {
+            name: guardianLinks[0].guardian.fullName,
+            phone: guardianLinks[0].guardian.phone,
+            relationship: guardianLinks[0].guardian.relationship,
+          }
+        : null,
+    }));
     return res.json({ students });
+  })
+);
+
+// Update a student (Phase 27): profile + family details from the
+// People page Edit form (and the seed backfill). Only provided
+// fields change; optional strings are trimmed, empty clears.
+// admissionNo is NOT editable — parent logins are derived from it.
+router.patch(
+  "/:schoolId/students/:studentId",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const target = await prisma.student.findFirst({
+      where: { id: req.params.studentId, schoolId: req.params.schoolId },
+      select: { id: true },
+    });
+    if (!target) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const body = req.body || {};
+    const data = {};
+    if (body.fullName !== undefined) {
+      const name = typeof body.fullName === "string" ? body.fullName.trim() : "";
+      if (!name) return res.status(400).json({ error: "FULL_NAME_REQUIRED" });
+      data.fullName = name;
+    }
+    for (const f of ["gender", "fatherName", "motherName", "address", "rollNo", "photoUrl"]) {
+      const v = optStr(body, f);
+      if (v && typeof v === "object") return res.status(400).json({ error: v.error });
+      if (v !== undefined) data[f] = v;
+    }
+    if (body.classroomId !== undefined) data.classroomId = body.classroomId || null;
+    if (body.academicYearId !== undefined) data.academicYearId = body.academicYearId || null;
+    if (body.dateOfBirth !== undefined) {
+      if (!body.dateOfBirth) data.dateOfBirth = null;
+      else {
+        const d = new Date(body.dateOfBirth);
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "INVALID_DATE_OF_BIRTH" });
+        data.dateOfBirth = d;
+      }
+    }
+    if (body.status !== undefined) {
+      if (!["ACTIVE", "INACTIVE", "LEFT", "SUSPENDED"].includes(body.status)) {
+        return res.status(400).json({ error: "INVALID_STATUS" });
+      }
+      data.status = body.status;
+    }
+    const student = await prisma.student.update({ where: { id: target.id }, data });
+    return res.json({ student });
   })
 );
 

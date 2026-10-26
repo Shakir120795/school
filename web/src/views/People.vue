@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { api, session } from "../api.js";
 import { usePager, matchStatus } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
+import StudentCard from "../components/StudentCard.vue";
 
 const sid = session.schoolId;
 const tab = ref("students");
@@ -21,7 +22,40 @@ const schoolName = ref("Smart School");
 const printCards = ref([]);
 const qrFor = ref("");
 
-const newStudent = ref({ admissionNo: "", fullName: "", classroomId: "", academicYearId: "", rollNo: "", photoUrl: "" });
+const emptyStudent = () => ({
+  admissionNo: "", fullName: "", classroomId: "", academicYearId: "", rollNo: "", photoUrl: "",
+  gender: "", dateOfBirth: "", fatherName: "", motherName: "", address: "",
+});
+const newStudent = ref(emptyStudent());
+// Edit student (Phase 27): the same detail fields as Add, PATCHed
+// via /schools/:id/students/:studentId. admissionNo is shown but
+// never edited (parent logins are derived from it).
+const editing = ref(null);
+function startEdit(s) {
+  editing.value = {
+    id: s.id,
+    admissionNo: s.admissionNo,
+    fullName: s.fullName || "",
+    classroomId: s.classroomId || "",
+    rollNo: s.rollNo || "",
+    photoUrl: s.photoUrl || "",
+    gender: s.gender || "",
+    dateOfBirth: s.dateOfBirth ? String(s.dateOfBirth).slice(0, 10) : "",
+    fatherName: s.fatherName || "",
+    motherName: s.motherName || "",
+    address: s.address || "",
+  };
+}
+async function saveEdit() {
+  const e = editing.value;
+  const { id, admissionNo, ...body } = e;
+  const r = await api(`/schools/${sid}/students/${id}`, { method: "PATCH", body });
+  if (r.status === 200) {
+    msg.value = `${e.fullName} updated.`;
+    editing.value = null;
+    load();
+  } else msg.value = `Error: ${r.json.error || r.status}`;
+}
 const link = ref({ studentId: "", guardianId: "", isPrimary: false });
 const newGuardian = ref({ fullName: "", phone: "", email: "" });
 const newTeacher = ref({ email: "", password: "", fullName: "", displayName: "" });
@@ -58,8 +92,15 @@ function note(r, okText) {
 }
 
 async function addStudent() {
-  note(await api(`/schools/${sid}/students`, { method: "POST", body: { ...newStudent.value, academicYearId: newStudent.value.academicYearId || years.value[0]?.id, classroomId: newStudent.value.classroomId || undefined } }), "Student added.");
-  newStudent.value = { admissionNo: "", fullName: "", classroomId: "", academicYearId: "", rollNo: "", photoUrl: "" };
+  const body = {
+    ...newStudent.value,
+    academicYearId: newStudent.value.academicYearId || years.value[0]?.id,
+    classroomId: newStudent.value.classroomId || undefined,
+    gender: newStudent.value.gender || undefined,
+    dateOfBirth: newStudent.value.dateOfBirth || undefined,
+  };
+  note(await api(`/schools/${sid}/students`, { method: "POST", body }), "Student added.");
+  newStudent.value = emptyStudent();
 }
 async function addGuardian() {
   note(await api(`/schools/${sid}/guardians`, { method: "POST", body: newGuardian.value }), "Guardian added.");
@@ -198,7 +239,31 @@ watch(guardQuery, () => guardPager.reset());
         <div><label class="label">Photo URL (optional)</label><input v-model="newStudent.photoUrl" class="input" placeholder="https://…" /></div>
         <div><label class="label">Class</label>
           <select v-model="newStudent.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
+        <div><label class="label">Gender (optional)</label>
+          <select v-model="newStudent.gender" class="input"><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+        <div><label class="label">Date of birth (optional)</label><input v-model="newStudent.dateOfBirth" type="date" class="input" /></div>
+        <div><label class="label">Father name (optional)</label><input v-model="newStudent.fatherName" class="input" /></div>
+        <div><label class="label">Mother name (optional)</label><input v-model="newStudent.motherName" class="input" /></div>
+        <div class="md:col-span-2"><label class="label">Address (optional)</label><input v-model="newStudent.address" class="input" /></div>
         <div class="flex items-end"><button class="btn btn-primary w-full">Add student</button></div>
+      </form>
+      <form v-if="editing" class="card grid md:grid-cols-4 gap-3 mb-4 !border-brand-300" @submit.prevent="saveEdit">
+        <div class="md:col-span-4 font-bold">Edit student — Admission No {{ editing.admissionNo }} (login IDs derive from it, so it cannot change)</div>
+        <div><label class="label">Full name</label><input v-model="editing.fullName" required class="input" /></div>
+        <div><label class="label">Roll No</label><input v-model="editing.rollNo" class="input" /></div>
+        <div><label class="label">Photo URL</label><input v-model="editing.photoUrl" class="input" placeholder="https://…" /></div>
+        <div><label class="label">Class</label>
+          <select v-model="editing.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
+        <div><label class="label">Gender</label>
+          <select v-model="editing.gender" class="input"><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+        <div><label class="label">Date of birth</label><input v-model="editing.dateOfBirth" type="date" class="input" /></div>
+        <div><label class="label">Father name</label><input v-model="editing.fatherName" class="input" /></div>
+        <div><label class="label">Mother name</label><input v-model="editing.motherName" class="input" /></div>
+        <div class="md:col-span-2"><label class="label">Address</label><input v-model="editing.address" class="input" /></div>
+        <div class="flex items-end gap-2">
+          <button class="btn btn-primary flex-1">Save changes</button>
+          <button type="button" class="btn btn-ghost flex-1" @click="editing = null">Cancel</button>
+        </div>
       </form>
       <div class="card mb-4 flex flex-wrap gap-2 items-center">
         <span class="font-semibold text-sm">Bulk ID cards:</span>
@@ -232,22 +297,17 @@ watch(guardQuery, () => guardPager.reset());
           <option value="INACTIVE">Inactive</option>
         </select>
       </div>
-      <div class="card !p-0 overflow-x-auto">
-        <table class="w-full text-sm mtable">
-          <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Adm No</th><th class="p-3">Name</th><th class="p-3">Class</th><th class="p-3">Status</th><th class="p-3"></th></tr></thead>
-          <tbody>
-            <tr v-for="s in stuPager.pageItems.value" :key="s.id" class="border-b last:border-0">
-              <td class="p-3">{{ s.admissionNo }}</td><td class="p-3 font-medium">{{ s.fullName }}</td>
-              <td class="p-3">{{ className(s.classroomId) }}</td>
-              <td class="p-3"><span class="badge" :class="s.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">{{ s.status }}</span></td>
-              <td class="p-3 text-right"><button class="btn btn-ghost !py-1.5" @click="issueCard({ ownerType: 'STUDENT', studentId: s.id }, s.fullName)">Issue QR card</button></td>
-            </tr>
-            <tr v-if="!filteredStudents.length"><td class="p-3 text-slate-400" colspan="5">No students match — try a different search or filter.</td></tr>
-          </tbody>
-        </table>
-        <div class="px-3 pb-3">
-          <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
-        </div>
+      <div v-if="filteredStudents.length" class="grid sm:grid-cols-2 gap-3">
+        <StudentCard v-for="s in stuPager.pageItems.value" :key="s.id" :student="s" :class-label="className(s.classroomId)">
+          <template #actions>
+            <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="issueCard({ ownerType: 'STUDENT', studentId: s.id }, s.fullName)">Issue QR card</button>
+            <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="startEdit(s)">Edit details</button>
+          </template>
+        </StudentCard>
+      </div>
+      <p v-else class="card text-sm text-slate-400">No students match — try a different search or filter.</p>
+      <div class="mt-3">
+        <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
       </div>
     </div>
 

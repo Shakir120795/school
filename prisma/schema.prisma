@@ -353,6 +353,12 @@ model Student {
   fullName       String
   dateOfBirth    DateTime?    @db.Date
   gender         String?
+  // Family details (Phase 27): shown on the student detail cards in
+  // the school + teacher logins and on parent rows in the console.
+  // All optional — older records simply show "—".
+  fatherName     String?
+  motherName     String?
+  address        String?
   status         PersonStatus @default(ACTIVE)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

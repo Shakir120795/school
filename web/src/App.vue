@@ -27,6 +27,7 @@ const isLogin = computed(() => route.meta.public === true);
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "▦", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PLATFORM_ADMIN"] },
+  { to: "/students", label: "My Students", icon: "🎓", roles: ["TEACHER"] },
   { to: "/people", label: "Students & Staff", icon: "👥", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
   { to: "/attendance", label: "Attendance", icon: "✓", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/scanner", label: "Gate Scanner", icon: "▣", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"] },

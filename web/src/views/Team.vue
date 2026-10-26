@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { api, session } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
+import MemberCard from "../components/MemberCard.vue";
 
 const sid = session.schoolId;
 const memberships = ref([]);
@@ -37,7 +38,7 @@ const memberSearchText = (m) =>
   [
     m.user?.fullName || m.fullName, m.user?.email || m.email, m.user?.phone || m.phone, m.role, m.reason, m.note,
     // Parents are also findable by their child's name or class ("1-A").
-    ...((m.children || []).flatMap((c) => [c.name, c.classLabel])),
+    ...((m.children || []).flatMap((c) => [c.name, c.classLabel, c.fatherName, c.motherName])),
   ]
     .filter(Boolean)
     .join(" ");
@@ -175,22 +176,20 @@ onMounted(load);
             <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
             <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
           </div>
-          <div v-else class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0" :class="m.status !== 'ACTIVE' ? 'opacity-60' : ''">
-            <div>
-              <div class="font-semibold text-sm">{{ m.user.fullName }}</div>
-              <div class="text-xs text-slate-400">{{ m.user.email }}<span v-if="m.user.phone"> · {{ m.user.phone }}</span></div>
-            </div>
-            <span class="chip" :class="roleChip(m.role)">{{ m.role.replace("_", " ") }}</span>
-            <span v-if="m.role === 'PARENT'" class="chip bg-sky-50 text-sky-700">🎓 {{ m.childrenCount || 0 }} child{{ (m.childrenCount || 0) === 1 ? "" : "ren" }}</span>
-            <template v-if="m.role === 'PARENT' && m.children && m.children.length">
-              <span v-for="(c, i) in m.children.slice(0, 3)" :key="i" class="chip bg-sky-100 text-sky-800">{{ c.name }}{{ c.classLabel ? " · " + c.classLabel : "" }}</span>
-              <span v-if="m.children.length > 3" class="chip bg-sky-50 text-sky-700">+{{ m.children.length - 3 }} more</span>
-            </template>
-            <span class="chip" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ m.status }}</span>
-            <span class="ml-auto whitespace-nowrap">
-              <button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="editMember(m)">Edit</button><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="resetPassword(m)">Reset password</button><button type="button" class="text-xs font-bold mr-3" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button><button type="button" class="text-xs font-bold text-rose-700" @click="openRemove(m)">Remove</button>
-            </span>
-          </div>
+          <MemberCard
+            v-else
+            :name="m.user.fullName"
+            :role="m.role"
+            :status="m.status"
+            :email="m.user.email || ''"
+            :phone="m.user.phone || ''"
+            :children="m.role === 'PARENT' ? (m.children || []) : null"
+            :toggle-text="m.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'"
+            @edit="editMember(m)"
+            @toggle-status="toggleStatus(m)"
+            @reset="resetPassword(m)"
+            @remove="openRemove(m)"
+          />
         </template>
       </TabbedList>
       <p class="text-[11px] text-slate-400 mt-3">Removed members ke login band hain — unka record Removed tab me rehta hai: kab, kisne, kyun hataya.</p>

@@ -14,19 +14,22 @@ export function classLabel(classroom) {
   return `${classroom.name}${classroom.section ? "-" + classroom.section : ""}`;
 }
 
-// Returns { [userId]: [{ name, classLabel }] } for the given PARENT
-// user ids within one school. Parents with no linked children are
-// simply absent from the map. A child linked to the same login via
-// two guardian records is listed once.
+// Returns { [userId]: [{ name, classLabel, gender, fatherName,
+// motherName, address, guardianName, guardianPhone }] } for the
+// given PARENT user ids within one school — the child detail blocks
+// on the Console/Team parent cards (Phase 27). Parents with no
+// linked children are simply absent from the map. A child linked to
+// the same login via two guardian records is listed once.
 export async function childrenByParentUser(schoolId, parentUserIds) {
   const out = {};
   if (!parentUserIds.length) return out;
   const guardians = await prisma.guardian.findMany({
     where: { schoolId, userId: { in: parentUserIds } },
-    select: { id: true, userId: true },
+    select: { id: true, userId: true, fullName: true, phone: true },
   });
   if (!guardians.length) return out;
   const userByGuardian = Object.fromEntries(guardians.map((g) => [g.id, g.userId]));
+  const guardianById = Object.fromEntries(guardians.map((g) => [g.id, g]));
   const links = await prisma.studentGuardian.findMany({
     where: { schoolId, guardianId: { in: guardians.map((g) => g.id) } },
     select: {
@@ -35,6 +38,10 @@ export async function childrenByParentUser(schoolId, parentUserIds) {
         select: {
           id: true,
           fullName: true,
+          gender: true,
+          fatherName: true,
+          motherName: true,
+          address: true,
           classroom: { select: { name: true, section: true } },
         },
       },
@@ -47,7 +54,17 @@ export async function childrenByParentUser(schoolId, parentUserIds) {
     const dedupeKey = `${userId}|${l.student.id}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
-    (out[userId] ||= []).push({ name: l.student.fullName, classLabel: classLabel(l.student.classroom) });
+    const g = guardianById[l.guardianId];
+    (out[userId] ||= []).push({
+      name: l.student.fullName,
+      classLabel: classLabel(l.student.classroom),
+      gender: l.student.gender || null,
+      fatherName: l.student.fatherName || null,
+      motherName: l.student.motherName || null,
+      address: l.student.address || null,
+      guardianName: g?.fullName || null,
+      guardianPhone: g?.phone || null,
+    });
   }
   for (const list of Object.values(out)) list.sort((a, b) => a.name.localeCompare(b.name));
   return out;

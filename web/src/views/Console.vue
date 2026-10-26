@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { api } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
+import MemberCard from "../components/MemberCard.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
 const schools = ref([]);
@@ -61,7 +62,7 @@ const memberSearchText = (m) =>
   [
     m.fullName, m.email, m.phone, m.role, m.reason, m.note,
     // Parents are also findable by their child's name or class ("1-A").
-    ...((m.children || []).flatMap((c) => [c.name, c.classLabel])),
+    ...((m.children || []).flatMap((c) => [c.name, c.classLabel, c.fatherName, c.motherName])),
   ].filter(Boolean).join(" ");
 const memberStatusOf = (m) => m.status ?? null;
 const addForm = ref({ fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" });
@@ -199,23 +200,20 @@ onMounted(load);
                   <span class="text-xs text-slate-500">{{ REASON_LABEL[m.reason] || m.reason || "—" }}{{ m.note ? " · " + m.note : "" }}</span>
                   <span class="text-[11px] text-slate-400 ml-auto">by {{ m.removedBy || "—" }} · {{ String(m.removedAt).slice(0, 10) }}</span>
                 </div>
-                <div v-else :key="m.membershipId" class="flex flex-wrap items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
-                  <span class="font-semibold text-sm">{{ m.fullName }}</span>
-                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
-                  <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
-                  <span v-if="m.role === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
-                  <template v-if="m.role === 'PARENT' && m.children && m.children.length">
-                    <span v-for="(c, i) in m.children.slice(0, 3)" :key="i" class="chip bg-sky-100 text-sky-800 text-[10px]">{{ c.name }}{{ c.classLabel ? " · " + c.classLabel : "" }}</span>
-                    <span v-if="m.children.length > 3" class="chip bg-sky-50 text-sky-700 text-[10px]">+{{ m.children.length - 3 }} more</span>
-                  </template>
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
-                  <span class="ml-auto flex flex-wrap gap-1">
-                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>
-                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="toggleMemberStatus(s, m)">{{ m.status === "ACTIVE" ? "Deactivate" : "Activate" }}</button>
-                    <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="resetMember(s, m)">Reset password</button>
-                    <button class="btn btn-ghost !py-1 !px-2 text-[11px] text-red-600" @click="openRemove(s, m)">Remove</button>
-                  </span>
-                </div>
+                <MemberCard
+                  v-else
+                  :key="m.membershipId"
+                  :name="m.fullName"
+                  :role="m.role"
+                  :status="m.status"
+                  :email="m.email || ''"
+                  :phone="m.phone || ''"
+                  :children="m.role === 'PARENT' ? (m.children || []) : null"
+                  @edit="editMember(s, m)"
+                  @toggle-status="toggleMemberStatus(s, m)"
+                  @reset="resetMember(s, m)"
+                  @remove="openRemove(s, m)"
+                />
               </template>
             </TabbedList>
             <form class="bg-slate-50 rounded-2xl p-3 grid gap-2 mt-2" @submit.prevent="addMember(s)">

@@ -99,6 +99,9 @@ router.post("/schools/:schoolId/import/students", requireAuth, requireSchool(MAN
           academicYearId: year.id,
           rollNo: pick(raw, ["rollNo", "roll"]),
           gender: pick(raw, ["gender"]),
+          fatherName: pick(raw, ["fatherName", "father"]),
+          motherName: pick(raw, ["motherName", "mother"]),
+          address: pick(raw, ["address"]),
           dateOfBirth: dobRaw && /^\d{4}-\d{2}-\d{2}/.test(dobRaw) ? new Date(`${dobRaw.slice(0, 10)}T00:00:00.000Z`) : null,
         },
       });
