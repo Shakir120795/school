@@ -6,7 +6,11 @@ const sid = session.schoolId;
 const memberships = ref([]);
 const msg = ref("");
 const query = ref("");
-const form = ref({ fullName: "", email: "", password: "", role: "TEACHER", phone: "" });
+const form = ref({ fullName: "", email: "", password: "", role: "TEACHER", phone: "", guardianPhone: "" });
+const origin = window.location.origin;
+async function copyLink(path) {
+  try { await navigator.clipboard.writeText(origin + path); msg.value = `Copied: ${origin}${path}`; } catch { msg.value = origin + path; }
+}
 
 const ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
 const counts = computed(() => {
@@ -29,8 +33,9 @@ async function load() {
 async function createLogin() {
   const r = await api(`/schools/${sid}/users`, { method: "POST", body: form.value });
   if (r.status === 201) {
-    msg.value = `Login created for ${form.value.email} (${form.value.role}). Share the password with them securely.`;
-    form.value = { fullName: "", email: "", password: "", role: "TEACHER", phone: "" };
+    msg.value = `Login created for ${form.value.email} (${form.value.role}). Share the password with them securely.` +
+      (r.json.guardiansLinked ? ` Linked to ${r.json.guardiansLinked} guardian record(s) — their children are now visible on this login.` : "");
+    form.value = { fullName: "", email: "", password: "", role: "TEACHER", phone: "", guardianPhone: "" };
     load();
   } else msg.value = r.json.error || "Could not create login.";
 }
@@ -61,6 +66,16 @@ onMounted(load);
     </div>
   </div>
 
+  <div class="card mb-4">
+    <h2 class="font-bold mb-1">Login links for your school</h2>
+    <p class="text-sm text-slate-500 mb-3">Share the right link with each person. Parents, teachers and staff each have their own login page.</p>
+    <div class="grid sm:grid-cols-3 gap-2 text-sm">
+      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>👨‍👩‍👧 {{ origin }}/login/parent</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/parent')">Copy</button></div>
+      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🧑‍🏫 {{ origin }}/login/teacher</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/teacher')">Copy</button></div>
+      <div class="flex items-center justify-between gap-2 bg-slate-50 rounded-xl px-3 py-2"><span>🏫 {{ origin }}/login/staff</span><button type="button" class="btn !py-1 !px-2 text-xs" @click="copyLink('/login/staff')">Copy</button></div>
+    </div>
+  </div>
+
   <div class="grid lg:grid-cols-3 gap-4 items-start">
     <form class="card space-y-3" @submit.prevent="createLogin">
       <h2 class="font-bold">Create new login ID</h2>
@@ -68,6 +83,7 @@ onMounted(load);
       <div><label class="label">Email (login ID)</label><input v-model="form.email" type="email" class="input" required /></div>
       <div><label class="label">Password</label><input v-model="form.password" class="input" required minlength="8" /></div>
       <div><label class="label">Phone (optional)</label><input v-model="form.phone" class="input" /></div>
+      <div v-if="form.role === 'PARENT'"><label class="label">Guardian mobile (links this parent to their children)</label><input v-model="form.guardianPhone" type="tel" class="input" placeholder="Guardian's registered mobile number" /></div>
       <div><label class="label">Role / permission</label>
         <select v-model="form.role" class="input">
           <option v-for="r in ROLES" :key="r" :value="r">{{ r.replace("_", " ") }}</option>

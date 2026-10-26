@@ -3,6 +3,9 @@ import { session, myRole } from "./api.js";
 
 const routes = [
   { path: "/login", component: () => import("./views/Login.vue"), meta: { public: true } },
+  { path: "/login/parent", component: () => import("./views/Login.vue"), meta: { public: true, variant: "parent" } },
+  { path: "/login/teacher", component: () => import("./views/Login.vue"), meta: { public: true, variant: "teacher" } },
+  { path: "/login/staff", component: () => import("./views/Login.vue"), meta: { public: true, variant: "staff" } },
   { path: "/", component: () => import("./views/Dashboard.vue") },
   { path: "/people", component: () => import("./views/People.vue") },
   { path: "/attendance", component: () => import("./views/Attendance.vue") },

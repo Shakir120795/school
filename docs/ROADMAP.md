@@ -41,3 +41,4 @@ UI reference image (3 role themes). Status as of Phase 9.
   (§31), AI assists (§32), NFC/RFID readers (§26 — QR stays the MVP)
 
 <!-- deploy trigger 26 Oct 2026: Phase 21 webhook retry -->
+- Phase 22 — DONE (26 Oct): unique login links per role (/login/parent, /login/teacher, /login/staff — the seeds of future separate apps; /login keeps the tabs) + parent login switched to school-issued ID + password (PARENT_AUTH_MODE env: "password" default; set to "otp" any time to restore mobile-OTP login — OTP endpoints untouched) + PARENT login creation links the guardian by mobile so children appear immediately + login links card in Team & Access. Diagnosis of the "parent login everywhere" report: server roles verified clean per account; the cause was the pre-Phase-21 Login.vue submit crash (missing myRole import) since fixed + stale cached app. No schema change.

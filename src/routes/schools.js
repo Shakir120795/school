@@ -3,6 +3,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, randomToken, hashToken } from "../utils/security.js";
+import { normalizePhone } from "../services/otp.js";
 
 const router = Router();
 const WRITE = ADMIN_ROLES;
@@ -133,7 +134,24 @@ router.post(
     const membership = await prisma.schoolMembership.create({
       data: { schoolId, userId: user.id, role: req.body.role },
     });
-    return res.status(201).json({ userId: user.id, membership });
+    // Parent ID/password login: when the school issues a PARENT login
+    // and gives the guardian's mobile, link that guardian record to
+    // this user so the parent immediately sees their children
+    // (same link the OTP flow creates automatically).
+    let guardiansLinked = 0;
+    if (req.body.role === "PARENT" && req.body.guardianPhone) {
+      const phone = normalizePhone(req.body.guardianPhone);
+      if (phone) {
+        const guardians = await prisma.guardian.findMany({ where: { schoolId } });
+        for (const g of guardians) {
+          if (normalizePhone(g.phone) === phone && g.userId !== user.id) {
+            await prisma.guardian.update({ where: { id: g.id }, data: { userId: user.id } });
+            guardiansLinked += 1;
+          }
+        }
+      }
+    }
+    return res.status(201).json({ userId: user.id, membership, guardiansLinked });
   })
 );
 

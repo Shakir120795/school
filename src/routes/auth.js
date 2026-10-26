@@ -94,6 +94,13 @@ router.post(
   })
 );
 
+// Public client config: which parent login the app should show.
+// PARENT_AUTH_MODE=otp re-enables the mobile-OTP parent login
+// (Phase 9 flow); anything else = school-issued ID + password.
+router.get("/config", (req, res) => {
+  return res.json({ parentAuthMode: process.env.PARENT_AUTH_MODE === "otp" ? "otp" : "password" });
+});
+
 router.post(
   "/refresh",
   asyncRoute(async (req, res) => {
