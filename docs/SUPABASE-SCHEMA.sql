@@ -1110,3 +1110,6 @@ ALTER TABLE "PickupLog" ADD CONSTRAINT "PickupLog_schoolId_fkey" FOREIGN KEY ("s
 
 -- AddForeignKey
 ALTER TABLE "PickupLog" ADD CONSTRAINT "PickupLog_schoolId_studentId_fkey" FOREIGN KEY ("schoolId", "studentId") REFERENCES "Student"("schoolId", "id") ON DELETE CASCADE ON UPDATE CASCADE;
+-- AlterTable
+ALTER TABLE "StudentAttendance" ADD COLUMN     "markedAt" TIMESTAMP(3),
+ADD COLUMN     "markedByMembershipId" TEXT;

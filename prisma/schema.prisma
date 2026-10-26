@@ -556,6 +556,10 @@ model StudentAttendance {
   isLate      Boolean             @default(false)
   isEarlyExit Boolean             @default(false)
   reviewFlag  String?
+  // Roll-call audit (Phase 13): who marked this day and when, when the
+  // status came from a teacher's class roll-call rather than a gate scan.
+  markedByMembershipId String?
+  markedAt             DateTime?
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
 
