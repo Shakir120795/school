@@ -89,16 +89,26 @@ router.delete("/platform/schools/:schoolId", asyncRoute(async (req, res) => {
   // Phase 21). Each deleteMany is its own implicit transaction and
   // every step is idempotent, so a failed delete can simply be
   // retried — already-purged tables no-op.
-  await prisma.$executeRawUnsafe(
-    'DELETE FROM "FeeInvoiceItem" WHERE "invoiceId" IN (SELECT "id" FROM "FeeInvoice" WHERE "schoolId" = $1)',
-    schoolId
-  );
-  for (const tier of PURGE_TIERS) {
-    for (const model of tier) {
-      await prisma[model].deleteMany({ where: { schoolId } });
+  // Step-labelled: if a step ever fails live, the response names the
+  // exact table instead of a bare INTERNAL_ERROR.
+  let step = "FeeInvoiceItem(raw)";
+  try {
+    await prisma.$executeRawUnsafe(
+      'DELETE FROM "FeeInvoiceItem" WHERE "invoiceId" IN (SELECT "id" FROM "FeeInvoice" WHERE "schoolId" = $1)',
+      schoolId
+    );
+    for (const tier of PURGE_TIERS) {
+      for (const model of tier) {
+        step = model;
+        await prisma[model].deleteMany({ where: { schoolId } });
+      }
     }
+    step = "School";
+    await prisma.school.delete({ where: { id: schoolId } });
+  } catch (e) {
+    console.error("school purge failed at step:", step, e?.message || e);
+    return res.status(500).json({ error: "PURGE_FAILED", step });
   }
-  await prisma.school.delete({ where: { id: schoolId } });
   return res.json({ deleted: true, schoolId });
 }));
 

@@ -20,7 +20,10 @@ const router = useRouter();
 const role = computed(() => myRole());
 const user = computed(() => currentUser());
 const memberships = computed(() => myMemberships());
-const isLogin = computed(() => route.path === "/login");
+// Public routes (all login variants) render bare — never wrapped in
+// the app shell. (Was an exact "/login" match: /login/staff opened
+// inside the sidebar of whoever was still logged in.)
+const isLogin = computed(() => route.meta.public === true);
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: "▦", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PLATFORM_ADMIN"] },

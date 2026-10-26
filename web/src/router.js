@@ -31,7 +31,16 @@ const routes = [
 export const router = createRouter({ history: createWebHistory(), routes });
 
 router.beforeEach((to) => {
-  if (to.meta.public) return true;
+  if (to.meta.public) {
+    // Already signed in? A login link should land on the user's own
+    // dashboard, not on a login form (logout first to switch account).
+    if (session.accessToken && to.path.startsWith("/login")) {
+      const r = myRole();
+      if (r === "PLATFORM_ADMIN") return "/console";
+      return r === "PARENT" ? "/parent" : "/";
+    }
+    return true;
+  }
   if (!session.accessToken) return "/login";
   const role = myRole();
   if (to.path === "/parent" && role !== "PARENT") return "/";
