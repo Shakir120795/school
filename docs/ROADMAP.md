@@ -22,8 +22,8 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Phase 10 — Role themes per UI reference (Parent blue #2563EB, Teacher
   green #16A34A, Admin navy #0F172A) + parent tile home + student
   roll number/photo + ID card photo
-- Phase 11 — Scan → parent entry/exit alerts (in-app, instant) +
-  "on campus now" gate view
+- Phase 11 — DONE (26 Oct): scan → parent entry/exit in-app alerts +
+  "on campus now" gate view in the Scanner
 - Phase 12 — Pickup & safety (§4): authorised persons, one-time parent
   approvals, staff release log, parent release alert, audit trail
 - Phase 13 — Teacher roll-call attendance (manual mark in app) (§5/§7)
