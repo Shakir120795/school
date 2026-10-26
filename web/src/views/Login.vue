@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
+import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session, revokeSession } from "../api.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -18,6 +18,56 @@ const email = ref("");
 const password = ref("");
 const error = ref("");
 const busy = ref(false);
+
+// A login page can be opened while another account is signed in
+// (26 Oct: login links must always show their own page). The banner
+// names the current session; a SUCCESSFUL sign-in below replaces it,
+// a failed attempt leaves it completely untouched.
+const signedInUser = ref(session.accessToken ? currentUser() : null);
+const signedInRole = computed(() => {
+  if (!signedInUser.value) return "";
+  if (signedInUser.value.isPlatformAdmin) return "PLATFORM_ADMIN";
+  return myRole() || myMemberships()[0]?.role || "";
+});
+
+function goDashboard() {
+  if (signedInUser.value?.isPlatformAdmin) return router.push("/console");
+  router.push(myRole() === "PARENT" ? "/parent" : "/");
+}
+
+async function bannerLogout() {
+  await api("/auth/logout", { method: "POST", body: {} }).catch(() => {});
+  session.clear();
+  signedInUser.value = null;
+  error.value = "";
+  notice.value = "";
+}
+
+// Snapshot/restore of the stored session, so a sign-in attempt that
+// fails (bad credentials or wrong-role page) changes nothing, while a
+// successful one can revoke the old session and take its place.
+function snapshotSession() {
+  return {
+    access: session.accessToken,
+    refresh: localStorage.getItem("ss_refresh"),
+    user: localStorage.getItem("ss_user"),
+    memberships: localStorage.getItem("ss_memberships"),
+    school: session.schoolId,
+  };
+}
+function restoreSession(old) {
+  session.setTokens(old.access, old.refresh);
+  if (old.user) localStorage.setItem("ss_user", old.user); else localStorage.removeItem("ss_user");
+  if (old.memberships) localStorage.setItem("ss_memberships", old.memberships); else localStorage.removeItem("ss_memberships");
+  session.setSchool(old.school);
+}
+// After login() has stored the new account: revoke the replaced
+// session server-side and pin the active school to the new account.
+async function replaceOldSession(old) {
+  if (old.access) await revokeSession(old.access, old.refresh);
+  const ms = myMemberships();
+  if (ms.length) session.setSchool(ms[0].schoolId);
+}
 
 const phone = ref("");
 const code = ref("");
@@ -61,6 +111,7 @@ async function sendOtp() {
 
 async function verifyOtp() {
   busy.value = true; error.value = "";
+  const old = snapshotSession();
   const r = await loginWithOtp(phone.value.trim(), code.value.trim());
   busy.value = false;
   if (r.status !== 200) {
@@ -70,12 +121,14 @@ async function verifyOtp() {
       : `Login failed (${r.json.error || r.status})`;
     return;
   }
+  await replaceOldSession(old);
   router.push("/parent");
 }
 
 async function submit() {
   busy.value = true;
   error.value = "";
+  const old = snapshotSession();
   const r = await login(email.value.trim(), password.value);
   busy.value = false;
   if (r.status !== 200) {
@@ -83,13 +136,18 @@ async function submit() {
     return;
   }
   // Role-locked pages (Phase 23): the credentials are valid but the
-  // account belongs to a different audience — say so clearly and
-  // sign back out, instead of silently landing on the wrong app.
+  // account belongs to a different audience — say so clearly instead
+  // of silently landing on the wrong app. A wrong-page attempt is a
+  // FAILED attempt: an existing session is restored untouched (with
+  // no prior session, the just-created one is simply discarded).
   const roles = myMemberships().map((m) => m.role);
-  const wrongPage = (msg) => { session.clear(); error.value = msg; };
+  const wrongPage = (msg) => { if (old.access) restoreSession(old); else session.clear(); error.value = msg; };
   if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
   if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
   if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and staff. Teachers use the Teacher login page, parents use the Parent login page."); return; }
+  // Success: the new account takes over — revoke the session it
+  // replaced and land on the NEW role's home.
+  await replaceOldSession(old);
   if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
@@ -103,6 +161,15 @@ async function submit() {
       <p class="text-sm text-white/60">Attendance & Communication</p>
     </div>
     <div class="card w-full max-w-sm !rounded-[28px] !p-6 shadow-2xl">
+      <div v-if="signedInUser" class="mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+        <p class="text-sm text-blue-900">You are logged in as <b>{{ signedInUser.fullName }}</b><span v-if="signedInRole"> ({{ signedInRole }})</span></p>
+        <div class="flex gap-2 mt-2">
+          <button type="button" class="btn btn-primary flex-1 !py-2 !text-sm" @click="goDashboard">Go to my dashboard</button>
+          <button type="button" class="btn btn-ghost flex-1 !py-2 !text-sm" @click="bannerLogout">Logout</button>
+        </div>
+        <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — it will replace this session.</p>
+      </div>
+
       <div v-if="!locked" class="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-2xl mb-5">
         <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'parent' ? 'bg-white shadow text-blue-700' : 'text-slate-500'" @click="tab = 'parent'">👨‍👩‍👧 Parent</button>
         <button type="button" class="rounded-xl py-2 text-sm font-bold" :class="tab === 'staff' ? 'bg-white shadow text-green-700' : 'text-slate-500'" @click="tab = 'staff'">🧑‍🏫 Staff</button>

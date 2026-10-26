@@ -83,6 +83,18 @@ export async function loginWithOtp(phone, code) {
   return r;
 }
 
+// Revoke one specific earlier session server-side (used when a login
+// page replaces an existing session with a newly signed-in account:
+// the old bearer + refresh pair identifies exactly that session).
+export async function revokeSession(access, refresh) {
+  if (!access) return;
+  await fetch(`${BASE}/auth/logout`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${access}` },
+    body: JSON.stringify({ refreshToken: refresh }),
+  }).catch(() => {});
+}
+
 export function currentUser() {
   try { return JSON.parse(localStorage.getItem("ss_user") || "null"); } catch { return null; }
 }

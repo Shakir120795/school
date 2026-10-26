@@ -33,13 +33,13 @@ export const router = createRouter({ history: createWebHistory(), routes });
 
 router.beforeEach((to) => {
   if (to.meta.public) {
-    // Already signed in? A login link should land on the user's own
-    // dashboard, not on a login form (logout first to switch account).
-    if (session.accessToken && to.path.startsWith("/login")) {
-      const r = myRole();
-      if (r === "PLATFORM_ADMIN") return "/console";
-      return r === "PARENT" ? "/parent" : "/";
-    }
+    // Login pages ALWAYS render their own form — even with a live
+    // session (26 Oct correction, overriding the Phase 22 redirect):
+    // the separate login links are the backbone of the future
+    // per-role apps, so opening /login/parent|teacher|school must
+    // show that page. Login.vue handles the signed-in case in-page
+    // with a "you are logged in" banner (dashboard / logout actions)
+    // and replaces the session only on a successful sign-in.
     return true;
   }
   if (!session.accessToken) return "/login";
