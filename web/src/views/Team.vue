@@ -34,7 +34,11 @@ const memberGroups = computed(() => {
   ];
 });
 const memberSearchText = (m) =>
-  [m.user?.fullName || m.fullName, m.user?.email || m.email, m.user?.phone || m.phone, m.role, m.reason, m.note]
+  [
+    m.user?.fullName || m.fullName, m.user?.email || m.email, m.user?.phone || m.phone, m.role, m.reason, m.note,
+    // Parents are also findable by their child's name or class ("1-A").
+    ...((m.children || []).flatMap((c) => [c.name, c.classLabel])),
+  ]
     .filter(Boolean)
     .join(" ");
 const memberStatusOf = (m) => m.status ?? null;
@@ -177,6 +181,11 @@ onMounted(load);
               <div class="text-xs text-slate-400">{{ m.user.email }}<span v-if="m.user.phone"> · {{ m.user.phone }}</span></div>
             </div>
             <span class="chip" :class="roleChip(m.role)">{{ m.role.replace("_", " ") }}</span>
+            <span v-if="m.role === 'PARENT'" class="chip bg-sky-50 text-sky-700">🎓 {{ m.childrenCount || 0 }} child{{ (m.childrenCount || 0) === 1 ? "" : "ren" }}</span>
+            <template v-if="m.role === 'PARENT' && m.children && m.children.length">
+              <span v-for="(c, i) in m.children.slice(0, 3)" :key="i" class="chip bg-sky-100 text-sky-800">{{ c.name }}{{ c.classLabel ? " · " + c.classLabel : "" }}</span>
+              <span v-if="m.children.length > 3" class="chip bg-sky-50 text-sky-700">+{{ m.children.length - 3 }} more</span>
+            </template>
             <span class="chip" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ m.status }}</span>
             <span class="ml-auto whitespace-nowrap">
               <button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="editMember(m)">Edit</button><button type="button" class="text-xs font-bold text-brand-600 mr-3" @click="resetPassword(m)">Reset password</button><button type="button" class="text-xs font-bold mr-3" :class="m.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-600'" @click="toggleStatus(m)">{{ m.status === "ACTIVE" ? "Suspend" : "Reactivate" }}</button><button type="button" class="text-xs font-bold text-rose-700" @click="openRemove(m)">Remove</button>

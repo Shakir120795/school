@@ -10,6 +10,7 @@ import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
+import { childrenByParentUser } from "../utils/parentChildren.js";
 
 const router = Router();
 
@@ -88,26 +89,11 @@ router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =>
     include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
     orderBy: { createdAt: "asc" },
   });
-  // Parents: how many children each parent login is linked to
-  // (Guardian.userId -> StudentGuardian rows). Both lookups are
-  // resolved up front; no transaction is involved.
+  // Parents: WHICH children each parent login is linked to (names +
+  // class labels), not just a count — resolved in one batched lookup
+  // up front (utils/parentChildren.js); no transaction is involved.
   const parentUserIds = memberships.filter((m) => m.role === "PARENT").map((m) => m.userId);
-  const childrenByUser = {};
-  if (parentUserIds.length) {
-    const guardians = await prisma.guardian.findMany({
-      where: { schoolId: school.id, userId: { in: parentUserIds } },
-      select: { id: true, userId: true },
-    });
-    if (guardians.length) {
-      const links = await prisma.studentGuardian.groupBy({
-        by: ["guardianId"],
-        where: { schoolId: school.id, guardianId: { in: guardians.map((g) => g.id) } },
-        _count: { _all: true },
-      });
-      const perGuardian = Object.fromEntries(links.map((l) => [l.guardianId, l._count._all]));
-      for (const g of guardians) childrenByUser[g.userId] = (childrenByUser[g.userId] || 0) + (perGuardian[g.id] || 0);
-    }
-  }
+  const childrenByUser = await childrenByParentUser(school.id, parentUserIds);
   const members = { SCHOOL_ADMIN: [], PRINCIPAL: [], TEACHER: [], STAFF: [], PARENT: [] };
   for (const m of memberships) {
     (members[m.role] ||= []).push({
@@ -119,7 +105,9 @@ router.get("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =>
       phone: m.user.phone,
       status: m.status,
       isActive: m.user.isActive,
-      ...(m.role === "PARENT" ? { childrenCount: childrenByUser[m.userId] || 0 } : {}),
+      ...(m.role === "PARENT"
+        ? { childrenCount: (childrenByUser[m.userId] || []).length, children: childrenByUser[m.userId] || [] }
+        : {}),
     });
   }
   const [students, classes] = await Promise.all([

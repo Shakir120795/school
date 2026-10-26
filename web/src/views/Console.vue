@@ -58,7 +58,11 @@ const memberGroups = computed(() => {
   ];
 });
 const memberSearchText = (m) =>
-  [m.fullName, m.email, m.phone, m.role, m.reason, m.note].filter(Boolean).join(" ");
+  [
+    m.fullName, m.email, m.phone, m.role, m.reason, m.note,
+    // Parents are also findable by their child's name or class ("1-A").
+    ...((m.children || []).flatMap((c) => [c.name, c.classLabel])),
+  ].filter(Boolean).join(" ");
 const memberStatusOf = (m) => m.status ?? null;
 const addForm = ref({ fullName: "", email: "", password: "", phone: "", role: "TEACHER", guardianPhone: "" });
 async function refreshMembers(s) {
@@ -200,6 +204,10 @@ onMounted(load);
                   <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{{ m.role }}</span>
                   <span class="text-xs text-slate-400">{{ m.email || "" }}{{ m.phone ? " · " + m.phone : "" }}</span>
                   <span v-if="m.role === 'PARENT'" class="chip bg-sky-50 text-sky-700 text-[10px]">🎓 {{ m.childrenCount }} child{{ m.childrenCount === 1 ? "" : "ren" }}</span>
+                  <template v-if="m.role === 'PARENT' && m.children && m.children.length">
+                    <span v-for="(c, i) in m.children.slice(0, 3)" :key="i" class="chip bg-sky-100 text-sky-800 text-[10px]">{{ c.name }}{{ c.classLabel ? " · " + c.classLabel : "" }}</span>
+                    <span v-if="m.children.length > 3" class="chip bg-sky-50 text-sky-700 text-[10px]">+{{ m.children.length - 3 }} more</span>
+                  </template>
                   <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="m.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ m.status }}</span>
                   <span class="ml-auto flex flex-wrap gap-1">
                     <button class="btn btn-ghost !py-1 !px-2 text-[11px]" @click="editMember(s, m)">Edit</button>

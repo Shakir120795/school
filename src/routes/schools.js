@@ -5,6 +5,7 @@ import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
+import { childrenByParentUser } from "../utils/parentChildren.js";
 
 const router = Router();
 const WRITE = ADMIN_ROLES;
@@ -169,7 +170,18 @@ router.get(
       where: { schoolId: req.params.schoolId },
       include: { user: { select: { id: true, email: true, phone: true, fullName: true, isActive: true } } },
     });
-    return res.json({ memberships });
+    // Parents: attach their linked children (name + class label) so
+    // Team page rows show WHO is in which class, not just a count —
+    // same batched lookup as the platform console member list.
+    const parentUserIds = memberships.filter((m) => m.role === "PARENT").map((m) => m.userId);
+    const childrenByUser = await childrenByParentUser(req.params.schoolId, parentUserIds);
+    return res.json({
+      memberships: memberships.map((m) =>
+        m.role === "PARENT"
+          ? { ...m, childrenCount: (childrenByUser[m.userId] || []).length, children: childrenByUser[m.userId] || [] }
+          : m
+      ),
+    });
   })
 );
 
