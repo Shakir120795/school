@@ -27,7 +27,7 @@ UI reference image (3 role themes). Status as of Phase 9.
 - Phase 12 — Pickup & safety (§4): authorised persons, one-time parent
   approvals, staff release log, parent release alert, audit trail
 - Phase 13 — DONE (26 Oct): teacher roll-call attendance (own classes only, gate-scan merge, absent alerts)
-- Phase 14 — Homework (§10): post with subject/due date, parent view
+- Phase 14 — DONE (26 Oct): homework assign + parent notice, per-child done toggle, teacher completion tracking
 - Phase 15 — Leave & permissions (§14): parent submits, staff decides
 - Phase 16 — Fees (§13): fee heads, student ledger, dues, manual payment
   recording + receipts, parent fee view; gateway integration after
