@@ -14,6 +14,7 @@ const routes = [
   { path: "/fees", component: () => import("./views/Fees.vue") },
   { path: "/timetable", component: () => import("./views/Timetable.vue") },
   { path: "/exams", component: () => import("./views/Exams.vue") },
+  { path: "/data", component: () => import("./views/ImportExport.vue") },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
