@@ -214,6 +214,8 @@ model School {
   timetableSlots         TimetableSlot[]
   calendarEvents         CalendarEvent[]
   exams                  Exam[]
+  supportTickets         SupportTicket[]
+  ptmSlots               PtmSlot[]
 
   @@index([status])
 }
@@ -370,6 +372,7 @@ model Student {
   leaveApplications   LeaveApplication[]
   feeInvoices         FeeInvoice[]
   examMarks           ExamMark[]
+  ptmBookings         PtmBooking[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -1228,6 +1231,88 @@ model ExamMark {
 
   @@unique([examId, studentId])
   @@index([schoolId, studentId])
+}
+
+// Support tickets + PTM (Phase 20, PDF §17/§23/§30). A ticket is a
+// threaded conversation between a parent and the school office. PTM
+// slots are time windows the school opens; each parent books one
+// start-time inside the window for one child (one active booking per
+// child per PTM; a start-time can't be double-booked within a PTM).
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id                   String       @id @default(cuid())
+  schoolId             String
+  ticketNo             Int
+  raisedByUserId       String
+  raisedByMembershipId String
+  studentId            String?
+  category             String       @default("GENERAL") // GENERAL | FEES | TRANSPORT | ACADEMIC | OTHER
+  subject              String
+  status               TicketStatus @default(OPEN)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  ticketMessages TicketMessage[]
+
+  @@unique([schoolId, ticketNo])
+  @@index([schoolId, status])
+}
+
+model TicketMessage {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  ticketId           String
+  authorUserId       String
+  authorMembershipId String?
+  authorName         String
+  isStaff            Boolean  @default(false)
+  body               String
+  createdAt          DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, ticketId])
+}
+
+model PtmSlot {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  title                 String
+  date                  DateTime @db.Date
+  startTime             String // "10:00"
+  endTime               String // "13:00"
+  slotMinutes           Int      @default(15)
+  classroomId           String? // null = whole school
+  createdByMembershipId String
+  createdAt             DateTime @default(now())
+
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  ptmBookings PtmBooking[]
+
+  @@index([schoolId, date])
+}
+
+model PtmBooking {
+  id             String   @id @default(cuid())
+  schoolId       String
+  slotId         String
+  studentId      String
+  bookedByUserId String
+  startTime      String // chosen time inside the window, "10:15"
+  status         String   @default("BOOKED") // BOOKED | CANCELLED
+  createdAt      DateTime @default(now())
+
+  slot    PtmSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([schoolId, slotId])
 }
 
 model OtpLoginChallenge {

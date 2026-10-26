@@ -15,6 +15,7 @@ import feesRoutes from "./routes/fees.js";
 import timetableRoutes from "./routes/timetable.js";
 import examsRoutes from "./routes/exams.js";
 import dataRoutes from "./routes/data.js";
+import supportRoutes from "./routes/support.js";
 import analyticsRoutes from "./routes/analytics.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { processOutboxOnce } from "./services/outbox.js";
@@ -66,6 +67,7 @@ export function createApp() {
   app.use("/", timetableRoutes); // /schools/:id timetable + calendar
   app.use("/", examsRoutes); // /schools/:id/exams/*
   app.use("/", dataRoutes); // /schools/:id import + CSV exports
+  app.use("/", supportRoutes); // /schools/:id tickets + PTM
   app.use("/", analyticsRoutes); // /schools/:id/analytics/*
   // Serverless cron (Vercel Cron sends Authorization: Bearer <CRON_SECRET>).
   app.get("/internal/process-outbox", async (req, res) => {
