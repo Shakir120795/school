@@ -10,7 +10,7 @@ import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
-import { childrenByParentUser } from "../utils/parentChildren.js";
+import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 
 const router = Router();
 
@@ -48,6 +48,152 @@ router.get("/platform/schools", asyncRoute(async (req, res) => {
     });
   }
   return res.json({ schools: out });
+}));
+
+// Phase 28: GLOBAL platform search — one box on the owner's
+// dashboard finds a school, a member (any role, any school), a
+// guardian or a student across the WHOLE platform, by name, login
+// email, mobile number or admission number. Phones also match on
+// their digits-only form, so a number typed with spaces or a
+// country code still hits.
+// IMPORTANT: every query below uses an EXPLICIT Prisma `select` of
+// long-existing columns only — full Student rows are never read, so
+// this endpoint does NOT depend on the Phase 27 student columns
+// (fatherName/motherName/address) existing in the database.
+router.get("/platform/search", asyncRoute(async (req, res) => {
+  const q = String(req.query.q || "").trim();
+  if (q.length < 2) return res.json({ schools: [], people: [], students: [] });
+  const contains = (v) => ({ contains: v, mode: "insensitive" });
+  const digits = q.replace(/\D/g, "");
+  const phoneTerms = [...new Set([q, digits].filter((s) => s.length >= 2))];
+  const phoneOr = (field) => phoneTerms.map((t) => ({ [field]: contains(t) }));
+
+  const [schools, memberships, students, guardians] = await Promise.all([
+    prisma.school.findMany({
+      where: { OR: [{ name: contains(q) }, { slug: contains(q) }] },
+      select: { id: true, name: true, slug: true, status: true },
+      orderBy: { name: "asc" },
+      take: 20,
+    }),
+    prisma.schoolMembership.findMany({
+      where: {
+        status: { not: "INACTIVE" },
+        user: { OR: [{ fullName: contains(q) }, { email: contains(q) }, ...phoneOr("phone")] },
+      },
+      select: {
+        id: true, userId: true, role: true, schoolId: true,
+        user: { select: { id: true, fullName: true, email: true, phone: true } },
+        school: { select: { name: true } },
+      },
+      orderBy: { user: { fullName: "asc" } },
+      take: 20,
+    }),
+    prisma.student.findMany({
+      where: { OR: [{ fullName: contains(q) }, { admissionNo: contains(q) }] },
+      select: {
+        id: true, fullName: true, admissionNo: true, schoolId: true, status: true,
+        classroom: { select: { name: true, section: true } },
+        school: { select: { name: true } },
+      },
+      orderBy: { fullName: "asc" },
+      take: 20,
+    }),
+    // Guardians are searched directly too: a parent who has a
+    // guardian record but no login (or whose login name differs)
+    // is still findable by the guardian name / mobile number.
+    prisma.guardian.findMany({
+      where: { OR: [{ fullName: contains(q) }, { email: contains(q) }, ...phoneOr("phone")] },
+      select: {
+        id: true, schoolId: true, userId: true, fullName: true, phone: true, email: true,
+        school: { select: { name: true } },
+      },
+      orderBy: { fullName: "asc" },
+      take: 20,
+    }),
+  ]);
+
+  // Child labels ("Aarav Singh · 1-A") for the PARENT results — one
+  // batched lookup over every matched parent login / guardian, the
+  // same shape as utils/parentChildren.js but pre-Phase-27 columns.
+  const childrenByKey = {}; // `${schoolId}|${userId}` -> ["Name · 1-A"]
+  const childrenByGuardian = {}; // guardianId -> ["Name · 1-A"]
+  const parentUserIds = [...new Set([
+    ...memberships.filter((m) => m.role === "PARENT").map((m) => m.userId),
+    ...guardians.map((g) => g.userId).filter(Boolean),
+  ])];
+  const memberGuardians = parentUserIds.length
+    ? await prisma.guardian.findMany({
+        where: { userId: { in: parentUserIds } },
+        select: { id: true, schoolId: true, userId: true },
+      })
+    : [];
+  const allGuardianIds = [...new Set([...memberGuardians.map((g) => g.id), ...guardians.map((g) => g.id)])];
+  if (allGuardianIds.length) {
+    const keyByGuardian = Object.fromEntries(memberGuardians.map((g) => [g.id, `${g.schoolId}|${g.userId}`]));
+    const links = await prisma.studentGuardian.findMany({
+      where: { guardianId: { in: allGuardianIds } },
+      select: {
+        guardianId: true,
+        student: { select: { id: true, fullName: true, classroom: { select: { name: true, section: true } } } },
+      },
+    });
+    const seen = new Set();
+    for (const l of links) {
+      if (!l.student || seen.has(`${l.guardianId}|${l.student.id}`)) continue;
+      seen.add(`${l.guardianId}|${l.student.id}`);
+      const lbl = classLabel(l.student.classroom);
+      const label = lbl ? `${l.student.fullName} · ${lbl}` : l.student.fullName;
+      (childrenByGuardian[l.guardianId] ||= []).push(label);
+      const key = keyByGuardian[l.guardianId];
+      if (key) (childrenByKey[key] ||= []).push(label);
+    }
+  }
+
+  const people = memberships.map((m) => ({
+    userId: m.user.id,
+    membershipId: m.id,
+    guardianId: null,
+    fullName: m.user.fullName,
+    email: m.user.email,
+    phone: m.user.phone,
+    role: m.role,
+    schoolId: m.schoolId,
+    schoolName: m.school.name,
+    children: m.role === "PARENT" ? childrenByKey[`${m.schoolId}|${m.userId}`] || [] : [],
+  }));
+  const memberKeys = new Set(
+    people.filter((p) => p.role === "PARENT" && p.userId).map((p) => `${p.schoolId}|${p.userId}`)
+  );
+  for (const g of guardians) {
+    if (g.userId && memberKeys.has(`${g.schoolId}|${g.userId}`)) continue; // already a member result
+    people.push({
+      userId: g.userId || null,
+      membershipId: null,
+      guardianId: g.id,
+      fullName: g.fullName,
+      email: g.email,
+      phone: g.phone,
+      role: "PARENT",
+      schoolId: g.schoolId,
+      schoolName: g.school.name,
+      children: childrenByGuardian[g.id] || [],
+    });
+  }
+  people.sort((a, b) => a.fullName.localeCompare(b.fullName));
+
+  return res.json({
+    schools,
+    people: people.slice(0, 20),
+    students: students.map((s) => ({
+      id: s.id,
+      fullName: s.fullName,
+      admissionNo: s.admissionNo,
+      classLabel: classLabel(s.classroom),
+      schoolId: s.schoolId,
+      schoolName: s.school.name,
+      status: s.status,
+    })),
+  });
 }));
 
 router.patch("/platform/schools/:schoolId/status", asyncRoute(async (req, res) => {

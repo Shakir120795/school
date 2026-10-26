@@ -27,10 +27,16 @@ const props = defineProps({
   resetKey: { type: [String, Number], default: "" },
   searchPlaceholder: { type: String, default: "Search name, email, phone…" },
   rowKey: { type: Function, default: (i) => i.membershipId || i.id },
+  // Deep-link support (Phase 28): the owner dashboard's global
+  // search lands here with a chosen tab + prefilled search text.
+  initialTab: { type: String, default: "" },
+  initialQuery: { type: String, default: "" },
 });
 
-const activeKey = ref(props.groups[0]?.key || "");
-const query = ref("");
+const startTab = () =>
+  props.groups.some((g) => g.key === props.initialTab) ? props.initialTab : props.groups[0]?.key || "";
+const activeKey = ref(startTab());
+const query = ref(props.initialQuery || "");
 const statusFilter = ref(""); // "" all | ACTIVE | INACTIVE
 
 const activeGroup = computed(
@@ -53,16 +59,16 @@ watch([activeKey, query, statusFilter], reset);
 watch(
   () => props.resetKey,
   () => {
-    query.value = "";
+    query.value = props.initialQuery || "";
     statusFilter.value = "";
-    activeKey.value = props.groups[0]?.key || "";
+    activeKey.value = startTab();
     reset();
   }
 );
 watch(
   () => props.groups.map((g) => g.key).join(","),
   (keys) => {
-    if (!keys.split(",").includes(activeKey.value)) activeKey.value = props.groups[0]?.key || "";
+    if (!keys.split(",").includes(activeKey.value)) activeKey.value = startTab();
   }
 );
 </script>

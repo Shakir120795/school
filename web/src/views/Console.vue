@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { api } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
@@ -39,6 +40,27 @@ async function resetAdmin(s) {
   if (r.status === 200) msg.value = `Admin password for ${s.name} has been reset. Share it with the school securely.`;
   else err.value = r.json?.error || "Reset failed";
 }
+// Phase 28 deep link: the owner dashboard's global search lands
+// here as /console?school=<id>&tab=<parents|teachers|admins|staff>
+// &q=<text> — open that school's members on the right tab, with the
+// tab's search box prefilled, and scroll the school into view.
+const route = useRoute();
+const TAB_KEYS = { admins: "ADMINS", teachers: "TEACHERS", staff: "STAFF", parents: "PARENTS", removed: "REMOVED" };
+const deepTarget = computed(() => ({
+  schoolId: String(route.query.school || ""),
+  tab: TAB_KEYS[String(route.query.tab || "").toLowerCase()] || "",
+  q: String(route.query.q || ""),
+}));
+async function applyDeepLink() {
+  const { schoolId } = deepTarget.value;
+  if (!schoolId) return;
+  const s = schools.value.find((x) => x.id === schoolId);
+  if (!s) return;
+  if (openId.value !== s.id) await toggleMembers(s);
+  await nextTick();
+  document.getElementById(`school-card-${s.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 // Phase 23 drill-in: open one school and see/control everyone in it.
 const openId = ref("");
 const members = ref(null);
@@ -152,7 +174,10 @@ async function removeSchool(s) {
   if (r.status === 200) { msg.value = `${s.name} and all its data have been deleted.`; await load(); }
   else err.value = r.json?.error || "Delete failed";
 }
-onMounted(load);
+onMounted(async () => {
+  await load();
+  await applyDeepLink();
+});
 </script>
 
 <template>
@@ -163,7 +188,7 @@ onMounted(load);
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
     <div class="grid gap-3 mb-4">
-      <div v-for="s in schools" :key="s.id" class="card !py-3">
+      <div v-for="s in schools" :key="s.id" :id="`school-card-${s.id}`" class="card !py-3">
         <div class="flex flex-wrap items-center gap-2">
           <span class="font-bold">{{ s.name }}</span>
           <span class="text-xs text-slate-400">{{ s.slug }}</span>
@@ -191,6 +216,8 @@ onMounted(load);
               :search-text="memberSearchText"
               :status-of="memberStatusOf"
               :reset-key="s.id"
+              :initial-tab="s.id === deepTarget.schoolId ? deepTarget.tab : ''"
+              :initial-query="s.id === deepTarget.schoolId ? deepTarget.q : ''"
               search-placeholder="Search name, email, phone…"
             >
               <template #row="{ item: m, group }">
