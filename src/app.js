@@ -11,6 +11,7 @@ import pickupRoutes from "./routes/pickup.js";
 import rollcallRoutes from "./routes/rollcall.js";
 import homeworkRoutes from "./routes/homework.js";
 import leaveRoutes from "./routes/leave.js";
+import feesRoutes from "./routes/fees.js";
 import analyticsRoutes from "./routes/analytics.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { processOutboxOnce } from "./services/outbox.js";
@@ -58,6 +59,7 @@ export function createApp() {
   app.use("/", rollcallRoutes); // /schools/:id/rollcall/*
   app.use("/", homeworkRoutes); // /schools/:id/homework/*
   app.use("/", leaveRoutes); // /schools/:id/leave-applications/*
+  app.use("/", feesRoutes); // /schools/:id fee heads, structures, invoices, payments
   app.use("/", analyticsRoutes); // /schools/:id/analytics/*
   // Serverless cron (Vercel Cron sends Authorization: Bearer <CRON_SECRET>).
   app.get("/internal/process-outbox", async (req, res) => {

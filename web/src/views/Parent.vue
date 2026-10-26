@@ -73,7 +73,7 @@ onMounted(load);
       <router-link to="/notices" class="tile"><span class="tile-ico" style="background:#e0e7ff">📣</span>Notices</router-link>
       <a href="#teachers" class="tile"><span class="tile-ico" style="background:#dcfce7">🧑‍🏫</span>Teachers</a>
       <router-link to="/homework" class="tile"><span class="tile-ico" style="background:#ffedd5">📚</span>Homework</router-link>
-      <div class="tile tile-soon"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees<span class="soon">Soon</span></div>
+      <router-link to="/fees" class="tile"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees</router-link>
       <div class="tile tile-soon"><span class="tile-ico" style="background:#e0f2fe">🗓️</span>Time Table<span class="soon">Soon</span></div>
       <router-link to="/pickup" class="tile"><span class="tile-ico" style="background:#fef9c3">🚌</span>Pickup</router-link>
       <router-link to="/leave" class="tile"><span class="tile-ico" style="background:#ede9fe">✉️</span>Leave</router-link>

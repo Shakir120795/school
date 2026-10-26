@@ -208,6 +208,9 @@ model School {
   pickupLogs             PickupLog[]
   homework               Homework[]
   leaveApplications      LeaveApplication[]
+  feeHeads               FeeHead[]
+  feeStructures          FeeStructure[]
+  feeInvoices            FeeInvoice[]
 
   @@index([status])
 }
@@ -325,6 +328,7 @@ model Classroom {
   classInchargeAssignments ClassInchargeAssignment[]
   noticeTargets            NoticeTarget[]
   homework                 Homework[]
+  feeStructures            FeeStructure[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, academicYearId, name, section])
@@ -359,6 +363,7 @@ model Student {
   attendances         StudentAttendance[]
   homeworkCompletions HomeworkCompletion[]
   leaveApplications   LeaveApplication[]
+  feeInvoices         FeeInvoice[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -1020,6 +1025,113 @@ model LeaveApplication {
 
   @@index([schoolId, status])
   @@index([schoolId, studentId])
+}
+
+// Fees (Phase 16, PDF §13). Money is stored as integer paise — no
+// float rounding anywhere. A FeeStructure says what a class owes per
+// head per frequency; generating a period creates one invoice per
+// student (idempotent per student+period); payments are recorded
+// against invoices with school-sequential receipt numbers; the
+// invoice status is derived from the payments. Online gateway
+// collection is a later add-on — this ledger is the source of truth.
+enum FeeFrequency {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  ONE_TIME
+}
+
+enum FeeInvoiceStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  WAIVED
+}
+
+model FeeHead {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  school        School         @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  feeStructures FeeStructure[]
+
+  @@unique([schoolId, name])
+  @@unique([schoolId, id])
+}
+
+model FeeStructure {
+  id          String       @id @default(cuid())
+  schoolId    String
+  classroomId String
+  feeHeadId   String
+  amountPaise Int
+  frequency   FeeFrequency @default(MONTHLY)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  school    School    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  classroom Classroom @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
+  feeHead   FeeHead   @relation(fields: [schoolId, feeHeadId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, classroomId, feeHeadId, frequency])
+}
+
+model FeeInvoice {
+  id                    String           @id @default(cuid())
+  schoolId              String
+  studentId             String
+  classroomId           String
+  periodLabel           String // e.g. "2026-11" or "Term 2 2026"
+  title                 String
+  totalPaise            Int
+  dueDate               DateTime         @db.Date
+  status                FeeInvoiceStatus @default(UNPAID)
+  generationKey         String // classroomId + periodLabel + frequency — idempotency scope
+  createdByMembershipId String
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  school          School           @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  student         Student          @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+  feeInvoiceItems FeeInvoiceItem[]
+  feePayments     FeePayment[]
+
+  @@unique([schoolId, studentId, generationKey])
+  @@index([schoolId, status])
+  @@index([schoolId, classroomId])
+}
+
+model FeeInvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  feeHeadId   String?
+  label       String
+  amountPaise Int
+
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model FeePayment {
+  id                     String   @id @default(cuid())
+  schoolId               String
+  invoiceId              String
+  studentId              String
+  amountPaise            Int
+  method                 String // CASH | UPI | BANK | CHEQUE
+  reference              String?
+  receiptNo              String
+  receivedByMembershipId String
+  createdAt              DateTime @default(now())
+
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, receiptNo])
+  @@index([schoolId, invoiceId])
 }
 
 model OtpLoginChallenge {
