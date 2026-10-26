@@ -7,10 +7,15 @@
 // guardian attached to the students payload (guardian phone is the
 // mobile source); missing values show "—", never invented data.
 // Extra per-view buttons (Issue QR card, Edit…) go in #actions.
+import { myRole } from "../api.js";
 defineProps({
   student: { type: Object, required: true },
   classLabel: { type: String, default: "—" },
 });
+// Student 360 link (Phase 29 WS5): staff-side cards only — a
+// parent context never sees it (the profile endpoint 403s
+// parents anyway, this just keeps their UI clean).
+const showProfileLink = myRole() !== "PARENT";
 const genderText = (g) => ({ M: "Male", F: "Female", Male: "Male", Female: "Female", Other: "Other" })[g] || g || "—";
 const initials = (name) =>
   (name || "?")
@@ -73,7 +78,8 @@ const dobText = (d) => (d ? String(d).slice(0, 10) : "—");
         <dd class="font-medium">{{ student.address || "—" }}</dd>
       </div>
     </dl>
-    <div v-if="$slots.actions" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+    <div v-if="showProfileLink || $slots.actions" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+      <router-link v-if="showProfileLink" :to="`/students/${student.id}`" class="btn btn-ghost !py-1.5 text-xs">View profile →</router-link>
       <slot name="actions" />
     </div>
   </div>

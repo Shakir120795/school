@@ -119,7 +119,7 @@ onMounted(loadClasses);
         <img v-if="row.student.photoUrl" :src="row.student.photoUrl" alt="" class="w-10 h-10 rounded-full object-cover" />
         <span v-else class="w-10 h-10 rounded-full bg-brand-50 flex items-center justify-center font-bold text-brand-700">{{ row.student.fullName.slice(0, 1) }}</span>
         <div class="min-w-[140px]">
-          <div class="font-semibold text-sm">{{ row.student.fullName }}</div>
+          <div class="font-semibold text-sm"><router-link :to="`/students/${row.student.id}`" class="text-brand-700 hover:underline">{{ row.student.fullName }}</router-link></div>
           <div class="text-xs text-slate-400">
             {{ row.student.admissionNo }}<span v-if="row.student.rollNo"> · Roll {{ row.student.rollNo }}</span>
             <span v-if="row.attendance?.entryAt" class="text-emerald-600"> · Gate in {{ new Date(row.attendance.entryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>

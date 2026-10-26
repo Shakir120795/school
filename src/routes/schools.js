@@ -5,8 +5,9 @@ import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
-import { childrenByParentUser } from "../utils/parentChildren.js";
+import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
+import { teacherClassIds } from "../services/teacherClasses.js";
 
 const router = Router();
 const WRITE = ADMIN_ROLES;
@@ -465,6 +466,172 @@ router.get(
         : null,
     }));
     return res.json({ students });
+  })
+);
+
+// Phase 29 WS5: Student 360 profile — ONE aggregate read for the
+// /students/:studentId page: core + family + guardians + last-30
+// attendance + fees + targeted notices. Roles: SCHOOL_ADMIN /
+// PRINCIPAL / STAFF may read any student in their school; TEACHER
+// only students in classrooms they are assigned to (subject or
+// current incharge — services/teacherClasses.js, the same scoping
+// roll-call uses); PARENT is excluded by requireSchool below (403
+// INSUFFICIENT_ROLE) — parents have their own /parent view.
+// Cross-school ids 404 via the schoolId-scoped lookup (and
+// requireSchool already 403s non-members of :schoolId).
+// Phase-27 guard: the core query uses an EXPLICIT select of
+// pre-existing columns ONLY. Family fields (fatherName /
+// motherName / address) are fetched in a SEPARATE query wrapped
+// in try/catch: until the owner's SQL creates those columns in
+// the live DB that query throws, we catch it and return
+// family: null (the UI shows "—"); once the columns exist the
+// same code starts returning values with no change.
+const PROFILE_ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"];
+router.get(
+  "/:schoolId/students/:studentId/profile",
+  requireAuth,
+  requireSchool(PROFILE_ROLES),
+  asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
+    const studentId = req.params.studentId;
+    const core = await prisma.student.findFirst({
+      where: { id: studentId, schoolId },
+      select: {
+        id: true, fullName: true, admissionNo: true, rollNo: true,
+        gender: true, dateOfBirth: true, status: true, photoUrl: true,
+        classroomId: true, academicYearId: true,
+        classroom: { select: { id: true, name: true, section: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+    });
+    if (!core) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    if (req.membership.role === "TEACHER") {
+      const classIds = await teacherClassIds(schoolId, req.membership.id);
+      if (!core.classroomId || !classIds.includes(core.classroomId)) {
+        return res.status(403).json({ error: "STUDENT_NOT_IN_YOUR_CLASSES" });
+      }
+    }
+    let family = null;
+    try {
+      const fam = await prisma.student.findFirst({
+        where: { id: studentId, schoolId },
+        select: { fatherName: true, motherName: true, address: true },
+      });
+      if (fam) family = { fatherName: fam.fatherName || null, motherName: fam.motherName || null, address: fam.address || null };
+    } catch {
+      family = null;
+    }
+    const [guardianLinks, attendanceRows, invoices, notices] = await Promise.all([
+      prisma.studentGuardian.findMany({
+        where: { schoolId, studentId },
+        select: {
+          id: true, relation: true, isPrimary: true,
+          guardian: { select: { id: true, fullName: true, phone: true, email: true, relationship: true } },
+        },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
+      }),
+      prisma.studentAttendance.findMany({
+        where: { schoolId, studentId },
+        select: { id: true, localDate: true, status: true, entryAt: true, exitAt: true, isLate: true, reviewFlag: true },
+        orderBy: { localDate: "desc" },
+        take: 30,
+      }),
+      prisma.feeInvoice.findMany({
+        where: { schoolId, studentId },
+        select: { id: true, periodLabel: true, title: true, totalPaise: true, dueDate: true, status: true, classroomId: true, createdAt: true },
+        orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+      }),
+      // Targeted notices only: NoticeTarget rows pointing at this
+      // student or at their classroom (a trivial relation lookup).
+      core.classroomId || studentId
+        ? prisma.notice.findMany({
+            where: {
+              schoolId,
+              status: { in: ["SENT", "SENDING"] },
+              targets: {
+                some: {
+                  OR: [
+                    { studentId },
+                    ...(core.classroomId ? [{ classroomId: core.classroomId }] : []),
+                  ],
+                },
+              },
+            },
+            select: { id: true, title: true, body: true, type: true, status: true, sentAt: true, createdAt: true },
+            orderBy: { createdAt: "desc" },
+            take: 10,
+          })
+        : Promise.resolve([]),
+    ]);
+    const guardians = guardianLinks.map((l) => ({
+      id: l.guardian.id,
+      linkId: l.id,
+      name: l.guardian.fullName,
+      phone: l.guardian.phone || null,
+      email: l.guardian.email || null,
+      relationship: l.relation || l.guardian.relationship || null,
+      isPrimary: !!l.isPrimary,
+    }));
+    const counts = { PRESENT: 0, LATE: 0, ABSENT: 0, ON_LEAVE: 0, HALF_DAY: 0 };
+    for (const r of attendanceRows) if (counts[r.status] !== undefined) counts[r.status] += 1;
+    const presentCount = counts.PRESENT + counts.LATE;
+    const attendance = {
+      records: attendanceRows.map((r) => ({
+        id: r.id,
+        date: r.localDate,
+        status: r.status,
+        entryAt: r.entryAt,
+        exitAt: r.exitAt,
+        isLate: r.isLate,
+        reviewFlag: r.reviewFlag,
+      })),
+      summary: {
+        total: attendanceRows.length,
+        present: presentCount,
+        late: counts.LATE,
+        absent: counts.ABSENT,
+        onLeave: counts.ON_LEAVE,
+        halfDay: counts.HALF_DAY,
+        counts,
+        pctPresent: attendanceRows.length ? Math.round((presentCount / attendanceRows.length) * 100) : 0,
+      },
+    };
+    let paidOf = {};
+    if (invoices.length) {
+      const paidRows = await prisma.feePayment.groupBy({
+        by: ["invoiceId"],
+        where: { schoolId, invoiceId: { in: invoices.map((i) => i.id) } },
+        _sum: { amountPaise: true },
+      });
+      paidOf = Object.fromEntries(paidRows.map((r) => [r.invoiceId, r._sum.amountPaise || 0]));
+    }
+    const feeInvoices = invoices.map((i) => {
+      const paidPaise = paidOf[i.id] || 0;
+      return {
+        id: i.id, periodLabel: i.periodLabel, title: i.title, status: i.status,
+        totalPaise: i.totalPaise, paidPaise, balancePaise: i.totalPaise - paidPaise,
+        duePaise: i.totalPaise - paidPaise, dueDate: i.dueDate, classroomId: i.classroomId, createdAt: i.createdAt,
+      };
+    });
+    const totalBilled = invoices.filter((i) => i.status !== "WAIVED").reduce((a, i) => a + i.totalPaise, 0);
+    const totalPaid = feeInvoices.reduce((a, i) => a + i.paidPaise, 0);
+    const totalDue = invoices
+      .filter((i) => i.status !== "WAIVED")
+      .reduce((a, i) => a + Math.max(0, i.totalPaise - (paidOf[i.id] || 0)), 0);
+    const { classroom, academicYear, ...coreFields } = core;
+    return res.json({
+      student: {
+        ...coreFields,
+        classroom: classroom ? { id: classroom.id, name: classroom.name, section: classroom.section } : null,
+        classLabel: classLabel(classroom),
+        academicYear: academicYear ? { id: academicYear.id, name: academicYear.name } : null,
+      },
+      family,
+      guardians,
+      attendance,
+      fees: { invoices: feeInvoices, totals: { totalBilled, totalPaid, totalDue } },
+      notices,
+    });
   })
 );
 

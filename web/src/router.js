@@ -11,6 +11,7 @@ const routes = [
   { path: "/", component: () => import("./views/Dashboard.vue") },
   { path: "/people", component: () => import("./views/People.vue") },
   { path: "/students", component: () => import("./views/MyStudents.vue") },
+  { path: "/students/:studentId", component: () => import("./views/StudentProfile.vue") },
   { path: "/attendance", component: () => import("./views/Attendance.vue") },
   { path: "/scanner", component: () => import("./views/Scanner.vue") },
   { path: "/pickup", component: () => import("./views/Pickup.vue") },
@@ -52,6 +53,7 @@ router.beforeEach((to) => {
   if (to.path === "/parent" && role !== "PARENT") return "/";
   if (["/people", "/settings"].includes(to.path) && !["SCHOOL_ADMIN", "PRINCIPAL", "PLATFORM_ADMIN"].includes(role)) return "/";
   if (to.path === "/students" && !["TEACHER", "SCHOOL_ADMIN", "PRINCIPAL"].includes(role)) return "/";
+  if (/^\/students\/.+/.test(to.path) && !["TEACHER", "SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(role)) return role === "PARENT" ? "/parent" : "/";
   if (to.path === "/rollcall" && !["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"].includes(role)) return "/";
   if (to.path === "/scanner" && role === "PARENT") return "/parent";
   return true;
