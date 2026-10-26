@@ -56,6 +56,10 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
       return res.status(404).json({ error: "NOT_FOUND" });
     }
   }
+  // Resolve the author name BEFORE the transaction: on the hosted
+  // pooler the client has connection_limit=1, so any global-client
+  // query inside the tx callback deadlocks against the tx itself.
+  const authorName = await authorNameOf(req);
   const ticket = await prisma.$transaction(async (tx) => {
     const count = await tx.supportTicket.count({ where: { schoolId } });
     const t = await tx.supportTicket.create({
@@ -68,7 +72,7 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
     await tx.ticketMessage.create({
       data: {
         schoolId, ticketId: t.id, authorUserId: req.user.id, authorMembershipId: req.membership.id,
-        authorName: await authorNameOf(req), isStaff: isStaffRole(req.membership.role), body: req.body.body,
+        authorName, isStaff: isStaffRole(req.membership.role), body: req.body.body,
       },
     });
     return t;
