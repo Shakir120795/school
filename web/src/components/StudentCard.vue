@@ -7,10 +7,21 @@
 // guardian attached to the students payload (guardian phone is the
 // mobile source); missing values show "—", never invented data.
 // Extra per-view buttons (Issue QR card, Edit…) go in #actions.
+import { computed } from "vue";
 import { myRole } from "../api.js";
-defineProps({
+const props = defineProps({
   student: { type: Object, required: true },
   classLabel: { type: String, default: "—" },
+});
+// WhatsApp quick action (Phase 29 WS9): a wa.me deep link to the
+// guardian's phone — opens the staff member's own WhatsApp with a
+// pre-filled message. No API send; null when there is no phone.
+const whatsappHref = computed(() => {
+  let digits = String(props.student.guardian?.phone || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) digits = `91${digits}`;
+  const text = `Namaste, this is regarding your child ${props.student.fullName} (${props.classLabel}) — from your school.`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
 });
 // Student 360 link (Phase 29 WS5): staff-side cards only — a
 // parent context never sees it (the profile endpoint 403s
@@ -78,8 +89,9 @@ const dobText = (d) => (d ? String(d).slice(0, 10) : "—");
         <dd class="font-medium">{{ student.address || "—" }}</dd>
       </div>
     </dl>
-    <div v-if="showProfileLink || $slots.actions" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+    <div v-if="showProfileLink || whatsappHref || $slots.actions" class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
       <router-link v-if="showProfileLink" :to="`/students/${student.id}`" class="btn btn-ghost !py-1.5 text-xs">View profile →</router-link>
+      <a v-if="whatsappHref" :href="whatsappHref" target="_blank" rel="noopener" class="btn !py-1.5 text-xs !bg-emerald-600 !text-white hover:!bg-emerald-700">💬 WhatsApp</a>
       <slot name="actions" />
     </div>
   </div>

@@ -47,6 +47,10 @@
       "destination": "/api/index.js"
     },
     {
+      "source": "/push/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

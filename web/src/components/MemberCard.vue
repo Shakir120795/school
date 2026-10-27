@@ -7,6 +7,8 @@
 // show the details they actually have — no fake fields.
 // Actions are emitted; the parent view owns the API calls, the
 // edit modal and the remove-reason popup.
+import { computed } from "vue";
+
 const props = defineProps({
   name: { type: String, required: true },
   role: { type: String, required: true },
@@ -18,6 +20,24 @@ const props = defineProps({
   toggleText: { type: String, default: "" },
 });
 defineEmits(["edit", "toggle-status", "reset", "remove"]);
+
+// WhatsApp quick action (Phase 29 WS9), parent cards only: a wa.me
+// deep link to the parent's phone (their own row phone, else the
+// guardian phone on a child block) with a pre-filled message naming
+// the first linked child. Opens the viewer's own WhatsApp — no API
+// send. Null (no button) when the member is not a parent or no phone
+// is known.
+const whatsappHref = computed(() => {
+  if (props.children === null) return null;
+  let digits = String(props.phone || props.children?.[0]?.guardianPhone || "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) digits = `91${digits}`;
+  const first = props.children?.[0];
+  const text = first
+    ? `Namaste, this is regarding your child ${first.name}${first.classLabel ? ` (${first.classLabel})` : ""} — from your school.`
+    : "Namaste, this is regarding your child — from your school.";
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+});
 
 const roleChip = (r) =>
   ({
@@ -81,6 +101,7 @@ const genderText = (g) => ({ M: "Male", F: "Female", Male: "Male", Female: "Fema
     </div>
 
     <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-100">
+      <a v-if="whatsappHref" :href="whatsappHref" target="_blank" rel="noopener" class="btn !py-1.5 text-xs !bg-emerald-600 !text-white hover:!bg-emerald-700">💬 WhatsApp</a>
       <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="$emit('edit')">Edit</button>
       <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="$emit('toggle-status')">{{ toggleText || (status === "ACTIVE" ? "Deactivate" : "Activate") }}</button>
       <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="$emit('reset')">Reset password</button>

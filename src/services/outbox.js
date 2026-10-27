@@ -15,6 +15,7 @@ import { config } from "../config.js";
 import { sendNoticeCore } from "./notices.js";
 import { whatsappConfigured, sendWhatsAppTemplate } from "./providers/whatsapp.js";
 import { fcmConfigured, sendPush } from "./providers/fcm.js";
+import { webPushConfigured, sendWebPushToUser, WEBPUSH_PLATFORM } from "../utils/pushSend.js";
 
 const WORKER_ID = `worker-${process.pid}`;
 const BACKOFF_BASE_MS = Number(process.env.WORKER_BACKOFF_BASE_MS || 1000);
@@ -57,10 +58,42 @@ async function recordDelivery(data) {
   });
 }
 
+// Web Push (Phase 29 WS9): best-effort browser push alongside the
+// in-app copy, attempted only when VAPID_* env is configured. Never
+// throws and never affects the in-app delivery recorded above.
+async function deliverWebPushIfPossible(outbox, recipient, contact, notice) {
+  if (!webPushConfigured() || !contact.userId) return;
+  try {
+    const result = await sendWebPushToUser(contact.userId, {
+      title: notice.title,
+      body: notice.body,
+      url: "/notifications",
+    });
+    if (result.skipped || (result.sent === 0 && result.failed === 0 && result.removed === 0)) return;
+    await recordDelivery({
+      schoolId: outbox.schoolId,
+      outboxId: outbox.id,
+      noticeRecipientId: recipient.id,
+      channel: "PUSH",
+      provider: "web-push",
+      status: result.sent > 0 ? "PROVIDER_ACCEPTED" : "FAILED",
+      idempotencyKey: `${outbox.id}:${recipient.id}:WEBPUSH`,
+      attemptCount: 1,
+      sentAt: result.sent > 0 ? new Date() : null,
+      errorCode: result.sent > 0 ? null : "WEBPUSH_SEND_FAILED",
+      errorMessage: result.sent > 0 ? null : `sent 0 of ${result.sent + result.failed + result.removed} subscription(s)`,
+    });
+  } catch (e) {
+    console.warn(`[push] web push delivery failed for recipient ${recipient.id}: ${e.message || e}`);
+  }
+}
+
 async function deliverPushIfPossible(outbox, recipient, contact, notice) {
   if (!fcmConfigured() || !contact.userId) return;
   const tokens = await prisma.pushDeviceToken.findMany({
-    where: { userId: contact.userId, isActive: true },
+    // Web-push subscriptions share this table (platform "webpush") but
+    // are not FCM tokens — never offer them to the FCM provider.
+    where: { userId: contact.userId, isActive: true, platform: { not: WEBPUSH_PLATFORM } },
   });
   for (const t of tokens) {
     const idempotencyKey = `${outbox.id}:${recipient.id}:PUSH:${t.id}`;
@@ -118,7 +151,9 @@ async function deliverToRecipient(outbox, recipient, notice) {
       where: { id: recipient.id, status: "QUEUED" },
       data: { status: "DELIVERED" },
     });
-    await deliverPushIfPossible(outbox, recipient, await resolveContact(outbox.schoolId, recipient), notice);
+    const contact = await resolveContact(outbox.schoolId, recipient);
+    await deliverPushIfPossible(outbox, recipient, contact, notice);
+    await deliverWebPushIfPossible(outbox, recipient, contact, notice);
     return;
   }
   const channel = "WHATSAPP";
@@ -200,6 +235,7 @@ async function deliverToRecipient(outbox, recipient, notice) {
   }
 
   await deliverPushIfPossible(outbox, recipient, contact, notice);
+  await deliverWebPushIfPossible(outbox, recipient, contact, notice);
 }
 
 async function claimBatch(limit = 10) {

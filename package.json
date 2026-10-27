@@ -2,9 +2,10 @@
   "dependencies": {
     "@prisma/client": "^6.16.0",
     "express": "^5.3.0",
-    "jsonwebtoken": "^9.0.3"
+    "jsonwebtoken": "^9.0.3",
+    "web-push": "^3.6.7"
   },
-  "description": "Smart School Tracking, Attendance & Communication SaaS \u2014 Phase 1: database foundation only",
+  "description": "Smart School Tracking, Attendance & Communication SaaS — Phase 1: database foundation only",
   "devDependencies": {
     "prisma": "^6.16.0"
   },
