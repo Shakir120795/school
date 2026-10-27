@@ -1,10 +1,25 @@
 // Smart School service worker: app-shell caching + Web Push.
 // API calls are always network (attendance data must never be served
 // stale). Structure: [1] app-shell caching below, [2] Web Push handlers
-// at the end of the file (Phase 29 WS9). WS10 (PWA) will extend
-// section [1]; keep push handlers self-contained in section [2].
-const CACHE = "smart-school-v1";
-const CORE = ["/", "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png"];
+// at the end of the file (Phase 29 WS9, byte-for-byte — do not edit).
+// WS10 completed section [1]: full shell precache (index + manifest +
+// every icon incl. maskable + apple-touch), a complete never-cache
+// API list (incl. /platform and /push/config, missed before), and
+// only successful (ok) responses are ever put in the cache.
+const CACHE = "smart-school-v2";
+const CORE = [
+  "/",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/maskable-512.png",
+  "/icons/apple-touch-icon.png",
+];
+// Same-origin API prefixes — NEVER cached, always network. Covers
+// every Express mount in src/app.js plus the Vercel rewrites in
+// vercel.json (/platform/* operator console, /push/config VAPID
+// endpoint). Anything under these prefixes bypasses the SW entirely.
+const API = /^\/(auth|schools|attendance|webhooks|internal|me|health|platform|push)(\/|$)/;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
@@ -17,19 +32,28 @@ self.addEventListener("activate", (e) => {
 });
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
+  // Only same-origin GETs are ever handled: non-GET (POST/PUT/PATCH/
+  // DELETE) and cross-origin requests pass straight to the network.
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   // API + auth: never cache.
-  if (/^\/(auth|schools|attendance|webhooks|internal|me|health)(\/|$)/.test(url.pathname)) return;
-  // Hashed build assets: cache-first.
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/icons/")) {
+  if (API.test(url.pathname)) return;
+  // Hashed build assets + icons + manifest: cache-first, then network
+  // (caching only successful responses, so a 404 is never pinned).
+  if (
+    url.pathname.startsWith("/assets/") ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.webmanifest"
+  ) {
     e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      const copy = res.clone();
-      caches.open(CACHE).then((c) => c.put(e.request, copy));
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy));
+      }
       return res;
     })));
     return;
   }
-  // Navigations: network-first, fall back to cached shell offline.
+  // Navigations: network-first, fall back to the cached shell offline.
   if (e.request.mode === "navigate") {
     e.respondWith(fetch(e.request).catch(() => caches.match("/")));
   }
