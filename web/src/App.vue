@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { initPush } from "./push.js";
 const schoolInfo = ref(null);
 const unreadCount = ref(0);
@@ -17,9 +17,15 @@ import { session, currentUser, myRole, myMemberships, api } from "./api.js";
 
 const route = useRoute();
 const router = useRouter();
-const role = computed(() => myRole());
-const user = computed(() => currentUser());
-const memberships = computed(() => myMemberships());
+// The session helpers read storage, which Vue cannot track — without
+// a nudge the shell (name/role in the sidebar) keeps showing the
+// PREVIOUS account after an in-app sign-in until a full reload
+// (seen live in the Phase 30 multi-tab test). Re-read on navigation.
+const navTick = ref(0);
+watch(() => route.fullPath, () => { navTick.value += 1; });
+const role = computed(() => { void navTick.value; return myRole(); });
+const user = computed(() => { void navTick.value; return currentUser(); });
+const memberships = computed(() => { void navTick.value; return myMemberships(); });
 // Public routes (all login variants) render bare — never wrapped in
 // the app shell. (Was an exact "/login" match: /login/staff opened
 // inside the sidebar of whoever was still logged in.)
@@ -80,7 +86,7 @@ function switchSchool(id) {
 }
 // Multi-account: every account signed in on this browser stays
 // signed in; this switches THIS tab to another of them.
-const signedInAccounts = computed(() => session.accountsList());
+const signedInAccounts = computed(() => { void navTick.value; return session.accountsList(); });
 function switchAccount(id) {
   if (session.activate(id)) location.reload();
 }
