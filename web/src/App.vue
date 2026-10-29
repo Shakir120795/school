@@ -78,6 +78,12 @@ function switchSchool(id) {
   session.setSchool(id);
   location.reload();
 }
+// Multi-account: every account signed in on this browser stays
+// signed in; this switches THIS tab to another of them.
+const signedInAccounts = computed(() => session.accountsList());
+function switchAccount(id) {
+  if (session.activate(id)) location.reload();
+}
 </script>
 
 <template>
@@ -106,6 +112,13 @@ function switchSchool(id) {
         <span class="mr-2">{{ n.icon }}</span>{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
       </router-link>
       <div class="mt-auto text-xs text-slate-300">
+        <div v-if="signedInAccounts.length > 1" class="mb-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Signed-in accounts</div>
+          <button v-for="a in signedInAccounts.filter((x) => x.id !== session.activeAccountId)" :key="a.id"
+            class="btn btn-ghost w-full !py-1.5 mb-1 !text-xs" @click="switchAccount(a.id)">
+            Switch to {{ a.user?.fullName }} ({{ a.role }})
+          </button>
+        </div>
         <div class="font-semibold text-white">{{ user?.fullName }}</div>
         <div>{{ role }}</div>
         <button class="btn btn-ghost mt-3 w-full !py-2" @click="logout">Logout</button>

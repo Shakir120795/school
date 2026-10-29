@@ -44,7 +44,7 @@ async function runImport() {
 }
 async function downloadExport(path, name) {
   err.value = "";
-  const token = localStorage.getItem("ss_access");
+  const token = session.accessToken;
   const res = await fetch(path, { headers: { authorization: `Bearer ${token}`, "x-school-id": sid } });
   if (!res.ok) { err.value = "Export failed"; return; }
   download(name, await res.text());

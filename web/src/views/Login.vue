@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session, revokeSession } from "../api.js";
+import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
 
 const router = useRouter();
 const route = useRoute();
@@ -46,31 +46,12 @@ async function bannerLogout() {
   notice.value = "";
 }
 
-// Snapshot/restore of the stored session, so a sign-in attempt that
-// fails (bad credentials or wrong-role page) changes nothing, while a
-// successful one can revoke the old session and take its place.
-function snapshotSession() {
-  return {
-    access: session.accessToken,
-    refresh: localStorage.getItem("ss_refresh"),
-    user: localStorage.getItem("ss_user"),
-    memberships: localStorage.getItem("ss_memberships"),
-    school: session.schoolId,
-  };
-}
-function restoreSession(old) {
-  session.setTokens(old.access, old.refresh);
-  if (old.user) localStorage.setItem("ss_user", old.user); else localStorage.removeItem("ss_user");
-  if (old.memberships) localStorage.setItem("ss_memberships", old.memberships); else localStorage.removeItem("ss_memberships");
-  session.setSchool(old.school);
-}
-// After login() has stored the new account: revoke the replaced
-// session server-side and pin the active school to the new account.
-async function replaceOldSession(old) {
-  if (old.access) await revokeSession(old.access, old.refresh);
-  const ms = myMemberships();
-  if (ms.length) session.setSchool(ms[0].schoolId);
-}
+// Snapshot/restore of the whole account book, so a sign-in attempt
+// that fails (bad credentials or wrong-role page) changes nothing.
+// Multi-account (Phase 30): a SUCCESSFUL sign-in simply adds the new
+// account and pins this tab to it — other accounts stay signed in.
+function snapshotSession() { return session.snapshot(); }
+function restoreSession(old) { session.restore(old); }
 
 const phone = ref("");
 const code = ref("");
@@ -130,7 +111,6 @@ async function verifyOtp() {
       : `Login failed (${r.json.error || r.status})`;
     return;
   }
-  await replaceOldSession(old);
   router.push("/parent");
 }
 
@@ -150,14 +130,13 @@ async function submit() {
   // FAILED attempt: an existing session is restored untouched (with
   // no prior session, the just-created one is simply discarded).
   const roles = myMemberships().map((m) => m.role);
-  const wrongPage = (msg) => { if (old.access) restoreSession(old); else session.clear(); error.value = msg; };
+  const wrongPage = (msg) => { restoreSession(old); error.value = msg; };
   if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
   if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
   if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
   if (variant === "admin" && !currentUser()?.isPlatformAdmin) { wrongPage("This page is only for the platform admin."); return; }
-  // Success: the new account takes over — revoke the session it
-  // replaced and land on the NEW role's home.
-  await replaceOldSession(old);
+  // Success: this tab switches to the new account (the previous
+  // account stays signed in on this device) — land on its home.
   if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
@@ -177,7 +156,7 @@ async function submit() {
           <button type="button" class="btn btn-primary flex-1 !py-2 !text-sm" @click="goDashboard">Go to my dashboard</button>
           <button type="button" class="btn btn-ghost flex-1 !py-2 !text-sm" @click="bannerLogout">Logout</button>
         </div>
-        <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — it will replace this session.</p>
+        <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — this tab will switch to it, and this account stays signed in. Open each login in its own tab to use admin, school, teacher and parent together.</p>
       </div>
 
       <!-- CHOOSER (plain /login): three doors, no form. The admin
