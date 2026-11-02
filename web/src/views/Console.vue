@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
-import { api } from "../api.js";
+import { api, login as apiLogin } from "../api.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
 import MemberCard from "../components/MemberCard.vue";
@@ -24,6 +24,24 @@ async function load() {
     loading.value = false;
   }
 }
+// Phase 31: one-click login test + one-tap demo logins.
+const check = ref(null);
+const checking = ref(false);
+async function runCheck() {
+  checking.value = true; err.value = "";
+  try {
+    const r = await api("/platform/login-check", { school: false });
+    if (r.status === 200) check.value = r.json;
+    else err.value = r.json?.error || "Check failed";
+  } finally { checking.value = false; }
+}
+async function demoLogin(email, password, dest) {
+  err.value = ""; msg.value = "";
+  const r = await apiLogin(email, password);
+  if (r.status === 200) location.href = dest;
+  else err.value = "Demo login failed: " + email;
+}
+
 async function createSchool() {
   err.value = ""; msg.value = "";
   const slug = form.value.slug || form.value.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -422,6 +440,33 @@ onMounted(async () => {
         </div>
       </div>
       <p v-if="!schools.length" class="card text-sm text-slate-400">No schools yet — create the first one below.</p>
+    </div>
+
+    <div class="card mb-4">
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <h2 class="font-bold">✅ Login Test</h2>
+        <span class="text-xs text-slate-400">Ek click me pata chalega — kaun sa login chal raha hai, kaun sa nahi, aur kyun.</span>
+      </div>
+      <button class="btn-primary !w-auto px-5 mb-3" :disabled="checking" @click="runCheck">{{ checking ? "Check ho raha hai…" : "▶ Full test chalao" }}</button>
+      <div v-if="check">
+        <p class="font-bold mb-2" :class="check.passed === check.total ? 'text-green-700' : 'text-amber-700'">Result: {{ check.passed }} / {{ check.total }} pass</p>
+        <div class="grid gap-1.5">
+          <div v-for="c in check.checks" :key="c.label" class="flex items-start gap-2 text-sm border rounded-xl px-3 py-2" :class="c.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
+            <span>{{ c.ok ? "✅" : "❌" }}</span>
+            <span><b>{{ c.label }}</b><br /><span class="text-slate-600">{{ c.detail }}</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="border-t mt-4 pt-3">
+        <p class="text-sm font-semibold mb-1">👀 Khud dekhna hai? Ek tap me demo login:</p>
+        <p class="text-xs text-slate-400 mb-2">Button dabate hi ye tab usi account me khul jayega. Wapas aane ke liye sidebar se account badlo, ya Owner login dobara karo.</p>
+        <div class="flex flex-wrap gap-2">
+          <button class="btn-ghost !w-auto" @click="demoLogin('rahul.parent@demo.school', 'ParentDemo1!', '/')">👨‍👧 Parent banke dekho</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('teacher@demo.school', 'DemoTeach123!', '/')">👩‍🏫 Teacher banke dekho</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('principal@demo.school', 'DemoPrincipal123!', '/')">🎓 Principal banke dekho</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('admin@demo.school', 'DemoAdmin123!', '/')">🏫 School Admin banke dekho</button>
+        </div>
+      </div>
     </div>
 
     <div class="card mb-4">

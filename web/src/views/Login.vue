@@ -156,7 +156,7 @@ async function submit() {
           <button type="button" class="btn btn-primary flex-1 !py-2 !text-sm" @click="goDashboard">Go to my dashboard</button>
           <button type="button" class="btn btn-ghost flex-1 !py-2 !text-sm" @click="bannerLogout">Logout</button>
         </div>
-        <p class="text-xs text-blue-700/70 mt-2">Or sign in below with a different account — this tab will switch to it, and this account stays signed in. Open each login in its own tab to use admin, school, teacher and parent together.</p>
+        <p class="text-xs text-blue-700/70 mt-2">Want another account? Just sign in below — this tab switches to it, and your other tabs stay as they are.</p>
       </div>
 
       <!-- CHOOSER (plain /login): three doors, no form. The admin

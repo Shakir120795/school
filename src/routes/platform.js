@@ -7,7 +7,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
-import { hashPassword } from "../utils/security.js";
+import { hashPassword, verifyPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
@@ -50,6 +50,68 @@ router.get("/platform/schools", asyncRoute(async (req, res) => {
     });
   }
   return res.json({ schools: out });
+}));
+
+// Phase 31: one-click LOGIN TEST for the owner — sab kuch ek
+// screen par, plain words me: database ready hai ya nahi, har demo
+// login kaam karta hai ya nahi, parent ko bachche linked hain ya
+// nahi, aur teeno test schools ke sample logins. Read-only check:
+// sirf password verify + counts, koi data change nahi hota.
+router.get("/platform/login-check", asyncRoute(async (req, res) => {
+  const checks = [];
+  const add = (label, ok, detail) => checks.push({ label, ok, detail });
+
+  try {
+    await prisma.$queryRaw`SELECT "fatherName", "motherName", "address" FROM "Student" LIMIT 1`;
+    add("Database update", true, "Database ready hai — Students list chalegi.");
+  } catch {
+    add("Database update", false, "Ek database update PENDING hai — Supabase (school wala account) > SQL Editor me docs/PENDING-LIVE-SQL.sql chalani hai. Iske bina Students list aur parent ke bachche nahi dikhenge.");
+  }
+  try {
+    await prisma.platformPlan.count();
+    add("Billing tables", true, "Billing tables maujood hain.");
+  } catch {
+    add("Billing tables", false, "Billing tables nahi hain — upar wali pending SQL file hi ye bhi bana degi.");
+  }
+
+  async function checkLogin(label, email, password, expectRole, schoolSlug) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) { add(label, false, email + " — ye account mila hi nahi."); return null; }
+    const okPw = await verifyPassword(password, user.passwordHash);
+    if (!okPw) { add(label, false, email + " — password match nahi hua."); return null; }
+    if (expectRole === "PLATFORM_ADMIN") {
+      add(label, !!user.isPlatformAdmin, user.isPlatformAdmin ? email + " — owner login OK hai." : email + " — ye owner account nahi hai.");
+      return user;
+    }
+    const ms = await prisma.schoolMembership.findMany({ where: { userId: user.id, status: "ACTIVE" }, include: { school: { select: { slug: true } } } });
+    const m = ms.find((x) => x.role === expectRole && (!schoolSlug || x.school.slug === schoolSlug));
+    if (!m) { add(label, false, email + " — login hai par " + expectRole + " role nahi mila."); return null; }
+    add(label, true, email + " — login OK (" + m.school.slug + ").");
+    return user;
+  }
+
+  await checkLogin("Owner (Admin) login", "operator@demo.school", "DemoOp123!", "PLATFORM_ADMIN");
+  await checkLogin("School Admin login", "admin@demo.school", "DemoAdmin123!", "SCHOOL_ADMIN", "demo-public");
+  await checkLogin("Principal login", "principal@demo.school", "DemoPrincipal123!", "PRINCIPAL", "demo-public");
+  await checkLogin("Teacher login", "teacher@demo.school", "DemoTeach123!", "TEACHER", "demo-public");
+  const parentUser = await checkLogin("Parent login", "rahul.parent@demo.school", "ParentDemo1!", "PARENT", "demo-public");
+
+  if (parentUser) {
+    const demo = await prisma.school.findUnique({ where: { slug: "demo-public" } });
+    const guardians = await prisma.guardian.findMany({ where: { schoolId: demo.id, userId: parentUser.id }, select: { id: true } });
+    let n = 0;
+    for (const g of guardians) n += await prisma.studentGuardian.count({ where: { guardianId: g.id } });
+    add("Parent ko bachche linked?", n > 0, n > 0 ? "Parent ke " + n + " bachche linked hain — bachche dikhenge." : "Parent login to hai par koi bachcha linked nahi hai.");
+  }
+
+  for (const slug of ["sunrise-public", "green-valley", "little-angels"]) {
+    await checkLogin(slug + " — admin", "admin@" + slug + ".demo", "Admin@123", "SCHOOL_ADMIN", slug);
+    await checkLogin(slug + " — teacher", "t1@" + slug + ".demo", "Teach@123", "TEACHER", slug);
+    await checkLogin(slug + " — parent", "p1001@" + slug + ".demo", "Parent@123", "PARENT", slug);
+  }
+
+  const passed = checks.filter((c) => c.ok).length;
+  return res.json({ passed, total: checks.length, checks });
 }));
 
 // Phase 28: GLOBAL platform search — one box on the owner's
