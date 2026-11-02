@@ -81,7 +81,7 @@ const pageNote = computed(() => {
     ? "Use the login ID & password given by your school office."
     : "Use the mobile number given to your school. No password needed — we send an OTP.";
   if (variant === "teacher") return "Use the email & password given by your school office.";
-  if (variant === "school") return "For the school admin, principal and office team — use the email & password issued for your school.";
+  if (variant === "school") return "For the school office — the admin and office team sign in with the email & password issued for their school.";
   if (variant === "admin") return "For the platform owner only — this controls every school on Smart School.";
   return "";
 });
@@ -133,7 +133,7 @@ async function submit() {
   const wrongPage = (msg) => { restoreSession(old); error.value = msg; };
   if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
   if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
-  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin, principal and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
+  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
   if (variant === "admin" && !currentUser()?.isPlatformAdmin) { wrongPage("This page is only for the platform admin."); return; }
   // Success: this tab switches to the new account (the previous
   // account stays signed in on this device) — land on its home.
@@ -176,7 +176,7 @@ async function submit() {
           </router-link>
           <router-link to="/login/school" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">🏫</span>
-            <span><span class="block font-bold">School Login</span><span class="block text-xs text-slate-500">School admin, principal aur office team</span></span>
+            <span><span class="block font-bold">School Login</span><span class="block text-xs text-slate-500">School admin & office team</span></span>
           </router-link>
         </div>
       </template>

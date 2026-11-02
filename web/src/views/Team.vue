@@ -16,7 +16,7 @@ async function copyLink(path) {
   try { await navigator.clipboard.writeText(origin + path); msg.value = `Copied: ${origin}${path}`; } catch { msg.value = origin + path; }
 }
 
-const ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
+const ROLES = ["SCHOOL_ADMIN", "TEACHER", "STAFF", "PARENT"];
 const counts = computed(() => {
   const c = {};
   for (const r of ROLES) c[r] = memberships.value.filter((m) => m.role === r).length;

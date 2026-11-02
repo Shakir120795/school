@@ -107,7 +107,6 @@ router.get("/platform/login-check", asyncRoute(async (req, res) => {
 
   await checkLogin("Owner (Admin) login", "operator@demo.school", "DemoOp123!", "PLATFORM_ADMIN");
   await checkLogin("School Admin login", "admin@demo.school", "DemoAdmin123!", "SCHOOL_ADMIN", "demo-public");
-  await checkLogin("Principal login", "principal@demo.school", "DemoPrincipal123!", "PRINCIPAL", "demo-public");
   await checkLogin("Teacher login", "teacher@demo.school", "DemoTeach123!", "TEACHER", "demo-public");
   const parentUser = await checkLogin("Parent login", "rahul.parent@demo.school", "ParentDemo1!", "PARENT", "demo-public");
 

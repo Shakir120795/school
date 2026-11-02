@@ -537,7 +537,6 @@ onMounted(async () => {
                   <option value="TEACHER">Teacher</option>
                   <option value="PARENT">Parent</option>
                   <option value="SCHOOL_ADMIN">School Admin</option>
-                  <option value="PRINCIPAL">Principal</option>
                   <option value="STAFF">Staff (office)</option>
                 </select>
                 <input v-if="addForm.role === 'PARENT'" v-model="addForm.guardianPhone" class="input" placeholder="Guardian mobile — links their children" />
@@ -585,7 +584,6 @@ onMounted(async () => {
         <div class="flex flex-wrap gap-2">
           <button class="btn-ghost !w-auto" @click="demoLogin('rahul.parent@demo.school', 'ParentDemo1!', '/')">{{ t("console.viewAsParent") }}</button>
           <button class="btn-ghost !w-auto" @click="demoLogin('teacher@demo.school', 'DemoTeach123!', '/')">{{ t("console.viewAsTeacher") }}</button>
-          <button class="btn-ghost !w-auto" @click="demoLogin('principal@demo.school', 'DemoPrincipal123!', '/')">{{ t("console.viewAsPrincipal") }}</button>
           <button class="btn-ghost !w-auto" @click="demoLogin('admin@demo.school', 'DemoAdmin123!', '/')">{{ t("console.viewAsSchoolAdmin") }}</button>
         </div>
       </div>
