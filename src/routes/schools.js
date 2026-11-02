@@ -6,6 +6,7 @@ import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
+import { studentScalars, familyFieldsReady } from "../utils/studentCompat.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 import { teacherClassIds } from "../services/teacherClasses.js";
 
@@ -392,6 +393,7 @@ router.post(
       if (v && typeof v === "object") return res.status(400).json({ error: v.error });
       if (v !== undefined) family[f] = v;
     }
+    if (!(await familyFieldsReady())) { delete family.fatherName; delete family.motherName; delete family.address; }
     const student = await prisma.student.create({
       data: {
         schoolId: req.params.schoolId,
@@ -448,7 +450,10 @@ router.get(
       // name + phone — the "Mobile" on the student detail cards
       // (People page + teacher My Students). One joined query,
       // primary link first; the raw links are not exposed.
-      include: {
+      // Phase 32 fix: explicit scalar select (studentScalars) so a
+      // pending family-column migration degrades instead of 500ing.
+      select: {
+        ...(await studentScalars()),
         guardianLinks: {
           include: { guardian: { select: { fullName: true, phone: true, relationship: true } } },
           orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }],
@@ -683,6 +688,7 @@ router.patch(
       if (v && typeof v === "object") return res.status(400).json({ error: v.error });
       if (v !== undefined) data[f] = v;
     }
+    if (!(await familyFieldsReady())) { delete data.fatherName; delete data.motherName; delete data.address; }
     // Class transfer (WS6): validate the destination classroom
     // belongs to THIS school before anything is written.
     let transfer = null;
@@ -847,11 +853,13 @@ router.get(
     const schoolId = req.params.schoolId;
     const guardians = await prisma.guardian.findMany({
       where: { schoolId, userId: req.user.id },
-      include: {
+      select: {
+        id: true,
         studentLinks: {
-          include: {
+          select: {
             student: {
-              include: {
+              select: {
+                ...(await studentScalars()),
                 classroom: true,
                 attendances: { orderBy: { localDate: "desc" }, take: 30 },
               },

@@ -71,3 +71,34 @@ BEGIN
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
+
+-- ---------------------------------------------------------------------
+-- Section 3 — Phase 32: owner hisab (per-student rate + payments).
+-- NOTE (2 Nov 2026): ye updates ab app ke andar se bhi chal sakti
+-- hain — Owner Console ka "Database Update" card POST
+-- /platform/apply-db-updates chalata hai (wahi statements). Ye file
+-- sirf record ke liye hai.
+-- ---------------------------------------------------------------------
+ALTER TABLE "School" ADD COLUMN IF NOT EXISTS "perStudentRatePaise" INTEGER NOT NULL DEFAULT 50000;
+
+CREATE TABLE IF NOT EXISTS "OwnerPayment" (
+    "id" TEXT NOT NULL,
+    "schoolId" TEXT NOT NULL,
+    "amountPaise" INTEGER NOT NULL,
+    "note" TEXT,
+    "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdBy" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "OwnerPayment_pkey" PRIMARY KEY ("id")
+);
+
+CREATE INDEX IF NOT EXISTS "OwnerPayment_schoolId_idx" ON "OwnerPayment"("schoolId");
+
+DO $$
+BEGIN
+    ALTER TABLE "OwnerPayment" ADD CONSTRAINT "OwnerPayment_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;

@@ -13,6 +13,7 @@ import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberR
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 import { localParts, dateOnly } from "../utils/time.js";
+import { studentScalars, familyFieldsReady } from "../utils/studentCompat.js";
 
 const router = Router();
 
@@ -30,7 +31,7 @@ async function revokeSessions(userId) {
 }
 
 router.get("/platform/schools", asyncRoute(async (req, res) => {
-  const schools = await prisma.school.findMany({ orderBy: { createdAt: "asc" } });
+  const schools = await prisma.school.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, status: true, timezone: true, createdAt: true } });
   const out = [];
   for (const s of schools) {
     const [students, teachers, classes, parents] = await Promise.all([
@@ -43,10 +44,24 @@ router.get("/platform/schools", asyncRoute(async (req, res) => {
       where: { schoolId: s.id, role: "SCHOOL_ADMIN" },
       include: { user: { select: { email: true, fullName: true } } },
     });
+    // Phase 32 hisab: rate column / payments table may not exist
+    // until the DB update runs — degrade to nulls, never 500.
+    let rate = null, received = null;
+    try {
+      const r = await prisma.$queryRaw`SELECT "perStudentRatePaise" FROM "School" WHERE "id" = ${s.id}`;
+      rate = r[0]?.perStudentRatePaise ?? null;
+    } catch { /* column pending */ }
+    try {
+      const agg = await prisma.ownerPayment.aggregate({ where: { schoolId: s.id }, _sum: { amountPaise: true } });
+      received = agg._sum.amountPaise || 0;
+    } catch { /* table pending */ }
+    const totalChargePaise = rate != null ? students * rate : null;
     out.push({
       id: s.id, name: s.name, slug: s.slug, status: s.status, timezone: s.timezone,
       createdAt: s.createdAt, students, teachers, classes, parents,
       adminEmail: admin?.user.email || null, adminName: admin?.user.fullName || null,
+      perStudentRatePaise: rate, totalChargePaise, receivedPaise: received,
+      balancePaise: totalChargePaise != null && received != null ? totalChargePaise - received : null,
     });
   }
   return res.json({ schools: out });
@@ -113,6 +128,246 @@ router.get("/platform/login-check", asyncRoute(async (req, res) => {
   const passed = checks.filter((c) => c.ok).length;
   return res.json({ passed, total: checks.length, checks });
 }));
+
+// =====================================================================
+// Phase 32 (2 Nov 2026) — "Owner hi sab karega": pending DB updates
+// app ke andar se hi, per-student HISAB, aur owner ke liye students
+// + classes ka pura CRUD (school ke panel jaise hi, par platform se).
+// =====================================================================
+
+// Pending DDL — docs/PENDING-LIVE-SQL.sql ka hi content, statement
+// by statement. Sab idempotent hai; dobara chalane se kuch nahi
+// bigadta. App ka DB connection (pooler, project owner role) se
+// chalta hai — Supabase dashboard ki zaroorat nahi.
+const DB_UPDATE_STATEMENTS = [
+  ["Student: fatherName column", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "fatherName" TEXT`],
+  ["Student: motherName column", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "motherName" TEXT`],
+  ["Student: address column", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "address" TEXT`],
+  ["Billing: PlatformPlan table", `CREATE TABLE IF NOT EXISTS "PlatformPlan" ("id" TEXT NOT NULL, "name" TEXT NOT NULL, "pricePaise" INTEGER NOT NULL, "periodMonths" INTEGER NOT NULL, "features" TEXT, "isActive" BOOLEAN NOT NULL DEFAULT true, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "PlatformPlan_pkey" PRIMARY KEY ("id"))`],
+  ["Billing: SchoolSubscription table", `CREATE TABLE IF NOT EXISTS "SchoolSubscription" ("id" TEXT NOT NULL, "schoolId" TEXT NOT NULL, "planId" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'ACTIVE', "startsAt" TIMESTAMP(3) NOT NULL, "endsAt" TIMESTAMP(3) NOT NULL, "amountPaise" INTEGER NOT NULL, "paymentNote" TEXT, "createdBy" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "SchoolSubscription_pkey" PRIMARY KEY ("id"))`],
+  ["Billing: indexes", `CREATE INDEX IF NOT EXISTS "PlatformPlan_isActive_idx" ON "PlatformPlan"("isActive")`],
+  ["Billing: indexes 2", `CREATE INDEX IF NOT EXISTS "SchoolSubscription_schoolId_status_idx" ON "SchoolSubscription"("schoolId", "status")`],
+  ["Billing: indexes 3", `CREATE INDEX IF NOT EXISTS "SchoolSubscription_planId_idx" ON "SchoolSubscription"("planId")`],
+  ["Billing: indexes 4", `CREATE INDEX IF NOT EXISTS "SchoolSubscription_endsAt_idx" ON "SchoolSubscription"("endsAt")`],
+  ["Billing: subscription school FK", `DO $$ BEGIN ALTER TABLE "SchoolSubscription" ADD CONSTRAINT "SchoolSubscription_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
+  ["Billing: subscription plan FK", `DO $$ BEGIN ALTER TABLE "SchoolSubscription" ADD CONSTRAINT "SchoolSubscription_planId_fkey" FOREIGN KEY ("planId") REFERENCES "PlatformPlan"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
+  ["School: per-student rate column", `ALTER TABLE "School" ADD COLUMN IF NOT EXISTS "perStudentRatePaise" INTEGER NOT NULL DEFAULT 50000`],
+  ["Hisab: OwnerPayment table", `CREATE TABLE IF NOT EXISTS "OwnerPayment" ("id" TEXT NOT NULL, "schoolId" TEXT NOT NULL, "amountPaise" INTEGER NOT NULL, "note" TEXT, "receivedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "createdBy" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "updatedAt" TIMESTAMP(3) NOT NULL, CONSTRAINT "OwnerPayment_pkey" PRIMARY KEY ("id"))`],
+  ["Hisab: OwnerPayment index", `CREATE INDEX IF NOT EXISTS "OwnerPayment_schoolId_idx" ON "OwnerPayment"("schoolId")`],
+  ["Hisab: OwnerPayment FK", `DO $$ BEGIN ALTER TABLE "OwnerPayment" ADD CONSTRAINT "OwnerPayment_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
+];
+
+router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {
+  const results = [];
+  for (const [label, sql] of DB_UPDATE_STATEMENTS) {
+    try {
+      await prisma.$executeRawUnsafe(sql);
+      results.push({ label, ok: true });
+    } catch (e) {
+      results.push({ label, ok: false, error: String(e?.message || e).slice(0, 200) });
+    }
+  }
+  return res.json({ applied: results.every((r) => r.ok), results });
+}));
+
+async function findSchool(id) {
+  return prisma.school.findUnique({ where: { id }, select: { id: true, name: true, slug: true } });
+}
+
+// ---- Hisab (per-student charge) ----
+router.get("/platform/schools/:id/hisab", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  let rate;
+  try {
+    const r = await prisma.$queryRaw`SELECT "perStudentRatePaise" FROM "School" WHERE "id" = ${school.id}`;
+    rate = r[0]?.perStudentRatePaise;
+  } catch { return res.json({ setupRequired: true }); }
+  if (rate == null) return res.json({ setupRequired: true });
+  let payments;
+  try {
+    payments = await prisma.ownerPayment.findMany({ where: { schoolId: school.id }, orderBy: { receivedAt: "desc" }, take: 200 });
+  } catch { return res.json({ setupRequired: true }); }
+  const students = await prisma.student.count({ where: { schoolId: school.id, status: "ACTIVE" } });
+  const receivedPaise = payments.reduce((a, p) => a + p.amountPaise, 0);
+  const totalChargePaise = students * rate;
+  return res.json({
+    schoolId: school.id, students, perStudentRatePaise: rate,
+    totalChargePaise, receivedPaise, balancePaise: totalChargePaise - receivedPaise,
+    payments: payments.map((p) => ({ id: p.id, amountPaise: p.amountPaise, note: p.note, receivedAt: p.receivedAt })),
+  });
+}));
+
+router.patch("/platform/schools/:id/rate", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const rupees = Number(req.body?.rateRupees);
+  if (!Number.isFinite(rupees) || rupees < 0) return res.status(400).json({ error: "INVALID_RATE" });
+  try {
+    await prisma.school.update({ where: { id: school.id }, data: { perStudentRatePaise: Math.round(rupees * 100) } });
+  } catch { return res.status(409).json({ error: "DB_UPDATE_PENDING" }); }
+  return res.json({ ok: true, perStudentRatePaise: Math.round(rupees * 100) });
+}));
+
+router.post("/platform/schools/:id/payments", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const rupees = Number(req.body?.amountRupees);
+  if (!Number.isFinite(rupees) || rupees <= 0) return res.status(400).json({ error: "INVALID_AMOUNT" });
+  const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 200) : null;
+  const receivedAt = req.body?.receivedAt ? new Date(req.body.receivedAt) : new Date();
+  if (Number.isNaN(receivedAt.getTime())) return res.status(400).json({ error: "INVALID_DATE" });
+  try {
+    const p = await prisma.ownerPayment.create({
+      data: { schoolId: school.id, amountPaise: Math.round(rupees * 100), note: note || null, receivedAt, createdBy: req.user.id },
+    });
+    return res.status(201).json({ payment: { id: p.id, amountPaise: p.amountPaise, note: p.note, receivedAt: p.receivedAt } });
+  } catch { return res.status(409).json({ error: "DB_UPDATE_PENDING" }); }
+}));
+
+router.delete("/platform/payments/:paymentId", asyncRoute(async (req, res) => {
+  try {
+    await prisma.ownerPayment.delete({ where: { id: req.params.paymentId } });
+  } catch { return res.status(404).json({ error: "PAYMENT_NOT_FOUND" }); }
+  return res.json({ ok: true });
+}));
+
+// ---- Classes (owner) ----
+router.get("/platform/schools/:id/classes", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const rows = await prisma.classroom.findMany({ where: { schoolId: school.id }, orderBy: [{ name: "asc" }, { section: "asc" }] });
+  const out = [];
+  for (const c of rows) {
+    const n = await prisma.student.count({ where: { schoolId: school.id, classroomId: c.id, status: "ACTIVE" } });
+    out.push({ id: c.id, name: c.name, section: c.section, label: classLabel(c), students: n });
+  }
+  return res.json({ classes: out });
+}));
+
+router.post("/platform/schools/:id/classes", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  if (!name) return res.status(400).json({ error: "CLASS_NAME_REQUIRED" });
+  const section = typeof req.body?.section === "string" ? req.body.section.trim() || null : null;
+  let year = await prisma.academicYear.findFirst({ where: { schoolId: school.id, isCurrent: true } });
+  if (!year) year = await prisma.academicYear.findFirst({ where: { schoolId: school.id }, orderBy: { createdAt: "desc" } });
+  if (!year) {
+    year = await prisma.academicYear.create({
+      data: { schoolId: school.id, name: "2026-27", startsOn: new Date("2026-04-01"), endsOn: new Date("2027-03-31"), isCurrent: true },
+    });
+  }
+  const c = await prisma.classroom.create({ data: { schoolId: school.id, academicYearId: year.id, name, section } });
+  return res.status(201).json({ classroom: { id: c.id, name: c.name, section: c.section, label: classLabel(c), students: 0 } });
+}));
+
+// ---- Students (owner) ----
+router.get("/platform/schools/:id/students", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const where = { schoolId: school.id };
+  if (req.query.all !== "1") where.status = "ACTIVE";
+  const rows = await prisma.student.findMany({
+    where, orderBy: { fullName: "asc" },
+    select: {
+      ...(await studentScalars()),
+      classroom: { select: { id: true, name: true, section: true } },
+      guardianLinks: {
+        include: { guardian: { select: { fullName: true, phone: true } } },
+        orderBy: [{ isPrimary: "desc" }, { createdAt: "asc" }], take: 1,
+      },
+    },
+  });
+  const students = rows.map(({ guardianLinks, ...st }) => ({
+    ...st,
+    classLabel: classLabel(st.classroom),
+    guardianName: guardianLinks?.[0]?.guardian.fullName || null,
+    guardianPhone: guardianLinks?.[0]?.guardian.phone || null,
+  }));
+  return res.json({ students });
+}));
+
+function optStrP(body, f) {
+  const v = body?.[f];
+  if (v === undefined || v === null || v === "") return undefined;
+  return typeof v === "string" ? v.trim() : undefined;
+}
+
+router.post("/platform/schools/:id/students", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const fullName = optStrP(req.body, "fullName");
+  const admissionNo = optStrP(req.body, "admissionNo");
+  if (!fullName || !admissionNo) return res.status(400).json({ error: "MISSING_FIELDS", missing: ["fullName", "admissionNo"] });
+  const dup = await prisma.student.findFirst({ where: { schoolId: school.id, admissionNo }, select: { id: true } });
+  if (dup) return res.status(409).json({ error: "ADMISSION_TAKEN" });
+  let classroomId = optStrP(req.body, "classroomId") || null;
+  if (classroomId) {
+    const c = await prisma.classroom.findFirst({ where: { id: classroomId, schoolId: school.id }, select: { id: true } });
+    if (!c) return res.status(400).json({ error: "CLASSROOM_NOT_IN_SCHOOL" });
+  }
+  const data = { schoolId: school.id, fullName, admissionNo, classroomId, rollNo: optStrP(req.body, "rollNo") || null, gender: optStrP(req.body, "gender") || null };
+  if (await familyFieldsReady()) {
+    data.fatherName = optStrP(req.body, "fatherName") || null;
+    data.motherName = optStrP(req.body, "motherName") || null;
+    data.address = optStrP(req.body, "address") || null;
+  }
+  const student = await prisma.student.create({ data, select: await studentScalars() });
+  // Optional guardian: naam/phone diya to link kar do (parent baad
+  // me usi phone se login bana sakta hai).
+  const gName = optStrP(req.body, "guardianName");
+  const gPhone = optStrP(req.body, "guardianPhone");
+  if (gName || gPhone) {
+    let guardian = gPhone ? await prisma.guardian.findFirst({ where: { schoolId: school.id, phone: gPhone } }) : null;
+    if (!guardian) guardian = await prisma.guardian.create({ data: { schoolId: school.id, fullName: gName || "Guardian", phone: gPhone || null } });
+    await prisma.studentGuardian.create({ data: { schoolId: school.id, studentId: student.id, guardianId: guardian.id, isPrimary: true } });
+  }
+  return res.status(201).json({ student });
+}));
+
+router.patch("/platform/schools/:id/students/:studentId", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const target = await prisma.student.findFirst({ where: { id: req.params.studentId, schoolId: school.id }, select: { id: true } });
+  if (!target) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+  const data = {};
+  const fullName = optStrP(req.body, "fullName");
+  if (fullName) data.fullName = fullName;
+  const admissionNo = optStrP(req.body, "admissionNo");
+  if (admissionNo) {
+    const dup = await prisma.student.findFirst({ where: { schoolId: school.id, admissionNo, NOT: { id: target.id } }, select: { id: true } });
+    if (dup) return res.status(409).json({ error: "ADMISSION_TAKEN" });
+    data.admissionNo = admissionNo;
+  }
+  for (const f of ["rollNo", "gender"]) { const v = optStrP(req.body, f); if (v !== undefined) data[f] = v || null; }
+  if (await familyFieldsReady()) {
+    for (const f of ["fatherName", "motherName", "address"]) { const v = optStrP(req.body, f); if (v !== undefined) data[f] = v || null; }
+  }
+  if (req.body?.classroomId !== undefined) {
+    const cid = req.body.classroomId || null;
+    if (cid) {
+      const c = await prisma.classroom.findFirst({ where: { id: cid, schoolId: school.id }, select: { id: true } });
+      if (!c) return res.status(400).json({ error: "CLASSROOM_NOT_IN_SCHOOL" });
+    }
+    data.classroomId = cid;
+  }
+  if (req.body?.status !== undefined && ["ACTIVE", "INACTIVE"].includes(req.body.status)) data.status = req.body.status;
+  const student = await prisma.student.update({ where: { id: target.id }, data, select: await studentScalars() });
+  return res.json({ student });
+}));
+
+router.delete("/platform/schools/:id/students/:studentId", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const target = await prisma.student.findFirst({ where: { id: req.params.studentId, schoolId: school.id }, select: { id: true } });
+  if (!target) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+  // Soft remove — members wali hi policy: record rehta hai,
+  // status INACTIVE ho jata hai, hisab/count se bahar.
+  await prisma.student.update({ where: { id: target.id }, data: { status: "INACTIVE" } });
+  return res.json({ ok: true });
+}));
+
 
 // Phase 28: GLOBAL platform search — one box on the owner's
 // dashboard finds a school, a member (any role, any school), a

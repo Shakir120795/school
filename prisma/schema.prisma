@@ -179,10 +179,14 @@ model School {
   phone     String?
   email     String?
   status    PersonStatus @default(ACTIVE)
+  // Phase 32: owner ka per-student charge (paise) — school ka hisab
+  // = active students x ye rate. Default ₹500/student.
+  perStudentRatePaise Int @default(50000)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
   memberships            SchoolMembership[]
+  ownerPayments          OwnerPayment[]
   academicYears          AcademicYear[]
   guardians              Guardian[]
   students               Student[]
@@ -1407,4 +1411,22 @@ model PushDeviceToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isActive])
+}
+
+// Phase 32: owner ko school se MILA hua paisa (hisab ki received
+// side). Total charge students x rate se banta hai; bakaya =
+// total - sum(OwnerPayment). School delete ho to payments bhi jayein.
+model OwnerPayment {
+  id          String   @id @default(cuid())
+  schoolId    String
+  amountPaise Int
+  note        String?
+  receivedAt  DateTime @default(now())
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
 }

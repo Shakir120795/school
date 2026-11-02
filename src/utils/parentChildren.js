@@ -6,6 +6,7 @@
 // student-guardian links with student + classroom included — never a
 // per-parent loop, so it stays cheap at ~1000 parents per school.
 import { prisma } from "../db.js";
+import { familySelect } from "./studentCompat.js";
 
 // The class label used across the app: classroom name + "-" + section
 // when a section exists ("1-A"); just the name otherwise.
@@ -30,6 +31,7 @@ export async function childrenByParentUser(schoolId, parentUserIds) {
   if (!guardians.length) return out;
   const userByGuardian = Object.fromEntries(guardians.map((g) => [g.id, g.userId]));
   const guardianById = Object.fromEntries(guardians.map((g) => [g.id, g]));
+  const fam = await familySelect();
   const links = await prisma.studentGuardian.findMany({
     where: { schoolId, guardianId: { in: guardians.map((g) => g.id) } },
     select: {
@@ -39,9 +41,7 @@ export async function childrenByParentUser(schoolId, parentUserIds) {
           id: true,
           fullName: true,
           gender: true,
-          fatherName: true,
-          motherName: true,
-          address: true,
+          ...fam,
           classroom: { select: { name: true, section: true } },
         },
       },
