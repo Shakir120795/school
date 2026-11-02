@@ -83,10 +83,10 @@ router.get("/platform/login-check", asyncRoute(async (req, res) => {
     add("Database update", false, "Ek database update PENDING hai — Supabase (school wala account) > SQL Editor me docs/PENDING-LIVE-SQL.sql chalani hai. Iske bina Students list aur parent ke bachche nahi dikhenge.");
   }
   try {
-    await prisma.platformPlan.count();
-    add("Billing tables", true, "Billing tables maujood hain.");
+    await prisma.ownerPayment.count();
+    add("Hisab (per-student charge)", true, "Hisab ka system ready hai — har school ka charge students × rate se banta hai.");
   } catch {
-    add("Billing tables", false, "Billing tables nahi hain — upar wali pending SQL file hi ye bhi bana degi.");
+    add("Hisab (per-student charge)", false, "Hisab ki table nahi hai — upar wala Database Update chalao.");
   }
 
   async function checkLogin(label, email, password, expectRole, schoolSlug) {
