@@ -119,7 +119,7 @@ function openRemove(m) {
 }
 async function confirmRemove() {
   const m = removeTarget.value;
-  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { msg.value = "“Other” ke liye note likhna zaroori hai."; return; }
+  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { msg.value = "A note is required when the reason is \u201cOther\u201d."; return; }
   const r = await api(`/schools/${sid}/users/${m.id}`, { method: "DELETE", body: { reason: removeForm.value.reason, note: removeForm.value.note.trim() || undefined } });
   removeTarget.value = null;
   if (r.status === 200) { msg.value = `${m.user.fullName} removed (${REASON_LABEL[r.json.reason]}).`; load(); }
@@ -364,7 +364,7 @@ onMounted(loadActivity);
           <input type="radio" :value="key" v-model="removeForm.reason" /> {{ label }}
         </label>
       </div>
-      <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (zaroori hai)' : 'Note (optional)'" />
+      <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (required)' : 'Note (optional)'" />
       <div class="flex gap-2">
         <button class="btn btn-primary flex-1 !bg-rose-600" @click="confirmRemove">Remove member</button>
         <button class="btn btn-ghost flex-1" @click="removeTarget = null">Cancel</button>

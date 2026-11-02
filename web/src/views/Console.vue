@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { api, login as apiLogin } from "../api.js";
+import { t } from "../i18n.js";
 import TabbedList from "../components/TabbedList.vue";
 import MemberEditModal from "../components/MemberEditModal.vue";
 import MemberCard from "../components/MemberCard.vue";
@@ -169,7 +170,7 @@ function openRemove(s, m) {
 }
 async function confirmRemove() {
   const { school: s, member: m } = removeTarget.value;
-  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { err.value = "“Other” ke liye note likhna zaroori hai."; return; }
+  if (removeForm.value.reason === "OTHER" && !removeForm.value.note.trim()) { err.value = "A note is required when the reason is \u201cOther\u201d."; return; }
   const r = await api(`/platform/schools/${s.id}/members/${m.membershipId}`, { method: "DELETE", school: false, body: { reason: removeForm.value.reason, note: removeForm.value.note.trim() || undefined } });
   removeTarget.value = null;
   if (r.status === 200) {
@@ -260,7 +261,7 @@ async function runDbUpdate() {
     const r = await api("/platform/apply-db-updates", { method: "POST", school: false });
     if (r.status === 200) {
       dbUpd.value = r.json;
-      if (r.json.applied) { msg.value = "Database update ho gaya — ab sab kuch chalega."; await load(); }
+      if (r.json.applied) { msg.value = t("console.dbDoneMsg"); await load(); }
     } else err.value = r.json?.error || "DB update failed";
   } finally { dbBusy.value = false; }
 }
@@ -298,7 +299,7 @@ async function loadWsStudents(s) {
   try {
     const r = await api(`/platform/schools/${s.id}/students${showInactive.value ? "?all=1" : ""}`, { school: false });
     if (r.status === 200) wsStudents.value = r.json.students;
-    else err.value = r.json?.error || "Students load nahi hue";
+    else err.value = r.json?.error || t("console.studentsLoadFailed");
   } finally { wsStudentsBusy.value = false; }
 }
 async function saveStudent(s) {
@@ -309,10 +310,10 @@ async function saveStudent(s) {
       ? await api(`/platform/schools/${s.id}/students/${stuEditId.value}`, { method: "PATCH", school: false, body })
       : await api(`/platform/schools/${s.id}/students`, { method: "POST", school: false, body });
     if (r.status === 200 || r.status === 201) {
-      msg.value = stuEditId.value ? "Student update ho gaya." : "Student add ho gaya.";
+      msg.value = stuEditId.value ? t("console.stuUpdated") : t("console.stuSaved");
       resetStuForm();
       await loadWsStudents(s); await loadWsClasses(s); await load();
-    } else err.value = r.json?.error === "ADMISSION_TAKEN" ? "Ye admission number pehle se hai — dusra daalo." : (r.json?.error || "Student save nahi hua");
+    } else err.value = r.json?.error === "ADMISSION_TAKEN" ? t("console.admissionTaken") : (r.json?.error || t("console.stuSaveFailed"));
   } finally { stuBusy.value = false; }
 }
 function editStudent(st) {
@@ -320,18 +321,18 @@ function editStudent(st) {
   stuForm.value = { fullName: st.fullName || "", admissionNo: st.admissionNo || "", classroomId: st.classroomId || "", rollNo: st.rollNo || "", fatherName: st.fatherName || "", motherName: st.motherName || "", address: st.address || "", guardianName: "", guardianPhone: "" };
 }
 async function removeStudent(s, st) {
-  if (!confirm(`${st.fullName} ko remove kar dein? Record rahega, bas inactive ho jayega — hisab/count se bahar.`)) return;
+  if (!confirm(`${st.fullName} — ${t("console.confirmRemoveStudent")}`)) return;
   const r = await api(`/platform/schools/${s.id}/students/${st.id}`, { method: "DELETE", school: false });
-  if (r.status === 200) { msg.value = `${st.fullName} removed.`; await loadWsStudents(s); await load(); }
-  else err.value = r.json?.error || "Remove nahi hua";
+  if (r.status === 200) { msg.value = `${st.fullName} ${t("console.stuRemoved")}`; await loadWsStudents(s); await load(); }
+  else err.value = r.json?.error || t("console.removeFailed");
 }
 async function addClass(s) {
   if (!classForm.value.name.trim()) return;
   stuBusy.value = true;
   try {
     const r = await api(`/platform/schools/${s.id}/classes`, { method: "POST", school: false, body: { name: classForm.value.name.trim(), section: classForm.value.section.trim() || undefined } });
-    if (r.status === 201) { classForm.value = { name: "", section: "" }; msg.value = "Class add ho gayi."; await loadWsClasses(s); await load(); }
-    else err.value = r.json?.error || "Class add nahi hui";
+    if (r.status === 201) { classForm.value = { name: "", section: "" }; msg.value = t("console.classAdded"); await loadWsClasses(s); await load(); }
+    else err.value = r.json?.error || t("console.classAddFailed");
   } finally { stuBusy.value = false; }
 }
 const wsHisab = ref(null);
@@ -343,30 +344,30 @@ async function loadHisab(s) {
   try {
     const r = await api(`/platform/schools/${s.id}/hisab`, { school: false });
     if (r.status === 200) { wsHisab.value = r.json; rateForm.value = r.json.perStudentRatePaise != null ? String(r.json.perStudentRatePaise / 100) : ""; }
-    else err.value = r.json?.error || "Hisab load nahi hua";
+    else err.value = r.json?.error || t("console.hisabLoadFailed");
   } finally { hisabBusy.value = false; }
 }
 async function saveRate(s) {
   hisabBusy.value = true;
   try {
     const r = await api(`/platform/schools/${s.id}/rate`, { method: "PATCH", school: false, body: { rateRupees: Number(rateForm.value) } });
-    if (r.status === 200) { msg.value = "Rate save ho gaya."; await loadHisab(s); await load(); }
-    else err.value = r.json?.error === "DB_UPDATE_PENDING" ? "Pehle Database Update chalao (upar wala card)." : (r.json?.error || "Rate save nahi hua");
+    if (r.status === 200) { msg.value = t("console.rateSaved"); await loadHisab(s); await load(); }
+    else err.value = r.json?.error === "DB_UPDATE_PENDING" ? t("console.dbPendingFirst") : (r.json?.error || t("console.rateSaveFailed"));
   } finally { hisabBusy.value = false; }
 }
 async function addPayment(s) {
   hisabBusy.value = true;
   try {
     const r = await api(`/platform/schools/${s.id}/payments`, { method: "POST", school: false, body: { amountRupees: Number(payForm.value.amountRupees), note: payForm.value.note || undefined, receivedAt: payForm.value.receivedAt || undefined } });
-    if (r.status === 201) { payForm.value = { amountRupees: "", note: "", receivedAt: "" }; msg.value = "Payment add ho gaya."; await loadHisab(s); await load(); }
-    else err.value = r.json?.error === "DB_UPDATE_PENDING" ? "Pehle Database Update chalao (upar wala card)." : (r.json?.error || "Payment add nahi hua");
+    if (r.status === 201) { payForm.value = { amountRupees: "", note: "", receivedAt: "" }; msg.value = t("console.payAdded"); await loadHisab(s); await load(); }
+    else err.value = r.json?.error === "DB_UPDATE_PENDING" ? t("console.dbPendingFirst") : (r.json?.error || t("console.payFailed"));
   } finally { hisabBusy.value = false; }
 }
 async function deletePayment(s, pay) {
-  if (!confirm(`Ye payment (${fmtINR(pay.amountPaise)}) delete kar dein?`)) return;
+  if (!confirm(`${t("console.confirmDeletePayment")} (${fmtINR(pay.amountPaise)})?`)) return;
   const r = await api(`/platform/payments/${pay.id}`, { method: "DELETE", school: false });
   if (r.status === 200) { await loadHisab(s); await load(); }
-  else err.value = r.json?.error || "Delete nahi hua";
+  else err.value = r.json?.error || t("console.deleteFailed");
 }
 
 onMounted(async () => {
@@ -384,7 +385,7 @@ onMounted(async () => {
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
     <div v-if="loading" class="card text-slate-500 animate-pulse mb-4">Loading schools…</div>
-    <input v-if="!loading" v-model="schoolQuery" class="input mb-3" placeholder="🔍 School search karo — naam ya slug likho…" />
+    <input v-if="!loading" v-model="schoolQuery" class="input mb-3" :placeholder="t('console.searchSchool')" />
     <div v-else class="grid gap-3 mb-4">
       <div v-for="s in filteredSchools" :key="s.id" :id="`school-card-${s.id}`" class="card !py-3">
         <div class="flex flex-wrap items-center gap-2">
@@ -400,10 +401,10 @@ onMounted(async () => {
           <span class="chip bg-slate-100 text-slate-600">👨‍👩‍👧 {{ s.parents }} parents</span>
           <span class="chip bg-violet-50 text-violet-700">Admin: {{ s.adminName }} · {{ s.adminEmail }}</span>
         </div>
-        <p v-if="s.totalChargePaise != null" class="text-xs mt-2">💰 <b>Hisab:</b> {{ s.students }} students × {{ fmtINR(s.perStudentRatePaise) }} = <b>{{ fmtINR(s.totalChargePaise) }}</b> · <span class="text-green-700 font-semibold">Aaya {{ fmtINR(s.receivedPaise) }}</span> · <span class="text-red-600 font-semibold">Bakaya {{ fmtINR(s.balancePaise) }}</span></p>
-        <p v-else class="text-xs mt-2 text-amber-600">💰 Hisab setup pending hai — upar "🛠 Database Update" chalao.</p>
+        <p v-if="s.totalChargePaise != null" class="text-xs mt-2">💰 <b>{{ t("console.totalCharge") }}:</b> {{ s.students }} students × {{ fmtINR(s.perStudentRatePaise) }} = <b>{{ fmtINR(s.totalChargePaise) }}</b> · <span class="text-green-700 font-semibold">{{ t("common.received") }} {{ fmtINR(s.receivedPaise) }}</span> · <span class="text-red-600 font-semibold">{{ t("common.balance") }} {{ fmtINR(s.balancePaise) }}</span></p>
+        <p v-else class="text-xs mt-2 text-amber-600">{{ t("console.hisabPending") }}</p>
         <div class="flex flex-wrap gap-2 mt-3">
-          <button class="btn btn-ghost !py-1.5 text-xs" @click="toggleMembers(s)">{{ openId === s.id ? "Band karo" : "🏫 School kholo" }}</button>
+          <button class="btn btn-ghost !py-1.5 text-xs" @click="toggleMembers(s)">{{ openId === s.id ? t("console.close") : t("console.openSchool") }}</button>
           <button class="btn btn-ghost !py-1.5 text-xs" @click="toggleStatus(s)">{{ s.status === "ACTIVE" ? "Suspend school" : "Reactivate" }}</button>
           <button class="btn btn-ghost !py-1.5 text-xs" @click="resetAdmin(s)">Reset admin password</button>
           <button class="btn btn-ghost !py-1.5 text-xs text-red-600" @click="removeSchool(s)">Delete school</button>
@@ -412,23 +413,23 @@ onMounted(async () => {
           <div class="flex flex-wrap gap-2 mb-3">
             <button :class="wsTab === 'members' ? 'btn-primary' : 'btn-ghost'" class="!w-auto !py-1.5 text-xs" @click="openTab(s, 'members')">👥 Members (IDs)</button>
             <button :class="wsTab === 'students' ? 'btn-primary' : 'btn-ghost'" class="!w-auto !py-1.5 text-xs" @click="openTab(s, 'students')">🎓 Students</button>
-            <button :class="wsTab === 'hisab' ? 'btn-primary' : 'btn-ghost'" class="!w-auto !py-1.5 text-xs" @click="openTab(s, 'hisab')">💰 Hisab</button>
+            <button :class="wsTab === 'hisab' ? 'btn-primary' : 'btn-ghost'" class="!w-auto !py-1.5 text-xs" @click="openTab(s, 'hisab')">{{ t("console.tabCharges") }}</button>
           </div>
           <div v-if="wsTab === 'students'">
             <div class="flex flex-wrap items-center gap-2 mb-2">
-              <input v-model="stuQuery" class="input !w-auto flex-1 min-w-[160px]" placeholder="🔍 Student search — naam / admission no / class" />
-              <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="showInactive" @change="loadWsStudents(s)" /> Removed bhi dikhao</label>
+              <input v-model="stuQuery" class="input !w-auto flex-1 min-w-[160px]" :placeholder="t('console.stuSearch')" />
+              <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="showInactive" @change="loadWsStudents(s)" /> {{ t("console.showRemoved") }}</label>
             </div>
             <form class="grid gap-2 border rounded-xl p-3 mb-3 bg-slate-50" @submit.prevent="saveStudent(s)">
-              <p class="text-sm font-semibold">{{ stuEditId ? "✏️ Student edit karo" : "➕ Naya student add karo" }}</p>
+              <p class="text-sm font-semibold">{{ stuEditId ? t("console.editStudent") : t("console.addStudent") }}</p>
               <div class="grid grid-cols-2 gap-2">
-                <input v-model="stuForm.fullName" class="input" placeholder="Student ka naam *" required />
+                <input v-model="stuForm.fullName" class="input" placeholder="Student name *" required />
                 <input v-model="stuForm.admissionNo" class="input" placeholder="Admission no *" required />
-                <select v-model="stuForm.classroomId" class="input"><option value="">Class — koi nahi</option><option v-for="c in wsClasses" :key="c.id" :value="c.id">{{ c.label }} ({{ c.students }})</option></select>
+                <select v-model="stuForm.classroomId" class="input"><option value="">{{ t("console.classNone") }}</option><option v-for="c in wsClasses" :key="c.id" :value="c.id">{{ c.label }} ({{ c.students }})</option></select>
                 <input v-model="stuForm.rollNo" class="input" placeholder="Roll no" />
                 <input v-model="stuForm.fatherName" class="input" placeholder="Father name" />
                 <input v-model="stuForm.motherName" class="input" placeholder="Mother name" />
-                <input v-model="stuForm.guardianName" class="input" placeholder="Guardian naam (parent)" />
+                <input v-model="stuForm.guardianName" class="input" :placeholder="t('console.guardianName')" />
                 <input v-model="stuForm.guardianPhone" class="input" placeholder="Guardian mobile" />
               </div>
               <input v-model="stuForm.address" class="input" placeholder="Address" />
@@ -438,11 +439,11 @@ onMounted(async () => {
               </div>
             </form>
             <form class="flex gap-2 mb-3" @submit.prevent="addClass(s)">
-              <input v-model="classForm.name" class="input !w-auto flex-1" placeholder="Nayi class — jaise 6" />
+              <input v-model="classForm.name" class="input !w-auto flex-1" :placeholder="t('console.classNamePh')" />
               <input v-model="classForm.section" class="input !w-24" placeholder="Section" />
-              <button class="btn-ghost !w-auto" :disabled="stuBusy">➕ Class add</button>
+              <button class="btn-ghost !w-auto" :disabled="stuBusy">{{ t("console.addClass") }}</button>
             </form>
-            <p v-if="wsStudentsBusy" class="text-sm text-slate-400">Loading students…</p>
+            <p v-if="wsStudentsBusy" class="text-sm text-slate-400">{{ t("console.loadingStudents") }}</p>
             <div v-else class="grid gap-1.5">
               <div v-for="st in filteredWsStudents" :key="st.id" class="flex flex-wrap items-center gap-2 border rounded-xl px-3 py-2 text-sm" :class="st.status !== 'ACTIVE' ? 'opacity-50' : ''">
                 <b>{{ st.fullName }}</b>
@@ -455,28 +456,28 @@ onMounted(async () => {
                   <button v-if="st.status === 'ACTIVE'" class="btn-ghost !w-auto !py-1 text-xs text-red-600" @click="removeStudent(s, st)">Remove</button>
                 </span>
               </div>
-              <p v-if="!filteredWsStudents.length" class="text-sm text-slate-400">Koi student nahi mila.</p>
+              <p v-if="!filteredWsStudents.length" class="text-sm text-slate-400">{{ t("console.noStudents") }}</p>
             </div>
           </div>
           <div v-if="wsTab === 'hisab'">
-            <p v-if="hisabBusy" class="text-sm text-slate-400">Hisab load ho raha hai…</p>
-            <p v-else-if="wsHisab && wsHisab.setupRequired" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">Hisab ke liye database update pending hai — upar wala "🛠 Database Update" card chalao, phir wapas aao.</p>
+            <p v-if="hisabBusy" class="text-sm text-slate-400">{{ t("console.hisabLoading") }}</p>
+            <p v-else-if="wsHisab && wsHisab.setupRequired" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">{{ t("console.hisabSetup") }}</p>
             <template v-else-if="wsHisab">
               <div class="grid grid-cols-3 gap-2 mb-3 text-center">
-                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">Total charge</p><p class="font-bold">{{ fmtINR(wsHisab.totalChargePaise) }}</p><p class="text-[11px] text-slate-400">{{ wsHisab.students }} students × {{ fmtINR(wsHisab.perStudentRatePaise) }}</p></div>
-                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">Aaya (received)</p><p class="font-bold text-green-700">{{ fmtINR(wsHisab.receivedPaise) }}</p></div>
-                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">Bakaya (balance)</p><p class="font-bold text-red-600">{{ fmtINR(wsHisab.balancePaise) }}</p></div>
+                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">{{ t("console.totalCharge") }}</p><p class="font-bold">{{ fmtINR(wsHisab.totalChargePaise) }}</p><p class="text-[11px] text-slate-400">{{ wsHisab.students }} students × {{ fmtINR(wsHisab.perStudentRatePaise) }}</p></div>
+                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">{{ t("common.received") }}</p><p class="font-bold text-green-700">{{ fmtINR(wsHisab.receivedPaise) }}</p></div>
+                <div class="border rounded-xl p-2"><p class="text-[11px] text-slate-400">{{ t("common.balance") }}</p><p class="font-bold text-red-600">{{ fmtINR(wsHisab.balancePaise) }}</p></div>
               </div>
               <form class="flex flex-wrap items-center gap-2 mb-3" @submit.prevent="saveRate(s)">
                 <label class="text-sm flex items-center gap-2">Per-student rate ₹ <input v-model="rateForm" type="number" min="0" step="1" class="input !w-28" /></label>
-                <button class="btn-ghost !w-auto" :disabled="hisabBusy">Rate save karo</button>
+                <button class="btn-ghost !w-auto" :disabled="hisabBusy">{{ t("console.saveRate") }}</button>
               </form>
               <form class="grid gap-2 border rounded-xl p-3 mb-3 bg-slate-50" @submit.prevent="addPayment(s)">
-                <p class="text-sm font-semibold">💵 Payment mila — add karo</p>
+                <p class="text-sm font-semibold">{{ t("console.addPaymentTitle") }}</p>
                 <div class="flex flex-wrap gap-2">
                   <input v-model="payForm.amountRupees" type="number" min="1" step="1" class="input !w-32" placeholder="Amount ₹ *" required />
                   <input v-model="payForm.receivedAt" type="date" class="input !w-auto" />
-                  <input v-model="payForm.note" class="input flex-1 min-w-[140px]" placeholder="Note — jaise: cash, UPI, cheque" />
+                  <input v-model="payForm.note" class="input flex-1 min-w-[140px]" :placeholder="t('console.notePh')" />
                   <button class="btn-primary !w-auto px-4" :disabled="hisabBusy">Add payment</button>
                 </div>
               </form>
@@ -487,7 +488,7 @@ onMounted(async () => {
                   <span class="text-xs text-slate-500">{{ pay.note || "" }}</span>
                   <button class="btn-ghost !w-auto !py-1 text-xs text-red-600 ml-auto" @click="deletePayment(s, pay)">Delete</button>
                 </div>
-                <p v-if="!wsHisab.payments.length" class="text-sm text-slate-400">Abhi tak koi payment record nahi hai.</p>
+                <p v-if="!wsHisab.payments.length" class="text-sm text-slate-400">{{ t("console.noPayments") }}</p>
               </div>
             </template>
           </div>
@@ -552,11 +553,11 @@ onMounted(async () => {
     <div class="card mb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <h2 class="font-bold">🛠 Database Update</h2>
-        <span class="text-xs text-slate-400">Jo database changes pending hain, wo ek click me yahin se ho jayenge — Supabase kholne ki zaroorat nahi.</span>
+        <span class="text-xs text-slate-400">{{ t("console.dbHint") }}</span>
       </div>
-      <button class="btn-primary !w-auto px-5 mb-3" :disabled="dbBusy" @click="runDbUpdate">{{ dbBusy ? "Update ho raha hai…" : "▶ Pending DB update chalao" }}</button>
+      <button class="btn-primary !w-auto px-5 mb-3" :disabled="dbBusy" @click="runDbUpdate">{{ dbBusy ? t("console.dbRunning") : t("console.dbRun") }}</button>
       <div v-if="dbUpd">
-        <p class="font-bold mb-2" :class="dbUpd.applied ? 'text-green-700' : 'text-red-700'">{{ dbUpd.applied ? "✅ Saare updates ho gaye" : "⚠️ Kuch updates nahi hue — neeche dekho" }}</p>
+        <p class="font-bold mb-2" :class="dbUpd.applied ? 'text-green-700' : 'text-red-700'">{{ dbUpd.applied ? t("console.dbDone") : t("console.dbPartial") }}</p>
         <div class="grid gap-1">
           <p v-for="r in dbUpd.results" :key="r.label" class="text-sm">{{ r.ok ? "✅" : "❌" }} {{ r.label }}<span v-if="!r.ok" class="text-red-600"> — {{ r.error }}</span></p>
         </div>
@@ -566,11 +567,11 @@ onMounted(async () => {
     <div class="card mb-4">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <h2 class="font-bold">✅ Login Test</h2>
-        <span class="text-xs text-slate-400">Ek click me pata chalega — kaun sa login chal raha hai, kaun sa nahi, aur kyun.</span>
+        <span class="text-xs text-slate-400">{{ t("console.testHint") }}</span>
       </div>
-      <button class="btn-primary !w-auto px-5 mb-3" :disabled="checking" @click="runCheck">{{ checking ? "Check ho raha hai…" : "▶ Full test chalao" }}</button>
+      <button class="btn-primary !w-auto px-5 mb-3" :disabled="checking" @click="runCheck">{{ checking ? t("console.testing") : t("console.runTest") }}</button>
       <div v-if="check">
-        <p class="font-bold mb-2" :class="check.passed === check.total ? 'text-green-700' : 'text-amber-700'">Result: {{ check.passed }} / {{ check.total }} pass</p>
+        <p class="font-bold mb-2" :class="check.passed === check.total ? 'text-green-700' : 'text-amber-700'">{{ t("console.result") }}: {{ check.passed }} / {{ check.total }} pass</p>
         <div class="grid gap-1.5">
           <div v-for="c in check.checks" :key="c.label" class="flex items-start gap-2 text-sm border rounded-xl px-3 py-2" :class="c.ok ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
             <span>{{ c.ok ? "✅" : "❌" }}</span>
@@ -579,13 +580,13 @@ onMounted(async () => {
         </div>
       </div>
       <div class="border-t mt-4 pt-3">
-        <p class="text-sm font-semibold mb-1">👀 Khud dekhna hai? Ek tap me demo login:</p>
-        <p class="text-xs text-slate-400 mb-2">Button dabate hi ye tab usi account me khul jayega. Wapas aane ke liye sidebar se account badlo, ya Owner login dobara karo.</p>
+        <p class="text-sm font-semibold mb-1">👀 {{ t("console.tryDemo") }}</p>
+        <p class="text-xs text-slate-400 mb-2">{{ t("console.tryDemoHint") }}</p>
         <div class="flex flex-wrap gap-2">
-          <button class="btn-ghost !w-auto" @click="demoLogin('rahul.parent@demo.school', 'ParentDemo1!', '/')">👨‍👧 Parent banke dekho</button>
-          <button class="btn-ghost !w-auto" @click="demoLogin('teacher@demo.school', 'DemoTeach123!', '/')">👩‍🏫 Teacher banke dekho</button>
-          <button class="btn-ghost !w-auto" @click="demoLogin('principal@demo.school', 'DemoPrincipal123!', '/')">🎓 Principal banke dekho</button>
-          <button class="btn-ghost !w-auto" @click="demoLogin('admin@demo.school', 'DemoAdmin123!', '/')">🏫 School Admin banke dekho</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('rahul.parent@demo.school', 'ParentDemo1!', '/')">{{ t("console.viewAsParent") }}</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('teacher@demo.school', 'DemoTeach123!', '/')">{{ t("console.viewAsTeacher") }}</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('principal@demo.school', 'DemoPrincipal123!', '/')">{{ t("console.viewAsPrincipal") }}</button>
+          <button class="btn-ghost !w-auto" @click="demoLogin('admin@demo.school', 'DemoAdmin123!', '/')">{{ t("console.viewAsSchoolAdmin") }}</button>
         </div>
       </div>
     </div>
@@ -652,7 +653,7 @@ onMounted(async () => {
             <input type="radio" :value="key" v-model="removeForm.reason" /> {{ label }}
           </label>
         </div>
-        <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (zaroori hai)' : 'Note (optional)'" />
+        <input v-model="removeForm.note" class="input mb-3" :placeholder="removeForm.reason === 'OTHER' ? 'Note (required)' : 'Note (optional)'" />
         <div class="flex gap-2">
           <button class="btn btn-primary flex-1 !bg-rose-600" @click="confirmRemove">Remove member</button>
           <button class="btn btn-ghost flex-1" @click="removeTarget = null">Cancel</button>

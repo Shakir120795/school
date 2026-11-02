@@ -13,6 +13,7 @@ onMounted(async () => {
   }
 });
 import { useRoute, useRouter } from "vue-router";
+import { lang, setLang, availableLangs } from "./i18n.js";
 import { session, currentUser, myRole, myMemberships, api } from "./api.js";
 
 const route = useRoute();
@@ -118,6 +119,12 @@ function switchAccount(id) {
         <span class="mr-2">{{ n.icon }}</span>{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
       </router-link>
       <div class="mt-auto text-xs text-slate-300">
+        <div class="mb-3">
+          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">🌐 Language</div>
+          <select :value="lang" class="input !py-1.5 !text-xs" @change="setLang($event.target.value)">
+            <option v-for="l in availableLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+        </div>
         <div v-if="signedInAccounts.length > 1" class="mb-3">
           <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Signed-in accounts</div>
           <button v-for="a in signedInAccounts.filter((x) => x.id !== session.activeAccountId)" :key="a.id"

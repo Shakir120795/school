@@ -78,30 +78,30 @@ router.get("/platform/login-check", asyncRoute(async (req, res) => {
 
   try {
     await prisma.$queryRaw`SELECT "fatherName", "motherName", "address" FROM "Student" LIMIT 1`;
-    add("Database update", true, "Database ready hai — Students list chalegi.");
+    add("Database update", true, "Database is ready — the Students list will work.");
   } catch {
-    add("Database update", false, "Ek database update PENDING hai — Supabase (school wala account) > SQL Editor me docs/PENDING-LIVE-SQL.sql chalani hai. Iske bina Students list aur parent ke bachche nahi dikhenge.");
+    add("Database update", false, "A database update is PENDING — open the owner Console and run the Database Update card. Until then the Students list and parent children will not show.");
   }
   try {
     await prisma.ownerPayment.count();
-    add("Hisab (per-student charge)", true, "Hisab ka system ready hai — har school ka charge students × rate se banta hai.");
+    add("Hisab (per-student charge)", true, "The per-student charge system is ready — each school is charged students × rate.");
   } catch {
-    add("Hisab (per-student charge)", false, "Hisab ki table nahi hai — upar wala Database Update chalao.");
+    add("Hisab (per-student charge)", false, "The charges table is missing — run the Database Update above.");
   }
 
   async function checkLogin(label, email, password, expectRole, schoolSlug) {
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) { add(label, false, email + " — ye account mila hi nahi."); return null; }
+    if (!user) { add(label, false, email + " — account not found."); return null; }
     const okPw = await verifyPassword(password, user.passwordHash);
-    if (!okPw) { add(label, false, email + " — password match nahi hua."); return null; }
+    if (!okPw) { add(label, false, email + " — password does not match."); return null; }
     if (expectRole === "PLATFORM_ADMIN") {
-      add(label, !!user.isPlatformAdmin, user.isPlatformAdmin ? email + " — owner login OK hai." : email + " — ye owner account nahi hai.");
+      add(label, !!user.isPlatformAdmin, user.isPlatformAdmin ? email + " — owner login works." : email + " — this is not the owner account.");
       return user;
     }
     const ms = await prisma.schoolMembership.findMany({ where: { userId: user.id, status: "ACTIVE" }, include: { school: { select: { slug: true } } } });
     const m = ms.find((x) => x.role === expectRole && (!schoolSlug || x.school.slug === schoolSlug));
-    if (!m) { add(label, false, email + " — login hai par " + expectRole + " role nahi mila."); return null; }
-    add(label, true, email + " — login OK (" + m.school.slug + ").");
+    if (!m) { add(label, false, email + " — login works but the " + expectRole + " role is missing."); return null; }
+    add(label, true, email + " — login works (" + m.school.slug + ").");
     return user;
   }
 
@@ -116,7 +116,7 @@ router.get("/platform/login-check", asyncRoute(async (req, res) => {
     const guardians = await prisma.guardian.findMany({ where: { schoolId: demo.id, userId: parentUser.id }, select: { id: true } });
     let n = 0;
     for (const g of guardians) n += await prisma.studentGuardian.count({ where: { guardianId: g.id } });
-    add("Parent ko bachche linked?", n > 0, n > 0 ? "Parent ke " + n + " bachche linked hain — bachche dikhenge." : "Parent login to hai par koi bachcha linked nahi hai.");
+    add("Parent children linked?", n > 0, n > 0 ? n + " children are linked — they will show for the parent." : "The parent can log in, but no child is linked.");
   }
 
   for (const slug of ["sunrise-public", "green-valley", "little-angels"]) {

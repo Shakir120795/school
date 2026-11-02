@@ -164,7 +164,7 @@ async function submit() {
            private direct link only. -->
       <template v-if="isChooser">
         <div class="text-lg font-bold mb-1">Choose your login</div>
-        <p class="text-sm text-slate-500 mb-4">Har role ka apna alag login page hai — apna wala chuno.</p>
+        <p class="text-sm text-slate-500 mb-4">Each role has its own login page — choose yours.</p>
         <div class="grid gap-2">
           <router-link to="/login/parent" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">👨‍👩‍👧</span>
