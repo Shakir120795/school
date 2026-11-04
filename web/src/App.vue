@@ -5,6 +5,7 @@ const schoolInfo = ref(null);
 const unreadCount = ref(0);
 onMounted(async () => {
   initPush();
+  if (!route.meta.public) pruneDeadActiveAccount();
   if (session.schoolId) {
     const sres = await api(`/schools/${session.schoolId}`).catch(() => null);
     if (sres?.json?.school) schoolInfo.value = sres.json.school;
@@ -14,7 +15,7 @@ onMounted(async () => {
 });
 import { useRoute, useRouter } from "vue-router";
 import { lang, setLang, availableLangs } from "./i18n.js";
-import { session, currentUser, myRole, myMemberships, api } from "./api.js";
+import { session, currentUser, myRole, myMemberships, api, pruneDeadActiveAccount } from "./api.js";
 
 const route = useRoute();
 const router = useRouter();

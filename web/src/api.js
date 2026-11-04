@@ -141,6 +141,21 @@ export const session = {
       if (s.last) localStorage.setItem(LAST_KEY, s.last); else localStorage.removeItem(LAST_KEY);
     } catch { /* ignore */ }
   },
+  // Phase 35: the active account is dead server-side (its session
+  // was revoked, e.g. the member was removed). Drop it from the
+  // book and fall back to another signed-in account if one exists,
+  // so a removed ID never lingers in the switcher looking alive.
+  dropActiveAndFallback() {
+    accounts = loadAccounts();
+    if (activeId && accounts[activeId]) { delete accounts[activeId]; saveAccounts(); }
+    if (localStorage.getItem(LAST_KEY) === activeId) localStorage.removeItem(LAST_KEY);
+    pending = null;
+    const next = Object.keys(accounts)[0] || null;
+    activeId = next;
+    if (next) { sessionStorage.setItem(TAB_KEY, next); localStorage.setItem(LAST_KEY, next); }
+    else sessionStorage.setItem(TAB_KEY, "");
+    return !!next;
+  },
   // Log out THIS tab's account only; other accounts stay signed in.
   clear() {
     accounts = loadAccounts();
@@ -169,22 +184,54 @@ async function raw(path, { method = "GET", body, school = true, deviceKey } = {}
 
 async function tryRefresh() {
   const rt = session.refreshToken;
-  if (!rt) return false;
-  const res = await fetch(`${BASE}/auth/refresh`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ refreshToken: rt }),
-  });
-  if (!res.ok) return false;
+  if (!rt) return "dead";
+  let res;
+  try {
+    res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+  } catch { return "unknown"; } // network trouble — never punish the account
+  if (res.status === 401 || res.status === 403) return "dead";
+  if (!res.ok) return "unknown";
   const json = await res.json();
   session.setTokens(json.accessToken, json.refreshToken);
-  return true;
+  return "ok";
+}
+
+let deadHandled = false;
+function handleDeadSession() {
+  if (deadHandled) return;
+  deadHandled = true;
+  if (session.dropActiveAndFallback()) location.reload();
+  else location.href = "/login";
+}
+
+// Phase 35: called once when the app shell loads. If this device
+// holds an account that is dead server-side (session revoked, or
+// every membership removed/suspended), drop it right away instead
+// of showing a zombie login that cannot actually do anything.
+export async function pruneDeadActiveAccount() {
+  if (!session.accessToken || !session.user) return;
+  const r = await raw("/auth/me", { school: false }).catch(() => null);
+  if (!r) return;
+  if (r.status === 401) {
+    if ((await tryRefresh()) === "dead") handleDeadSession();
+    return;
+  }
+  if (r.status !== 200) return;
+  const u = r.json.user;
+  const ms = r.json.memberships || [];
+  if (!u?.isPlatformAdmin && !ms.some((m) => m.status === "ACTIVE")) handleDeadSession();
 }
 
 export async function api(path, opts = {}) {
   let r = await raw(path, opts);
   if (r.status === 401 && session.refreshToken && !path.startsWith("/auth/")) {
-    if (await tryRefresh()) r = await raw(path, opts);
+    const st = await tryRefresh();
+    if (st === "ok") r = await raw(path, opts);
+    else if (st === "dead") handleDeadSession();
   }
   return r;
 }
