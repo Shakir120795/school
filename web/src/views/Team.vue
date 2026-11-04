@@ -26,6 +26,7 @@ const counts = computed(() => {
 // Staff / Parents / Removed), each with search + status filter +
 // 25-per-page pagination — the shared <TabbedList> pattern, identical
 // to the owner Console drill-in. Client-side over the fetched lists.
+const teacherByMembership = ref({});
 const memberGroups = computed(() => {
   const by = (...roles) => memberships.value.filter((m) => roles.includes(m.role));
   return [
@@ -56,6 +57,10 @@ async function load() {
   try {
     const r = await api(`/schools/${sid}/users`);
     if (r.status === 200) memberships.value = r.json.memberships.filter((m) => m.status !== "INACTIVE");
+    const tt = await api(`/schools/${sid}/teachers`);
+    if (tt.status === 200) {
+      teacherByMembership.value = Object.fromEntries((tt.json.teachers || []).map((tp) => [tp.membershipId, tp]));
+    }
     const rr = await api(`/schools/${sid}/users/removed`);
     if (rr.status === 200) removedList.value = rr.json.removed;
   } finally {
@@ -282,9 +287,16 @@ onMounted(loadActivity);
             @reset="resetPassword(m)"
             @remove="openRemove(m)"
           />
+          <div v-if="m.role === 'TEACHER'" class="flex flex-wrap gap-1.5 py-1.5">
+            <template v-if="teacherByMembership[m.id]">
+              <span v-for="a in teacherByMembership[m.id].classAssignments" :key="a.id" class="chip bg-sky-50 text-sky-700 text-xs">📚 Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span> · {{ a.subject?.name }}</span>
+              <span v-for="a in teacherByMembership[m.id].inchargeAssignments" :key="'i' + a.id" class="chip bg-amber-50 text-amber-700 text-xs">⭐ Incharge: Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span></span>
+              <span v-if="!teacherByMembership[m.id].classAssignments?.length && !teacherByMembership[m.id].inchargeAssignments?.length" class="text-xs text-slate-400">No class assigned yet — assign from Students & Staff → Teachers tab</span>
+            </template>
+          </div>
         </template>
       </TabbedList>
-      <p class="text-[11px] text-slate-400 mt-3">Removed members ke login band hain — unka record Removed tab me rehta hai: kab, kisne, kyun hataya.</p>
+      <p class="text-[11px] text-slate-400 mt-3">Removed members cannot log in — their record stays in the Removed tab: when, by whom, and why they were removed.</p>
     </div>
   </div>
 

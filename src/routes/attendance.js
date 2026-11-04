@@ -180,6 +180,33 @@ router.get(
       orderBy: { localDate: "desc" },
       take: 500,
     });
+    // Phase 36: for a single day the register is a ROSTER, not just
+    // the marked rows — every active student appears, unmarked ones
+    // with status NOT_MARKED, so the page never looks empty/broken
+    // on a fresh day. Marked rows of since-removed students stay.
+    if (req.query.date && !req.query.studentId) {
+      const students = await prisma.student.findMany({
+        where: {
+          schoolId: req.params.schoolId, status: "ACTIVE",
+          ...(req.query.classroomId ? { classroomId: req.query.classroomId } : {}),
+        },
+        select: { id: true, fullName: true, admissionNo: true, classroomId: true },
+        orderBy: { fullName: "asc" },
+      });
+      const byStudent = new Map(rows.map((r) => [r.studentId, r]));
+      const merged = students.map((st) => byStudent.get(st.id) || {
+        id: null, studentId: st.id,
+        localDate: new Date(`${req.query.date}T00:00:00.000Z`),
+        status: "NOT_MARKED", entryAt: null, exitAt: null,
+        isLate: false, reviewFlag: null, student: st,
+      });
+      const rosterIds = new Set(students.map((st) => st.id));
+      for (const r of rows) if (!rosterIds.has(r.studentId)) merged.push(r);
+      merged.sort((a, b) =>
+        (a.status === "NOT_MARKED") - (b.status === "NOT_MARKED") ||
+        (a.student?.fullName || "").localeCompare(b.student?.fullName || ""));
+      return res.json({ attendance: merged });
+    }
     return res.json({ attendance: rows });
   })
 );

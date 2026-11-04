@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api, session } from "../api.js";
 
 const sid = session.schoolId;
@@ -8,6 +8,8 @@ const years = ref([]);
 const classrooms = ref([]);
 const subjects = ref([]);
 const devices = ref([]);
+const students = ref([]);
+const teachers = ref([]);
 const policies = ref([]);
 const msg = ref("");
 const newDeviceKey = ref("");
@@ -19,13 +21,15 @@ const device = ref({ name: "" });
 const policy = ref({ appliesTo: "STUDENT", entryStart: "07:30", entryEnd: "08:15", lateAfter: "08:15", exitStart: "13:30", exitEnd: "14:30", workingWeekdays: [1, 2, 3, 4, 5, 6] });
 
 async function load() {
-  const [s, y, c, sub, d, p] = await Promise.all([
+  const [s, y, c, sub, d, p, stu, tea] = await Promise.all([
     api(`/schools/${sid}`),
     api(`/schools/${sid}/academic-years`),
     api(`/schools/${sid}/classrooms`),
     api(`/schools/${sid}/subjects`),
     api(`/schools/${sid}/devices`),
     api(`/schools/${sid}/attendance-policies`),
+    api(`/schools/${sid}/students`),
+    api(`/schools/${sid}/teachers`),
   ]);
   school.value = s.json.school;
   years.value = y.json.academicYears || [];
@@ -33,7 +37,26 @@ async function load() {
   subjects.value = sub.json.subjects || [];
   devices.value = d.json.devices || [];
   policies.value = p.json.policies || [];
+  students.value = stu.json.students || [];
+  teachers.value = tea.json.teachers || [];
 }
+
+// Phase 36: har class ki puri tasveer — section, kitne students,
+// incharge kaun, aur us class me kaun kya padhata hai.
+const classRows = computed(() => classrooms.value.map((c) => {
+  const teaching = [];
+  let incharge = null;
+  for (const t of teachers.value) {
+    for (const a of t.classAssignments || []) if (a.classroomId === c.id) teaching.push({ teacher: t.displayName, subject: a.subject?.name || "" });
+    for (const a of t.inchargeAssignments || []) if (a.classroomId === c.id) incharge = t.displayName;
+  }
+  return {
+    ...c,
+    studentCount: students.value.filter((x) => x.classroomId === c.id && x.status === "ACTIVE").length,
+    incharge,
+    teaching,
+  };
+}));
 onMounted(load);
 function note(r, ok) { msg.value = r.status < 300 ? ok : `Error: ${r.json.error || r.status}`; if (r.status < 300) load(); }
 
@@ -81,7 +104,7 @@ async function saveSchool() {
         <input v-model="year.startsOn" required type="date" class="input" />
         <input v-model="year.endsOn" required type="date" class="input" />
         <button class="btn btn-primary">Add year</button>
-        <div class="text-xs text-slate-400">{{ years.map(y => y.name).join(", ") }}</div>
+        <div class="flex flex-wrap gap-1"><span v-for="y in years" :key="y.id" class="chip bg-slate-100 text-slate-600 text-xs">{{ y.name }}</span><span v-if="!years.length" class="text-xs text-slate-400">No years yet</span></div>
       </form>
       <form class="card grid gap-2" @submit.prevent="addRoom">
         <div class="font-semibold">Classroom</div>
@@ -89,15 +112,35 @@ async function saveSchool() {
         <input v-model="room.section" class="input" placeholder="Section (e.g. A)" />
         <select v-model="room.academicYearId" class="input"><option value="">Year (default first)</option><option v-for="y in years" :key="y.id" :value="y.id">{{ y.name }}</option></select>
         <button class="btn btn-primary">Add classroom</button>
-        <div class="text-xs text-slate-400">{{ classrooms.map(c => c.name + "-" + (c.section || "")).join(", ") }}</div>
       </form>
       <form class="card grid gap-2" @submit.prevent="addSubject">
         <div class="font-semibold">Subject</div>
         <input v-model="subject.name" required class="input" placeholder="Mathematics" />
         <input v-model="subject.code" required class="input" placeholder="MATH" />
         <button class="btn btn-primary">Add subject</button>
-        <div class="text-xs text-slate-400">{{ subjects.map(s => s.name).join(", ") }}</div>
+        <div class="flex flex-wrap gap-1"><span v-for="sb in subjects" :key="sb.id" class="chip bg-slate-100 text-slate-600 text-xs">{{ sb.name }}<span v-if="sb.code"> · {{ sb.code }}</span></span><span v-if="!subjects.length" class="text-xs text-slate-400">No subjects yet</span></div>
       </form>
+    </div>
+
+
+    <div class="card mb-4">
+      <div class="font-semibold mb-1">🏫 Classes in this school ({{ classRows.length }})</div>
+      <p class="text-xs text-slate-400 mb-3">Every class with its section, student count, class incharge, and who teaches which subject in it.</p>
+      <div class="grid gap-2">
+        <div v-for="c in classRows" :key="c.id" class="border rounded-xl px-3 py-2.5">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-bold">Class {{ c.name }}<span v-if="c.section">-{{ c.section }}</span></span>
+            <span class="chip bg-slate-100 text-slate-600 text-xs">🎓 {{ c.studentCount }} students</span>
+            <span v-if="c.incharge" class="chip bg-amber-50 text-amber-700 text-xs">⭐ Incharge: {{ c.incharge }}</span>
+            <span v-else class="chip bg-slate-50 text-slate-400 text-xs">No incharge set</span>
+          </div>
+          <div v-if="c.teaching.length" class="flex flex-wrap gap-1.5 mt-2">
+            <span v-for="(x, i) in c.teaching" :key="i" class="chip bg-sky-50 text-sky-700 text-xs">📚 {{ x.subject }} — {{ x.teacher }}</span>
+          </div>
+          <p v-else class="text-xs text-slate-400 mt-1.5">No teacher assigned yet — assign from Students & Staff → Teachers.</p>
+        </div>
+        <p v-if="!classRows.length" class="text-sm text-slate-400">No classes yet — add the first one above.</p>
+      </div>
     </div>
 
     <form class="card grid md:grid-cols-7 gap-3 mb-4" @submit.prevent="savePolicy">

@@ -20,11 +20,11 @@ const classFilter = ref("");
 const summary = computed(() => {
   const list = tab.value === "students" ? rows.value : staffRows.value;
   return {
+    total: list.filter((r) => r.status !== "NOT_MARKED").length,
     present: list.filter((r) => r.status === "PRESENT").length,
     late: list.filter((r) => r.status === "LATE").length,
     absent: list.filter((r) => r.status === "ABSENT").length,
     flagged: list.filter((r) => r.reviewFlag).length,
-    total: list.length,
   };
 });
 // Students register: class filter + name/admission search + 25/page
@@ -87,6 +87,9 @@ function fmt(t) {
   if (!t) return "—";
   return new Date(t).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
 }
+function statusLabel(s) {
+  return { NOT_MARKED: "Not marked", ON_LEAVE: "On leave", HALF_DAY: "Half day" }[s] || s;
+}
 function statusBadge(s) {
   return {
     PRESENT: "bg-green-100 text-green-700",
@@ -126,14 +129,14 @@ function statusBadge(s) {
       <table class="w-full text-sm mtable">
         <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Student</th><th class="p-3">Status</th><th class="p-3">Entry</th><th class="p-3">Exit</th><th class="p-3">Flags</th></tr></thead>
         <tbody>
-          <tr v-for="r in attPager.pageItems.value" :key="r.id" class="border-b last:border-0">
+          <tr v-for="r in attPager.pageItems.value" :key="r.id || r.studentId" class="border-b last:border-0">
             <td class="p-3 font-medium">{{ r.student?.fullName }} <span class="text-slate-400">({{ r.student?.admissionNo }})</span></td>
-            <td class="p-3"><span class="badge" :class="statusBadge(r.status)">{{ r.status }}</span></td>
+            <td class="p-3"><span class="badge" :class="statusBadge(r.status)">{{ statusLabel(r.status) }}</span></td>
             <td class="p-3">{{ fmt(r.entryAt) }}</td><td class="p-3">{{ fmt(r.exitAt) }}</td>
             <td class="p-3 text-amber-600">{{ r.reviewFlag || "" }}</td>
           </tr>
           <tr v-if="loading"><td class="p-3 text-slate-500 animate-pulse" colspan="5">Loading attendance…</td></tr>
-          <tr v-else-if="!rows.length"><td class="p-3 text-slate-500" colspan="5">No student attendance for this date yet.</td></tr>
+          <tr v-else-if="!rows.length"><td class="p-3 text-slate-500" colspan="5">No students in this school yet.</td></tr>
           <tr v-else-if="!visibleRows.length"><td class="p-3 text-slate-500" colspan="5">No students match your search or class filter.</td></tr>
         </tbody>
       </table>
@@ -162,7 +165,7 @@ function statusBadge(s) {
       <div class="md:col-span-4 font-semibold">Request a correction</div>
       <select v-model="corrForm.entityId" required class="input">
         <option value="">Attendance record…</option>
-        <option v-for="r in rows" :key="r.id" :value="r.id">{{ r.student?.fullName }} — {{ r.status }}</option>
+        <option v-for="r in rows.filter((x) => x.id)" :key="r.id" :value="r.id">{{ r.student?.fullName }} — {{ statusLabel(r.status) }}</option>
       </select>
       <select v-model="corrForm.status" required class="input">
         <option value="">New status…</option>
