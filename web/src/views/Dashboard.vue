@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api, session, myRole, currentUser } from "../api.js";
+import { t } from "../i18n.js";
 import ParentView from "./Parent.vue";
 import PlatformDashboard from "./PlatformDashboard.vue";
 
@@ -10,6 +11,7 @@ const router = useRouter();
 const sid = session.schoolId;
 const user = currentUser();
 const A = ref(null); // analytics
+const teachers = ref([]);
 const notices = ref([]);
 const holidays = ref([]);
 const school = ref(null);
@@ -49,14 +51,44 @@ const upcomingHolidays = computed(() =>
   holidays.value.filter((h) => h.localDate >= (A.value?.date || "")).slice(0, 5)
 );
 
+// Phase 37: dashboard par seedha Classes & Sections + Teachers ki
+// puri tasveer. A.classes (analytics) har classroom ka student count
+// deta hai; teachers fetch se incharge + subject assignments judte
+// hain. Teachers fetch fail ho jaye to bhi dashboard nahi rukta —
+// classes phir bhi dikhengi, bas teacher chips nahi aayenge.
+const classOverview = computed(() => {
+  if (!A.value) return [];
+  return A.value.classes.map((c) => {
+    const teaching = [];
+    let incharge = null;
+    for (const tp of teachers.value) {
+      for (const as of tp.classAssignments || []) if (as.classroomId === c.id) teaching.push({ teacher: tp.displayName, subject: as.subject?.name || "" });
+      for (const as of tp.inchargeAssignments || []) if (as.classroomId === c.id) incharge = tp.displayName;
+    }
+    return { ...c, incharge, teaching };
+  });
+});
+const classGroups = computed(() => {
+  const groups = [];
+  for (const c of classOverview.value) {
+    let g = groups.find((x) => x.name === c.name);
+    if (!g) { g = { name: c.name, sections: [], students: 0 }; groups.push(g); }
+    g.sections.push(c);
+    g.students += c.total || 0;
+  }
+  return groups;
+});
+
 async function load() {
-  const [a, n, h, s] = await Promise.all([
+  const [a, n, h, s, te] = await Promise.all([
     api(`/schools/${sid}/analytics/today`),
     api(`/schools/${sid}/notices`),
     api(`/schools/${sid}/holidays`),
     api(`/schools/${sid}`),
+    api(`/schools/${sid}/teachers`).catch(() => null),
   ]);
   if (a.status === 200) A.value = a.json;
+  if (te && te.status === 200) teachers.value = te.json.teachers || [];
   notices.value = (n.json.notices || []).slice(0, 5);
   holidays.value = h.json.holidays || [];
   school.value = s.json.school || null;
@@ -161,10 +193,11 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
             </div>
             <div class="bar"><div :style="{ width: (c.total ? ((c.present + c.late) / c.total) * 100 : 0) + '%' }"></div></div>
           </div>
-          <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
             <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.students }}</div><div class="text-[11px] text-slate-500 font-medium">STUDENTS</div></div>
             <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.teachers }}</div><div class="text-[11px] text-slate-500 font-medium">TEACHERS</div></div>
             <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.guardians }}</div><div class="text-[11px] text-slate-500 font-medium">PARENTS</div></div>
+            <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.classes }}</div><div class="text-[11px] text-slate-500 font-medium">CLASSES</div></div>
           </div>
         </div>
 
@@ -218,6 +251,53 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
               <router-link to="/settings" class="btn btn-ghost !py-2">⚙ Settings</router-link>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Phase 37: Classes & Sections + Teachers — seedha dashboard par,
+           Settings/Team ke andar dhoondhna na pade -->
+      <div class="grid lg:grid-cols-2 gap-4 items-start mt-4">
+        <div class="card">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            <h2 class="font-bold">{{ t("dashboard.classesSections") }}</h2>
+            <span class="chip bg-brand-50 text-brand-700 ml-auto">{{ classGroups.length }} {{ t("dashboard.classesWord") }} · {{ classOverview.length }} {{ t("dashboard.classrooms") }}</span>
+          </div>
+          <div v-for="g in classGroups" :key="g.name" class="py-2.5 border-b border-slate-100 last:border-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-bold">Class {{ g.name }}</span>
+              <span class="chip bg-slate-100 text-slate-600 text-xs">{{ g.sections.length }} {{ t("dashboard.sections") }}</span>
+              <span class="chip bg-slate-100 text-slate-600 text-xs">🎓 {{ g.students }} {{ t("dashboard.students") }}</span>
+            </div>
+            <div v-for="s in g.sections" :key="s.id" class="mt-2 ml-1 border-l-2 border-slate-100 pl-3">
+              <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="font-semibold">{{ s.section ? t("dashboard.section") + " " + s.section : t("dashboard.noSection") }}</span>
+                <span class="text-xs text-slate-500">🎓 {{ s.total }} {{ t("dashboard.students") }}</span>
+                <span v-if="s.incharge" class="chip bg-amber-50 text-amber-700 text-xs">⭐ {{ t("dashboard.incharge") }}: {{ s.incharge }}</span>
+                <span v-else class="chip bg-slate-50 text-slate-400 text-xs">{{ t("dashboard.noIncharge") }}</span>
+              </div>
+              <div v-if="s.teaching.length" class="flex flex-wrap gap-1.5 mt-1.5">
+                <span v-for="(x, i) in s.teaching" :key="i" class="chip bg-sky-50 text-sky-700 text-xs">📚 {{ x.subject }} — {{ x.teacher }}</span>
+              </div>
+              <p v-else class="text-xs text-slate-400 mt-1">{{ t("dashboard.noTeacherAssigned") }}</p>
+            </div>
+          </div>
+          <p v-if="!classGroups.length" class="text-sm text-slate-400">{{ t("dashboard.noClassesYet") }}</p>
+        </div>
+
+        <div class="card">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            <h2 class="font-bold">{{ t("dashboard.teachersWho") }}</h2>
+            <span class="chip bg-brand-50 text-brand-700 ml-auto">{{ teachers.length }}</span>
+          </div>
+          <div v-for="tp in teachers" :key="tp.id" class="py-2.5 border-b border-slate-100 last:border-0">
+            <div class="font-semibold text-sm">{{ tp.displayName }}</div>
+            <div class="flex flex-wrap gap-1.5 mt-1.5">
+              <span v-for="a in tp.classAssignments" :key="a.id" class="chip bg-sky-50 text-sky-700 text-xs">📚 Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span> · {{ a.subject?.name }}</span>
+              <span v-for="a in tp.inchargeAssignments" :key="'i' + a.id" class="chip bg-amber-50 text-amber-700 text-xs">⭐ {{ t("dashboard.incharge") }}: Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span></span>
+              <span v-if="!tp.classAssignments?.length && !tp.inchargeAssignments?.length" class="text-xs text-slate-400">{{ t("dashboard.teacherNoWork") }}</span>
+            </div>
+          </div>
+          <p v-if="!teachers.length" class="text-sm text-slate-400">{{ t("dashboard.noTeachersYet") }}</p>
         </div>
       </div>
     </template>
