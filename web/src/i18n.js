@@ -83,6 +83,11 @@ export const messages = {
     "dashboard.noClassesYet": "No classes yet — add your first class from Settings.",
     "dashboard.noTeachersYet": "No teachers yet — add teachers from Team & Access.",
     "dashboard.teacherNoWork": "No class or subject assigned yet — assign from Students & Staff → Teachers.",
+    "dashboard.searchTitle": "🔎 Search students & teachers",
+    "dashboard.searchPh": "Student name, admission no, parent mobile, or teacher name…",
+    "dashboard.noResults": "No match found in this school.",
+    "dashboard.viewStudents": "View students →",
+    "dashboard.tapHint": "Tap any section to see its students with their parents. Tap a teacher to open their details.",
   },
   // Add regional languages here, e.g.:
   // hi: { "common.received": "...", ... },

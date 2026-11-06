@@ -12,6 +12,7 @@ const sid = session.schoolId;
 const user = currentUser();
 const A = ref(null); // analytics
 const teachers = ref([]);
+const studentsAll = ref([]);
 const notices = ref([]);
 const holidays = ref([]);
 const school = ref(null);
@@ -79,16 +80,46 @@ const classGroups = computed(() => {
   return groups;
 });
 
+// Phase 38: dashboard se click/search karke seedha data tak —
+// class section pe tap = us class ke students (parents ke saath),
+// teacher pe tap = teacher ki detail, aur upar search box se
+// student/teacher dono dhoondh sakte ho.
+const classTarget = (c) =>
+  isManager ? { path: "/people", query: { tab: "students", class: c.id } } : { path: "/students" };
+const teacherTarget = (tp) =>
+  isManager ? { path: "/people", query: { tab: "teachers", q: tp.displayName } } : { path: "/team" };
+const goStudents = () => router.push(isManager ? { path: "/people", query: { tab: "students" } } : { path: "/students" });
+const goTeachers = () => router.push(isManager ? { path: "/people", query: { tab: "teachers" } } : { path: "/team" });
+const classLabelById = computed(() => {
+  const map = {};
+  for (const c of A.value?.classes || []) map[c.id] = `Class ${c.name}${c.section ? "-" + c.section : ""}`;
+  return map;
+});
+const dashQuery = ref("");
+const dashResults = computed(() => {
+  const q = dashQuery.value.trim().toLowerCase();
+  if (q.length < 2) return { students: [], teachers: [] };
+  const students = studentsAll.value
+    .filter((s) => `${s.fullName} ${s.admissionNo} ${s.rollNo || ""} ${s.guardian?.name || ""} ${s.guardian?.phone || ""}`.toLowerCase().includes(q))
+    .slice(0, 6);
+  const teachersFound = teachers.value
+    .filter((tp) => `${tp.displayName} ${(tp.classAssignments || []).map((a) => a.subject?.name || "").join(" ")}`.toLowerCase().includes(q))
+    .slice(0, 6);
+  return { students, teachers: teachersFound };
+});
+
 async function load() {
-  const [a, n, h, s, te] = await Promise.all([
+  const [a, n, h, s, te, st] = await Promise.all([
     api(`/schools/${sid}/analytics/today`),
     api(`/schools/${sid}/notices`),
     api(`/schools/${sid}/holidays`),
     api(`/schools/${sid}`),
     api(`/schools/${sid}/teachers`).catch(() => null),
+    api(`/schools/${sid}/students`).catch(() => null),
   ]);
   if (a.status === 200) A.value = a.json;
   if (te && te.status === 200) teachers.value = te.json.teachers || [];
+  if (st && st.status === 200) studentsAll.value = st.json.students || [];
   notices.value = (n.json.notices || []).slice(0, 5);
   holidays.value = h.json.holidays || [];
   school.value = s.json.school || null;
@@ -127,6 +158,24 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
       <div class="flex gap-2">
         <button type="button" class="btn btn-ghost" @click="router.push('/attendance')">📋 Register</button>
         <button type="button" class="btn btn-primary" @click="router.push('/notices')">✉️ New notice</button>
+      </div>
+    </div>
+
+    <!-- Phase 38: dashboard search — student (parent ke saath) aur teacher, click karke seedha detail -->
+    <div class="card mb-4">
+      <label class="label" for="dash-search">{{ t("dashboard.searchTitle") }}</label>
+      <input id="dash-search" v-model="dashQuery" class="input" type="search" :placeholder="t('dashboard.searchPh')" autocomplete="off" />
+      <div v-if="dashQuery.trim().length >= 2" class="mt-2 grid gap-1.5">
+        <p v-if="!dashResults.students.length && !dashResults.teachers.length" class="text-sm text-slate-400">{{ t("dashboard.noResults") }}</p>
+        <button v-for="s in dashResults.students" :key="s.id" type="button" class="text-left border rounded-xl px-3 py-2 hover:border-brand-300 transition" @click="router.push(`/students/${s.id}`)">
+          <span class="font-semibold text-sm">🎓 {{ s.fullName }}</span>
+          <span class="chip bg-slate-100 text-slate-600 text-xs ml-2">{{ classLabelById[s.classroomId] || "No class" }}</span>
+          <span class="block text-xs text-slate-500 mt-0.5">Adm {{ s.admissionNo }}<span v-if="s.guardian?.name"> · 👨‍👩‍👧 {{ s.guardian.name }}</span><span v-if="s.guardian?.phone"> · {{ s.guardian.phone }}</span></span>
+        </button>
+        <button v-for="tp in dashResults.teachers" :key="tp.id" type="button" class="text-left border rounded-xl px-3 py-2 hover:border-brand-300 transition" @click="router.push(teacherTarget(tp))">
+          <span class="font-semibold text-sm">🧑‍🏫 {{ tp.displayName }}</span>
+          <span class="block text-xs text-slate-500 mt-0.5">{{ (tp.classAssignments || []).map((a) => `${classLabelById[a.classroomId] || ""} · ${a.subject?.name || ""}`).join("  ·  ") || t("dashboard.teacherNoWork") }}</span>
+        </button>
       </div>
     </div>
 
@@ -194,10 +243,10 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
             <div class="bar"><div :style="{ width: (c.total ? ((c.present + c.late) / c.total) * 100 : 0) + '%' }"></div></div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-center">
-            <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.students }}</div><div class="text-[11px] text-slate-500 font-medium">STUDENTS</div></div>
-            <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.teachers }}</div><div class="text-[11px] text-slate-500 font-medium">TEACHERS</div></div>
-            <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.guardians }}</div><div class="text-[11px] text-slate-500 font-medium">PARENTS</div></div>
-            <div class="rounded-2xl bg-slate-50 py-3"><div class="text-lg font-extrabold">{{ A.totals.classes }}</div><div class="text-[11px] text-slate-500 font-medium">CLASSES</div></div>
+            <button type="button" class="rounded-2xl bg-slate-50 py-3 hover:bg-brand-50 transition" @click="goStudents"><div class="text-lg font-extrabold">{{ A.totals.students }}</div><div class="text-[11px] text-slate-500 font-medium">STUDENTS</div></button>
+            <button type="button" class="rounded-2xl bg-slate-50 py-3 hover:bg-brand-50 transition" @click="goTeachers"><div class="text-lg font-extrabold">{{ A.totals.teachers }}</div><div class="text-[11px] text-slate-500 font-medium">TEACHERS</div></button>
+            <button type="button" class="rounded-2xl bg-slate-50 py-3 hover:bg-brand-50 transition" @click="goStudents"><div class="text-lg font-extrabold">{{ A.totals.guardians }}</div><div class="text-[11px] text-slate-500 font-medium">PARENTS</div></button>
+            <button type="button" class="rounded-2xl bg-slate-50 py-3 hover:bg-brand-50 transition" @click="goStudents"><div class="text-lg font-extrabold">{{ A.totals.classes }}</div><div class="text-[11px] text-slate-500 font-medium">CLASSES</div></button>
           </div>
         </div>
 
@@ -262,24 +311,26 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
             <h2 class="font-bold">{{ t("dashboard.classesSections") }}</h2>
             <span class="chip bg-brand-50 text-brand-700 ml-auto">{{ classGroups.length }} {{ t("dashboard.classesWord") }} · {{ classOverview.length }} {{ t("dashboard.classrooms") }}</span>
           </div>
+          <p class="text-xs text-slate-400 mb-1">{{ t("dashboard.tapHint") }}</p>
           <div v-for="g in classGroups" :key="g.name" class="py-2.5 border-b border-slate-100 last:border-0">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-bold">Class {{ g.name }}</span>
               <span class="chip bg-slate-100 text-slate-600 text-xs">{{ g.sections.length }} {{ t("dashboard.sections") }}</span>
               <span class="chip bg-slate-100 text-slate-600 text-xs">🎓 {{ g.students }} {{ t("dashboard.students") }}</span>
             </div>
-            <div v-for="s in g.sections" :key="s.id" class="mt-2 ml-1 border-l-2 border-slate-100 pl-3">
+            <button v-for="s in g.sections" :key="s.id" type="button" class="block w-full text-left mt-2 ml-1 border-l-2 border-slate-100 pl-3 py-1 rounded-r-xl hover:bg-slate-50 hover:border-brand-300 transition" @click="router.push(classTarget(s))">
               <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="font-semibold">{{ s.section ? t("dashboard.section") + " " + s.section : t("dashboard.noSection") }}</span>
                 <span class="text-xs text-slate-500">🎓 {{ s.total }} {{ t("dashboard.students") }}</span>
                 <span v-if="s.incharge" class="chip bg-amber-50 text-amber-700 text-xs">⭐ {{ t("dashboard.incharge") }}: {{ s.incharge }}</span>
                 <span v-else class="chip bg-slate-50 text-slate-400 text-xs">{{ t("dashboard.noIncharge") }}</span>
+                <span class="text-xs font-semibold text-brand-700 ml-auto">{{ t("dashboard.viewStudents") }}</span>
               </div>
               <div v-if="s.teaching.length" class="flex flex-wrap gap-1.5 mt-1.5">
                 <span v-for="(x, i) in s.teaching" :key="i" class="chip bg-sky-50 text-sky-700 text-xs">📚 {{ x.subject }} — {{ x.teacher }}</span>
               </div>
               <p v-else class="text-xs text-slate-400 mt-1">{{ t("dashboard.noTeacherAssigned") }}</p>
-            </div>
+            </button>
           </div>
           <p v-if="!classGroups.length" class="text-sm text-slate-400">{{ t("dashboard.noClassesYet") }}</p>
         </div>
@@ -289,14 +340,14 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
             <h2 class="font-bold">{{ t("dashboard.teachersWho") }}</h2>
             <span class="chip bg-brand-50 text-brand-700 ml-auto">{{ teachers.length }}</span>
           </div>
-          <div v-for="tp in teachers" :key="tp.id" class="py-2.5 border-b border-slate-100 last:border-0">
-            <div class="font-semibold text-sm">{{ tp.displayName }}</div>
+          <button v-for="tp in teachers" :key="tp.id" type="button" class="block w-full text-left py-2.5 border-b border-slate-100 last:border-0 px-1 rounded-lg hover:bg-slate-50 transition" @click="router.push(teacherTarget(tp))">
+            <div class="font-semibold text-sm">{{ tp.displayName }} <span class="text-xs font-semibold text-brand-700 float-right">Open →</span></div>
             <div class="flex flex-wrap gap-1.5 mt-1.5">
               <span v-for="a in tp.classAssignments" :key="a.id" class="chip bg-sky-50 text-sky-700 text-xs">📚 Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span> · {{ a.subject?.name }}</span>
               <span v-for="a in tp.inchargeAssignments" :key="'i' + a.id" class="chip bg-amber-50 text-amber-700 text-xs">⭐ {{ t("dashboard.incharge") }}: Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span></span>
               <span v-if="!tp.classAssignments?.length && !tp.inchargeAssignments?.length" class="text-xs text-slate-400">{{ t("dashboard.teacherNoWork") }}</span>
             </div>
-          </div>
+          </button>
           <p v-if="!teachers.length" class="text-sm text-slate-400">{{ t("dashboard.noTeachersYet") }}</p>
         </div>
       </div>

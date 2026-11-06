@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import QRCode from "qrcode";
 import { api, session } from "../api.js";
 import { usePager, matchStatus } from "../composables/usePager.js";
@@ -101,10 +102,21 @@ async function load() {
     loading.value = false;
   }
 }
+const route = useRoute();
 onMounted(async () => {
   const sres = await api(`/schools/${sid}`).catch(() => null);
   if (sres?.json?.school?.name) schoolName.value = sres.json.school.name;
   await load();
+  // Phase 38: dashboard se click karke aane par seedha sahi jagah —
+  // ?tab=teachers&q=<name> teacher ko filter karke, ?class=<id>
+  // us class ke students (parents ke saath) dikhata hai.
+  const q = route.query || {};
+  if (q.tab === "teachers") tab.value = "teachers";
+  if (q.class) stuClass.value = String(q.class);
+  if (q.q) {
+    if (tab.value === "teachers") teacherQuery.value = String(q.q);
+    else stuQuery.value = String(q.q);
+  }
 });
 
 function note(r, okText) {
@@ -220,16 +232,12 @@ const filteredTeachers = computed(() => {
   return teachers.value.filter((t) => t.displayName.toLowerCase().includes(q));
 });
 
-// Guardians tab: guardians grow with students (~1 per student), so
-// they get the same search + 25/page pagination as the students list.
-const guardQuery = ref("");
-const filteredGuardians = computed(() => {
-  const q = guardQuery.value.trim().toLowerCase();
-  if (!q) return guardians.value;
-  return guardians.value.filter((g) => `${g.fullName} ${g.phone || ""} ${g.email || ""}`.toLowerCase().includes(q));
-});
-const guardPager = usePager(filteredGuardians, 25);
-watch(guardQuery, () => guardPager.reset());
+// Phase 38: alag Guardians tab khatam — child aur parents EK hi
+// view me hain. Har student card par uske father/mother/guardian
+// ka naam + mobile pehle se dikhta hai, aur students search
+// guardian ke naam/phone par bhi match karta hai (upar dekho).
+// Guardians ka data ab bhi load hota hai — add/link forms aur
+// search text ke liye, jo Students tab ke andar hi hain.
 </script>
 
 <template>
@@ -247,10 +255,10 @@ watch(guardQuery, () => guardPager.reset());
     </div>
 
     <div class="flex gap-2 mb-4">
-      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students<span v-if="!loading"> ({{ students.length }})</span></button>
+      <button class="btn" :class="tab === 'students' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'students'">Students & Parents<span v-if="!loading"> ({{ students.length }})</span></button>
       <button class="btn" :class="tab === 'teachers' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'teachers'">Teachers<span v-if="!loading"> ({{ teachers.length }})</span></button>
-      <button class="btn" :class="tab === 'guardians' ? 'btn-primary' : 'btn-ghost'" @click="tab = 'guardians'">Guardians<span v-if="!loading"> ({{ guardians.length }})</span></button>
     </div>
+    <p v-if="tab === 'students'" class="text-sm text-slate-500 mb-4 -mt-2">Every student card shows the child together with their parents — father, mother, guardian name and mobile are on the same card. Search also matches a parent's name or mobile number.</p>
 
     <div v-if="tab === 'students'">
       <form class="card grid md:grid-cols-4 gap-3 mb-4" @submit.prevent="addStudent">
@@ -334,6 +342,25 @@ watch(guardQuery, () => guardPager.reset());
       <div v-if="!loading" class="mt-3">
         <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
       </div>
+
+      <h2 class="font-bold mt-6 mb-1">👨‍👩‍👧 Parents — add or link with a student</h2>
+      <p class="text-sm text-slate-500 mb-3">Parents are not a separate list — a parent is always shown with their child above. Add a new parent here, then link them to their student; the parent's name and mobile then appear on that student's card.</p>
+      <div class="grid md:grid-cols-2 gap-4">
+        <form class="card grid gap-3" @submit.prevent="addGuardian">
+          <div class="font-semibold">Add parent (guardian)</div>
+          <input v-model="newGuardian.fullName" required class="input" placeholder="Full name" />
+          <input v-model="newGuardian.phone" class="input" placeholder="Phone" />
+          <input v-model="newGuardian.email" class="input" placeholder="Email" />
+          <button class="btn btn-primary">Add parent</button>
+        </form>
+        <form class="card grid gap-3" @submit.prevent="linkGuardian">
+          <div class="font-semibold">Link parent → student</div>
+          <select v-model="link.studentId" required class="input"><option value="">Student…</option><option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option></select>
+          <select v-model="link.guardianId" required class="input"><option value="">Parent…</option><option v-for="g in guardians" :key="g.id" :value="g.id">{{ g.fullName }}</option></select>
+          <label class="text-sm flex gap-2 items-center"><input type="checkbox" v-model="link.isPrimary" /> Primary parent (guardian)</label>
+          <button class="btn btn-primary">Link</button>
+        </form>
+      </div>
     </div>
 
     <div v-if="tab === 'teachers'">
@@ -383,42 +410,5 @@ watch(guardQuery, () => guardPager.reset());
       </div>
     </div>
 
-    <div v-if="tab === 'guardians'">
-      <div class="grid md:grid-cols-2 gap-4">
-        <form class="card grid gap-3" @submit.prevent="addGuardian">
-          <div class="font-semibold">Add guardian</div>
-          <input v-model="newGuardian.fullName" required class="input" placeholder="Full name" />
-          <input v-model="newGuardian.phone" class="input" placeholder="Phone" />
-          <input v-model="newGuardian.email" class="input" placeholder="Email" />
-          <button class="btn btn-primary">Add guardian</button>
-        </form>
-        <form class="card grid gap-3" @submit.prevent="linkGuardian">
-          <div class="font-semibold">Link guardian → student</div>
-          <select v-model="link.studentId" required class="input"><option value="">Student…</option><option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option></select>
-          <select v-model="link.guardianId" required class="input"><option value="">Guardian…</option><option v-for="g in guardians" :key="g.id" :value="g.id">{{ g.fullName }}</option></select>
-          <label class="text-sm flex gap-2 items-center"><input type="checkbox" v-model="link.isPrimary" /> Primary guardian</label>
-          <button class="btn btn-primary">Link</button>
-        </form>
-      </div>
-      <div class="card mt-4 flex flex-wrap gap-2 items-center">
-        <input v-model="guardQuery" class="input flex-1 min-w-[200px]" placeholder="Search guardian by name, phone or email…" />
-      </div>
-      <div class="card mt-4 !p-0 overflow-x-auto">
-        <table class="w-full text-sm mtable">
-          <thead><tr class="text-left text-slate-500 border-b"><th class="p-3">Name</th><th class="p-3">Phone</th><th class="p-3">Children</th></tr></thead>
-          <tbody>
-            <tr v-for="g in guardPager.pageItems.value" :key="g.id" class="border-b last:border-0">
-              <td class="p-3 font-medium">{{ g.fullName }}</td><td class="p-3">{{ g.phone || "—" }}</td>
-              <td class="p-3">{{ (g.studentLinks || []).length }}</td>
-            </tr>
-            <tr v-if="loading"><td class="p-3 text-slate-400 animate-pulse" colspan="3">Loading guardians…</td></tr>
-            <tr v-else-if="!filteredGuardians.length"><td class="p-3 text-slate-400" colspan="3">{{ guardians.length ? "No guardians match your search." : "No guardians yet." }}</td></tr>
-          </tbody>
-        </table>
-        <div v-if="!loading" class="px-3 pb-3">
-          <Pager :page="guardPager.page.value" :total-pages="guardPager.totalPages.value" :from="guardPager.from.value" :to="guardPager.to.value" :total="guardPager.total.value" @update:page="guardPager.page.value = $event" />
-        </div>
-      </div>
-    </div>
   </div>
 </template>
