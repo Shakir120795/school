@@ -227,6 +227,11 @@ async function submit() {
         <router-link class="underline font-semibold" to="/login">← All logins</router-link>
       </div>
     </div>
-    <p class="text-[11px] text-white/40 mt-5">Install: browser menu → “Add to Home screen”</p>
+    <p class="text-xs text-white/60 mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1">
+      <router-link to="/privacy" class="underline">Privacy Policy</router-link>
+      <router-link to="/terms" class="underline">Terms of Service</router-link>
+      <router-link to="/safety" class="underline">Safety & Security</router-link>
+    </p>
+    <p class="text-[11px] text-white/40 mt-2">Install: browser menu → “Add to Home screen”</p>
   </div>
 </template>

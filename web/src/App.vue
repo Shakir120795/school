@@ -133,6 +133,11 @@ function switchAccount(id) {
             Switch to {{ a.user?.fullName }} ({{ a.role }})
           </button>
         </div>
+        <div class="mb-3 flex flex-wrap gap-x-2 gap-y-1 text-[11px]">
+          <router-link to="/privacy" class="underline text-slate-300">Privacy Policy</router-link>
+          <router-link to="/terms" class="underline text-slate-300">Terms of Service</router-link>
+          <router-link to="/safety" class="underline text-slate-300">Safety & Security</router-link>
+        </div>
         <div class="font-semibold text-white">{{ user?.fullName }}</div>
         <div>{{ role }}</div>
         <button class="btn btn-ghost mt-3 w-full !py-2" @click="logout">Logout</button>
