@@ -86,12 +86,8 @@ function switchSchool(id) {
   session.setSchool(id);
   location.reload();
 }
-// Multi-account: every account signed in on this browser stays
-// signed in; this switches THIS tab to another of them.
-const signedInAccounts = computed(() => { void navTick.value; return session.accountsList(); });
-function switchAccount(id) {
-  if (session.activate(id)) location.reload();
-}
+// Phase 40: single-login only — there is deliberately NO account
+// switcher anywhere. To use another account: Logout, then sign in.
 </script>
 
 <template>
@@ -125,13 +121,6 @@ function switchAccount(id) {
           <select :value="lang" class="input !py-1.5 !text-xs" @change="setLang($event.target.value)">
             <option v-for="l in availableLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
           </select>
-        </div>
-        <div v-if="signedInAccounts.length > 1" class="mb-3">
-          <div class="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Signed-in accounts</div>
-          <button v-for="a in signedInAccounts.filter((x) => x.id !== session.activeAccountId)" :key="a.id"
-            class="btn btn-ghost w-full !py-1.5 mb-1 !text-xs" @click="switchAccount(a.id)">
-            Switch to {{ a.user?.fullName }} ({{ a.role }})
-          </button>
         </div>
         <div class="font-semibold text-white">{{ user?.fullName }}</div>
         <div>{{ role }}</div>
