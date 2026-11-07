@@ -227,7 +227,7 @@ async function submit() {
         <router-link class="underline font-semibold" to="/login">← All logins</router-link>
       </div>
     </div>
-    <p class="text-xs text-white/60 mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1">
+    <p v-if="variant === 'parent'" class="text-xs text-white/60 mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1">
       <router-link to="/privacy" class="underline">Privacy Policy</router-link>
       <router-link to="/terms" class="underline">Terms of Service</router-link>
       <router-link to="/safety" class="underline">Safety & Security</router-link>

@@ -167,6 +167,12 @@ onMounted(load);
           <button type="button" class="btn btn-primary mt-3 !py-2" @click="savePref">Save preference</button>
           <p v-if="msg" class="text-xs text-brand-700 mt-2">{{ msg }}</p>
         </div>
+
+        <p class="text-center text-xs text-slate-400 mt-6 flex flex-wrap justify-center gap-x-3 gap-y-1">
+          <router-link to="/privacy" class="underline">Privacy Policy</router-link>
+          <router-link to="/terms" class="underline">Terms of Service</router-link>
+          <router-link to="/safety" class="underline">Safety & Security</router-link>
+        </p>
       </div>
     </div>
   </div>
