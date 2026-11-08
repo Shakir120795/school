@@ -32,6 +32,8 @@ function isIos() {
 }
 
 export function initInstall() {
+  // Native (Capacitor) apps ARE the installed app — never offer install.
+  if (window.Capacitor) { installState.value = "installed"; return; }
   if (isStandalone()) { installState.value = "installed"; return; }
   installState.value = isIos() ? "ios" : "menu";
   window.addEventListener("beforeinstallprompt", (e) => {

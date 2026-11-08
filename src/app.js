@@ -26,7 +26,15 @@ export function createApp() {
   const app = express();
   // CORS for the web app (Phase 3). Origins are allow-listed via CORS_ORIGINS
   // (comma-separated); default covers local Vite dev/preview.
-  const origins = (process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:4173").split(",");
+  // Phase 42: the native apps (Capacitor) always run on the local
+  // WebView origins below — ye hamesha allowed hain, warna app ke
+  // andar se API calls browser CORS par ruk jayengi. (API ki asal
+  // security JWT auth hai; CORS sirf browser reads rokta hai.)
+  const origins = [
+    ...(process.env.CORS_ORIGINS || "http://localhost:5173,http://localhost:4173").split(","),
+    "https://localhost",
+    "capacitor://localhost",
+  ];
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (origin && origins.includes(origin)) {

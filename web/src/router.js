@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { session, myRole } from "./api.js";
+import { FLAVOR, flavorAllowsLogin, flavorHomeLogin } from "./flavor.js";
 
 const routes = [
   { path: "/login", component: () => import("./views/Login.vue"), meta: { public: true } },
@@ -38,6 +39,13 @@ const routes = [
 export const router = createRouter({ history: createWebHistory(), routes });
 
 router.beforeEach((to) => {
+  // Phase 42 flavor lock: app builds (parent/staff/owner) me sirf
+  // apne login pages khulte hain — dusre flavor ke login par jao to
+  // apne home login par wapas. Website (web flavor) par koi lock nahi.
+  if (FLAVOR !== "web" && to.path.startsWith("/login")) {
+    const variant = to.meta.variant || "chooser";
+    if (!flavorAllowsLogin(variant)) return flavorHomeLogin();
+  }
   if (to.meta.public) {
     // Login pages ALWAYS render their own form — even with a live
     // session (26 Oct correction, overriding the Phase 22 redirect):
@@ -48,7 +56,7 @@ router.beforeEach((to) => {
     // and replaces the session only on a successful sign-in.
     return true;
   }
-  if (!session.accessToken) return "/login";
+  if (!session.accessToken) return flavorHomeLogin();
   const role = myRole();
   // The console is the platform owner's alone — every other role is
   // bounced to its own home, the page is never even rendered for them.

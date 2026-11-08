@@ -12,3 +12,6 @@ web/android/
 
 # PWA icons are generated at build time from web/icon-src/*.b64
 web/public/icons/
+
+# Phase 42: local app build outputs (APKs)
+build/

@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
 import { installState, promptInstall } from "../install.js";
+import { flavorAllowsLogin } from "../flavor.js";
 
 const installHelp = ref(false);
 async function doInstall() {
@@ -174,15 +175,15 @@ async function submit() {
         <div class="text-lg font-bold mb-1">Choose your login</div>
         <p class="text-sm text-slate-500 mb-4">Each role has its own login page — choose yours.</p>
         <div class="grid gap-2">
-          <router-link to="/login/parent" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+          <router-link v-if="flavorAllowsLogin('parent')" to="/login/parent" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">👨‍👩‍👧</span>
             <span><span class="block font-bold">Parent Login</span><span class="block text-xs text-slate-500">Apne bachcho ki attendance, fees aur notices</span></span>
           </router-link>
-          <router-link to="/login/teacher" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+          <router-link v-if="flavorAllowsLogin('teacher')" to="/login/teacher" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">🧑‍🏫</span>
             <span><span class="block font-bold">Teacher Login</span><span class="block text-xs text-slate-500">Apni classes, roll-call aur homework</span></span>
           </router-link>
-          <router-link to="/login/school" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+          <router-link v-if="flavorAllowsLogin('school')" to="/login/school" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
             <span class="text-2xl">🏫</span>
             <span><span class="block font-bold">School Login</span><span class="block text-xs text-slate-500">School admin & office team</span></span>
           </router-link>

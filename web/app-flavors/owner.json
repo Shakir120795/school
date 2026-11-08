@@ -1,0 +1,6 @@
+{
+  "appId": "in.thedigitalwork.smartschool.owner",
+  "appName": "Smart School Owner",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}
