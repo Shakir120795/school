@@ -10,11 +10,14 @@
 //                 shows the browser's own install dialog.
 //   "ios"       — iPhone/iPad Safari has no install prompt; the
 //                 UI shows Share → "Add to Home Screen" steps.
+//   "menu"      — the browser has not offered its prompt (it only
+//                 does so after its own engagement checks, which
+//                 can take visits): the UI still shows the install
+//                 banner/button, opening browser-menu steps.
 //   "installed" — already running as an installed app (or the
 //                 user just installed): show nothing.
-//   "hidden"    — nothing to offer right now (desktop browser
-//                 without a prompt, or already dismissed logic
-//                 handled by the UI): show nothing.
+//   "hidden"    — the user declined the browser prompt just now:
+//                 stop offering for this session.
 import { ref } from "vue";
 
 export const installState = ref("hidden");
@@ -30,7 +33,7 @@ function isIos() {
 
 export function initInstall() {
   if (isStandalone()) { installState.value = "installed"; return; }
-  if (isIos()) installState.value = "ios";
+  installState.value = isIos() ? "ios" : "menu";
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredPrompt = e;

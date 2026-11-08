@@ -158,12 +158,13 @@ function switchSchool(id) {
           <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ m.schoolId }} ({{ m.role }})</option>
         </select>
       </div>
-      <div v-if="(installState === 'available' || installState === 'ios') && !installDismissed" class="mb-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 flex flex-wrap items-center gap-2">
+      <div v-if="(installState === 'available' || installState === 'ios' || installState === 'menu') && !installDismissed" class="mb-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 flex flex-wrap items-center gap-2">
         <span class="text-sm">📲 <b>Use Smart School like an app</b> — add it to your home screen and open it without the browser.</span>
         <button v-if="installState === 'available'" class="btn btn-primary !py-1.5 !w-auto ml-auto" @click="doInstall">Install App</button>
         <button v-else class="btn btn-primary !py-1.5 !w-auto ml-auto" @click="iosHelp = !iosHelp">How to install?</button>
         <button class="btn btn-ghost !py-1.5 !w-auto" aria-label="Dismiss" @click="dismissInstall">✕</button>
         <p v-if="installState === 'ios' && iosHelp" class="w-full text-xs text-slate-600 mt-1">On iPhone/iPad (Safari): tap the <b>Share</b> button → choose <b>“Add to Home Screen”</b> → tap <b>Add</b>. The Smart School icon will appear on your home screen.</p>
+        <p v-if="installState === 'menu' && iosHelp" class="w-full text-xs text-slate-600 mt-1">Open your browser menu (<b>⋮</b>) and tap <b>“Install app”</b> (or <b>“Add to Home screen”</b>). On a computer, you can also click the install icon at the right end of the address bar. The Smart School icon will then open the app directly.</p>
       </div>
       <router-view />
     </main>

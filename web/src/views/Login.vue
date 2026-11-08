@@ -4,7 +4,11 @@ import { useRoute, useRouter } from "vue-router";
 import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
 import { installState, promptInstall } from "../install.js";
 
-async function doInstall() { await promptInstall(); }
+const installHelp = ref(false);
+async function doInstall() {
+  if (installState.value === "available") await promptInstall();
+  else installHelp.value = !installHelp.value;
+}
 
 const router = useRouter();
 const route = useRoute();
@@ -231,7 +235,8 @@ async function submit() {
         <router-link class="underline font-semibold" to="/login">← All logins</router-link>
       </div>
     </div>
-    <button v-if="installState === 'available'" type="button" class="btn mt-5 !w-auto px-5 !py-2.5 bg-white/10 text-white hover:bg-white/20" @click="doInstall">📲 Install App</button>
+    <button v-if="installState === 'available' || installState === 'menu'" type="button" class="btn mt-5 !w-auto px-5 !py-2.5 bg-white/10 text-white hover:bg-white/20" @click="doInstall">📲 Install App</button>
+    <p v-if="installState === 'menu' && installHelp" class="text-xs text-white/70 mt-2 text-center max-w-xs">Open your browser menu (<b>⋮</b>) → tap <b>“Install app”</b> (or <b>“Add to Home screen”</b>). On a computer, click the install icon in the address bar.</p>
     <p v-else-if="installState === 'ios'" class="text-xs text-white/70 mt-5 text-center max-w-xs">📲 <b>Install the app:</b> tap the <b>Share</b> button → <b>“Add to Home Screen”</b> → <b>Add</b></p>
     <p v-if="variant === 'parent'" class="text-xs text-white/60 mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1">
       <router-link to="/privacy" class="underline">Privacy Policy</router-link>
