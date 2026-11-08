@@ -16,6 +16,14 @@ onMounted(async () => {
 import { useRoute, useRouter } from "vue-router";
 import { lang, setLang, availableLangs } from "./i18n.js";
 import { session, currentUser, myRole, myMemberships, api, pruneDeadActiveAccount } from "./api.js";
+import { installState, promptInstall } from "./install.js";
+
+// PWA install banner (Phase 41): shown until the app is installed
+// or the user dismisses it on this device.
+const installDismissed = ref(localStorage.getItem("ss_install_dismissed") === "1");
+const iosHelp = ref(false);
+async function doInstall() { await promptInstall(); }
+function dismissInstall() { installDismissed.value = true; localStorage.setItem("ss_install_dismissed", "1"); }
 
 const route = useRoute();
 const router = useRouter();
@@ -86,8 +94,9 @@ function switchSchool(id) {
   session.setSchool(id);
   location.reload();
 }
-// Phase 40: single-login only — there is deliberately NO account
-// switcher anywhere. To use another account: Logout, then sign in.
+// Phase 41: every ID can be signed in on this device (one per
+// tab), but there is deliberately NO account switcher anywhere —
+// an account opens only by signing in with its own credentials.
 </script>
 
 <template>
@@ -148,6 +157,13 @@ function switchSchool(id) {
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
           <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ m.schoolId }} ({{ m.role }})</option>
         </select>
+      </div>
+      <div v-if="(installState === 'available' || installState === 'ios') && !installDismissed" class="mb-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 flex flex-wrap items-center gap-2">
+        <span class="text-sm">📲 <b>Use Smart School like an app</b> — add it to your home screen and open it without the browser.</span>
+        <button v-if="installState === 'available'" class="btn btn-primary !py-1.5 !w-auto ml-auto" @click="doInstall">Install App</button>
+        <button v-else class="btn btn-primary !py-1.5 !w-auto ml-auto" @click="iosHelp = !iosHelp">How to install?</button>
+        <button class="btn btn-ghost !py-1.5 !w-auto" aria-label="Dismiss" @click="dismissInstall">✕</button>
+        <p v-if="installState === 'ios' && iosHelp" class="w-full text-xs text-slate-600 mt-1">On iPhone/iPad (Safari): tap the <b>Share</b> button → choose <b>“Add to Home Screen”</b> → tap <b>Add</b>. The Smart School icon will appear on your home screen.</p>
       </div>
       <router-view />
     </main>

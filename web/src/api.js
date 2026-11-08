@@ -1,52 +1,59 @@
-// API client with a SINGLE session (Phase 40).
+// API client with MULTI-ACCOUNT sessions but NO SWITCHING (Phase 41).
 //
-// One browser = exactly one signed-in account. (Phase 30's
-// multi-account book and sidebar switcher were removed on shakir's
-// instruction: "kisi bhi login me kisi dusre ka switch nhi krna h" —
-// no switching into another account anywhere.) Signing in REPLACES
-// any previous session on this device, the login pages show no
-// sign-in form while someone is signed in, and to use another
-// account you must log out first. All tabs share the one session
-// (localStorage ss_session_v3).
+// Shakir's final rule (8 Nov 2026): "ek device pr sabhi id access
+// ho ske, or har id login me koi bhi switch link na ho" — every ID
+// can be signed in on one device (each browser TAB holds its own
+// account, so parent/teacher/admin tabs can stay open together),
+// but there is NO account switcher or "switch" link anywhere:
+// no sidebar switcher (removed in Phase 40, stays removed), no
+// one-tap jumping between accounts. The ONLY way into an account
+// is typing its credentials on its login page. Signing in pins
+// THIS tab to the new account; accounts open in other tabs are
+// untouched. This supersedes Phase 40's single-session model,
+// which in turn had superseded Phase 30's with-switcher model.
 const BASE = import.meta.env.VITE_API_BASE || "";
 
-const SESSION_KEY = "ss_session_v3";
+const ACCOUNTS_KEY = "ss_accounts_v3";
+const LAST_KEY = "ss_last_account_v3";
+const TAB_KEY = "ss_active_account_v3";
 
-function loadSession() {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { return null; }
+function loadAccounts() {
+  try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "{}") || {}; } catch { return {}; }
 }
-function saveSession() {
-  if (current) localStorage.setItem(SESSION_KEY, JSON.stringify(current));
-  else localStorage.removeItem(SESSION_KEY);
+function saveAccounts() {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
 }
 
-let current = loadSession();
+let accounts = loadAccounts();
 let pending = null; // tokens seen before the user object is known
 
-// One-time migration: pre-Phase-40 devices hold a multi-account
-// book (ss_accounts_v2) and per-tab pins. Keep ONLY the most
-// recently used account so nobody is logged out by the upgrade —
-// the rest are dropped, because switching between them is gone.
-// (Also clears the pre-Phase-30 legacy single-session keys.)
-if (!current) {
+// One-time migrations into the v3 book, so an upgrade never logs
+// anyone out: (a) Phase 40's single session (ss_session_v3),
+// (b) any pre-Phase-40 multi-account book (ss_accounts_v2) still
+// sitting on devices that never loaded the Phase 40 build.
+if (!Object.keys(accounts).length) {
   try {
-    const book = JSON.parse(localStorage.getItem("ss_accounts_v2") || "{}") || {};
-    const last = localStorage.getItem("ss_last_account_v2");
-    const acc = (last && book[last]) || Object.values(book)[0] || null;
-    if (acc?.accessToken) {
-      current = {
-        user: acc.user || null,
-        memberships: acc.memberships || [],
-        accessToken: acc.accessToken,
-        refreshToken: acc.refreshToken || null,
-        schoolId: acc.schoolId || null,
+    const old = JSON.parse(localStorage.getItem("ss_accounts_v2") || "{}") || {};
+    for (const [id, acc] of Object.entries(old)) if (acc?.accessToken) accounts[id] = acc;
+  } catch { /* ignore */ }
+  try {
+    const s = JSON.parse(localStorage.getItem("ss_session_v3") || "null");
+    if (s?.user?.id && s?.accessToken) {
+      accounts[s.user.id] = {
+        user: s.user,
+        memberships: s.memberships || [],
+        accessToken: s.accessToken,
+        refreshToken: s.refreshToken || null,
+        schoolId: s.schoolId || null,
       };
-      saveSession();
+      localStorage.setItem(LAST_KEY, s.user.id);
     }
-  } catch { /* broken old state: start clean */ }
+  } catch { /* ignore */ }
+  if (Object.keys(accounts).length) saveAccounts();
 }
 localStorage.removeItem("ss_accounts_v2");
 localStorage.removeItem("ss_last_account_v2");
+localStorage.removeItem("ss_session_v3");
 localStorage.removeItem("ss_access");
 localStorage.removeItem("ss_refresh");
 localStorage.removeItem("ss_school");
@@ -54,46 +61,104 @@ localStorage.removeItem("ss_user");
 localStorage.removeItem("ss_memberships");
 try { sessionStorage.removeItem("ss_active_account_v2"); } catch { /* ignore */ }
 
+function tabPin() {
+  return sessionStorage.getItem(TAB_KEY); // null = unset, "" = explicitly none
+}
+let activeId = (() => {
+  const pin = tabPin();
+  if (pin !== null) return pin || null;
+  const last = localStorage.getItem(LAST_KEY);
+  if (last && accounts[last]) { sessionStorage.setItem(TAB_KEY, last); return last; }
+  const first = Object.keys(accounts)[0] || null;
+  if (first) sessionStorage.setItem(TAB_KEY, first);
+  return first;
+})();
+
+function active() {
+  accounts = loadAccounts(); // another tab may have refreshed/added
+  return (activeId && accounts[activeId]) || null;
+}
 function persistActive(patch) {
-  if (current) { Object.assign(current, patch); saveSession(); return; }
+  const acc = active();
+  if (acc) { Object.assign(acc, patch); saveAccounts(); return; }
   pending = { ...(pending || {}), ...patch };
 }
 
 export const session = {
-  get accessToken() { return current?.accessToken || pending?.accessToken || null; },
-  get refreshToken() { return current?.refreshToken || pending?.refreshToken || null; },
-  get schoolId() { return current?.schoolId || pending?.schoolId || null; },
-  get user() { return current?.user || null; },
-  get memberships() { return current?.memberships || []; },
+  get accessToken() { return active()?.accessToken || pending?.accessToken || null; },
+  get refreshToken() { return active()?.refreshToken || pending?.refreshToken || null; },
+  get schoolId() { return active()?.schoolId || pending?.schoolId || null; },
+  get user() { return active()?.user || null; },
+  get memberships() { return active()?.memberships || []; },
   get membership() { return this.memberships.find((m) => m.schoolId === this.schoolId) || null; },
   setTokens(access, refresh) { persistActive({ accessToken: access, refreshToken: refresh }); },
   setSchool(id) { persistActive({ schoolId: id }); },
-  // Save a freshly authenticated account. Single-login rule: this
-  // REPLACES whatever session this device held before — the old
-  // account is not kept anywhere and cannot be switched back to.
+  // Save a freshly authenticated account and pin THIS tab to it.
+  // Accounts open in other tabs stay signed in, untouched — and
+  // there is deliberately NO function anywhere that switches this
+  // tab to an already-saved account: a different account in this
+  // tab always requires a fresh credential sign-in.
   establish(json) {
     const user = json.user;
     if (!user?.id) return;
+    const prev = accounts[user.id];
     const memberships = json.memberships || [];
-    const schoolId = current?.user?.id === user.id && current.schoolId
-      && memberships.some((m) => m.schoolId === current.schoolId)
-      ? current.schoolId
+    const schoolId = prev?.schoolId && memberships.some((m) => m.schoolId === prev.schoolId)
+      ? prev.schoolId
       : memberships[0]?.schoolId || null;
-    current = {
+    accounts[user.id] = {
       user,
       memberships,
       accessToken: json.accessToken,
       refreshToken: json.refreshToken,
       schoolId,
     };
+    saveAccounts();
+    activeId = user.id;
     pending = null;
-    saveSession();
+    sessionStorage.setItem(TAB_KEY, user.id);
+    localStorage.setItem(LAST_KEY, user.id);
   },
-  // Log out: the device's only session is removed entirely.
-  clear() {
-    current = null;
+  snapshot() {
+    return JSON.stringify({ accounts: loadAccounts(), activeId, last: localStorage.getItem(LAST_KEY), pin: tabPin() });
+  },
+  restore(snap) {
+    try {
+      const s = JSON.parse(snap);
+      accounts = s.accounts || {};
+      saveAccounts();
+      activeId = s.activeId || null;
+      pending = null;
+      if (s.pin === null || s.pin === undefined) sessionStorage.removeItem(TAB_KEY);
+      else sessionStorage.setItem(TAB_KEY, s.pin);
+      if (s.last) localStorage.setItem(LAST_KEY, s.last); else localStorage.removeItem(LAST_KEY);
+    } catch { /* ignore */ }
+  },
+  // Phase 35: this tab's account is dead server-side (its session
+  // was revoked, e.g. the member was removed). Drop it from the
+  // book and fall back to another signed-in account if one exists,
+  // so a removed ID never lingers looking alive. (This is a cleanup
+  // of a DEAD login, not a user-facing switch.)
+  dropActiveAndFallback() {
+    accounts = loadAccounts();
+    if (activeId && accounts[activeId]) { delete accounts[activeId]; saveAccounts(); }
+    if (localStorage.getItem(LAST_KEY) === activeId) localStorage.removeItem(LAST_KEY);
     pending = null;
-    saveSession();
+    const next = Object.keys(accounts)[0] || null;
+    activeId = next;
+    if (next) { sessionStorage.setItem(TAB_KEY, next); localStorage.setItem(LAST_KEY, next); }
+    else sessionStorage.setItem(TAB_KEY, "");
+    return !!next;
+  },
+  // Log out THIS tab's account only; accounts open in other tabs
+  // stay signed in.
+  clear() {
+    accounts = loadAccounts();
+    if (activeId && accounts[activeId]) { delete accounts[activeId]; saveAccounts(); }
+    if (localStorage.getItem(LAST_KEY) === activeId) localStorage.removeItem(LAST_KEY);
+    activeId = null;
+    pending = null;
+    sessionStorage.setItem(TAB_KEY, ""); // this tab stays logged out
   },
 };
 
@@ -134,15 +199,14 @@ let deadHandled = false;
 function handleDeadSession() {
   if (deadHandled) return;
   deadHandled = true;
-  session.clear();
-  location.href = "/login";
+  if (session.dropActiveAndFallback()) location.reload();
+  else location.href = "/login";
 }
 
-// Phase 35 + 40: called once when the app shell loads. If this
-// device's session is dead server-side (revoked, e.g. the member
-// was removed, or every membership is inactive), drop it right
-// away and go to the login page — a removed ID must never linger
-// looking signed in.
+// Phase 35: called once when the app shell loads. If this tab's
+// account is dead server-side (session revoked, or every
+// membership removed/suspended), drop it right away instead of
+// showing a zombie login that cannot actually do anything.
 export async function pruneDeadActiveAccount() {
   if (!session.accessToken || !session.user) return;
   const r = await raw("/auth/me", { school: false }).catch(() => null);

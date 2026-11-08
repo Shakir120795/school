@@ -28,7 +28,7 @@ export const messages = {
     "console.testing": "Testing…",
     "console.result": "Result",
     "console.tryDemo": "Want to see it yourself? One-tap demo login:",
-    "console.tryDemoHint": "Tapping a button signs you OUT of the owner account and signs in as that demo account (single-login rule — no switching back). To return, log out and sign in as Owner again.",
+    "console.tryDemoHint": "Tapping a button opens that demo account in this tab. Your owner account stays signed in on this device — open it in another tab or sign in again here. There is no account switcher in the app.",
     "console.viewAsParent": "👨‍👧 View as Parent",
     "console.viewAsTeacher": "👩‍🏫 View as Teacher",
     "console.viewAsPrincipal": "🎓 View as Principal",

@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
+import { installState, promptInstall } from "../install.js";
+
+async function doInstall() { await promptInstall(); }
 
 const router = useRouter();
 const route = useRoute();
@@ -23,11 +26,11 @@ const error = ref("");
 const busy = ref(false);
 
 // A login page can be opened while an account is signed in
-// (26 Oct: login links must always show their own page). Phase 40
-// single-login rule: while someone is signed in, the page shows
-// ONLY the banner (dashboard / logout) — no sign-in form at all,
-// so no login page can ever switch into another account. To use a
-// different account: Logout first, then the form appears.
+// (26 Oct: login links must always show their own page). The banner
+// names the account this TAB is on; signing in below pins THIS tab
+// to the new account — accounts open in other tabs stay untouched.
+// Phase 41: there is no switcher or switch link anywhere; an
+// account opens only by typing its own credentials here.
 const signedInUser = ref(session.accessToken ? currentUser() : null);
 const signedInRole = computed(() => {
   if (!signedInUser.value) return "";
@@ -48,10 +51,12 @@ async function bannerLogout() {
   notice.value = "";
 }
 
-// Phase 40: no session snapshot/restore any more (that belonged to
-// the removed multi-account book). A wrong-role sign-in is ended
-// immediately — the just-created session is logged out server-side
-// and cleared — so a failed/wrong-page attempt leaves NO session.
+// Snapshot/restore of the whole account book, so a sign-in attempt
+// that fails (bad credentials or wrong-role page) changes nothing:
+// a wrong-page sign-in is rolled back and whatever this tab was
+// signed in as before stays exactly as it was.
+function snapshotSession() { return session.snapshot(); }
+function restoreSession(old) { session.restore(old); }
 
 const phone = ref("");
 const code = ref("");
@@ -116,6 +121,7 @@ async function verifyOtp() {
 async function submit() {
   busy.value = true;
   error.value = "";
+  const old = snapshotSession();
   const r = await login(email.value.trim(), password.value);
   busy.value = false;
   if (r.status !== 200) {
@@ -125,20 +131,16 @@ async function submit() {
   // Role-locked pages (Phase 23): the credentials are valid but the
   // account belongs to a different audience — say so clearly instead
   // of silently landing on the wrong app. A wrong-page attempt is a
-  // FAILED attempt: the session it just created is logged out and
-  // cleared, leaving the device signed out (Phase 40).
+  // FAILED attempt: the pre-attempt state is restored untouched.
   const roles = myMemberships().map((m) => m.role);
-  const wrongPage = async (msg) => {
-    await api("/auth/logout", { method: "POST", body: {} }).catch(() => {});
-    session.clear();
-    error.value = msg;
-  };
-  if (variant === "parent" && !roles.includes("PARENT")) { await wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
-  if (variant === "teacher" && !roles.includes("TEACHER")) { await wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
-  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { await wrongPage("This page is for the school office — admin and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
-  if (variant === "admin" && !currentUser()?.isPlatformAdmin) { await wrongPage("This page is only for the platform admin."); return; }
-  // Success: this sign-in is the device's ONE session (any previous
-  // session was already replaced by login) — land on its home.
+  const wrongPage = (msg) => { restoreSession(old); error.value = msg; };
+  if (variant === "parent" && !roles.includes("PARENT")) { wrongPage("This page is for parents only. Your account is not a parent account — please use the Teacher or School login page."); return; }
+  if (variant === "teacher" && !roles.includes("TEACHER")) { wrongPage("This page is for teachers only. Your account does not have a teacher role."); return; }
+  if (variant === "school" && !roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x))) { wrongPage("This page is for the school office — admin and office team. Teachers use the Teacher login page, parents use the Parent login page."); return; }
+  if (variant === "admin" && !currentUser()?.isPlatformAdmin) { wrongPage("This page is only for the platform admin."); return; }
+  // Success: THIS tab now shows the new account; accounts open in
+  // other tabs stay signed in as they were (Phase 41 — accessible
+  // together, but never via a switch link).
   if (currentUser()?.isPlatformAdmin) { router.push("/console"); return; }
   router.push(myRole() === "PARENT" ? "/parent" : "/");
 }
@@ -158,7 +160,7 @@ async function submit() {
           <button type="button" class="btn btn-primary flex-1 !py-2 !text-sm" @click="goDashboard">Go to my dashboard</button>
           <button type="button" class="btn btn-ghost flex-1 !py-2 !text-sm" @click="bannerLogout">Logout</button>
         </div>
-        <p class="text-xs text-blue-700/70 mt-2">To sign in with a different account, tap <b>Logout</b> first — then sign in with that account. Only one account stays signed in on this device; accounts never switch into each other.</p>
+        <p class="text-xs text-blue-700/70 mt-2">Want a different account in this tab? Sign in below with that account's own ID & password. Accounts open in your other tabs stay as they are — this app has no account switcher.</p>
       </div>
 
       <!-- CHOOSER (plain /login): three doors, no form. The admin
@@ -183,8 +185,8 @@ async function submit() {
         </div>
       </template>
 
-      <!-- PARENT (Phase 40: form hidden while anyone is signed in) -->
-      <template v-if="variant === 'parent' && !signedInUser">
+      <!-- PARENT -->
+      <template v-if="variant === 'parent'">
         <form v-if="parentMode === 'password'" @submit.prevent="submit">
           <div class="text-lg font-bold mb-1">{{ pageTitle }}</div>
           <p class="text-sm text-slate-500 mb-4">{{ pageNote }}</p>
@@ -213,8 +215,8 @@ async function submit() {
         </form>
       </template>
 
-      <!-- TEACHER / SCHOOL / ADMIN (form hidden while signed in) -->
-      <form v-else-if="locked && !signedInUser" @submit.prevent="submit">
+      <!-- TEACHER / SCHOOL / ADMIN -->
+      <form v-else-if="locked" @submit.prevent="submit">
         <div class="text-lg font-bold mb-1">{{ pageTitle }}</div>
         <p class="text-sm text-slate-500 mb-4">{{ pageNote }}</p>
         <label class="label">Email</label>
@@ -229,11 +231,13 @@ async function submit() {
         <router-link class="underline font-semibold" to="/login">← All logins</router-link>
       </div>
     </div>
+    <button v-if="installState === 'available'" type="button" class="btn mt-5 !w-auto px-5 !py-2.5 bg-white/10 text-white hover:bg-white/20" @click="doInstall">📲 Install App</button>
+    <p v-else-if="installState === 'ios'" class="text-xs text-white/70 mt-5 text-center max-w-xs">📲 <b>Install the app:</b> tap the <b>Share</b> button → <b>“Add to Home Screen”</b> → <b>Add</b></p>
     <p v-if="variant === 'parent'" class="text-xs text-white/60 mt-5 flex flex-wrap justify-center gap-x-3 gap-y-1">
       <router-link to="/privacy" class="underline">Privacy Policy</router-link>
       <router-link to="/terms" class="underline">Terms of Service</router-link>
       <router-link to="/safety" class="underline">Safety & Security</router-link>
     </p>
-    <p class="text-[11px] text-white/40 mt-2">Install: browser menu → “Add to Home screen”</p>
+    <p v-if="installState === 'hidden'" class="text-[11px] text-white/40 mt-2">Install: browser menu → “Add to Home screen”</p>
   </div>
 </template>
