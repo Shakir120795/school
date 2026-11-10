@@ -27,8 +27,26 @@ function ringStyle(p) {
   return { c, off: c - (c * (p ?? 0)) / 100 };
 }
 function stripDays(child) {
-  // Last 14 attendance records, oldest → newest, as colored dots.
-  return (child.attendances || []).slice(0, 14).reverse();
+  // Last 10 attendance records, oldest → newest, as colored dots
+  // (Phase 47b: shakir — 'last 10 day ki attendance dot se show ho').
+  return (child.attendances || []).slice(0, 10).reverse();
+}
+
+// Phase 47b: present wale sabse taze din ka entry/exit time —
+// gate scan se aata hai (entryAt/exitAt). Jis record me koi bhi
+// time bhara ho, wahi dikhta hai; time school ke timezone me.
+function fmtTime(ts) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: school.value?.timezone || undefined });
+}
+function entryLine(child) {
+  const a = (child.attendances || []).find((x) => ["PRESENT", "LATE"].includes(x.status) && (x.entryAt || x.exitAt));
+  if (!a) return null;
+  const d = new Date(a.localDate);
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const when = sameDay ? "Today" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return { when, entry: fmtTime(a.entryAt), exit: fmtTime(a.exitAt) };
 }
 const dotClass = (s) =>
   s === "PRESENT" ? "bg-emerald-500" : s === "LATE" ? "bg-amber-500" : s === "ABSENT" ? "bg-rose-500" : "bg-slate-300";
@@ -100,22 +118,9 @@ onMounted(load);
       </div>
     </div>
 
-    <!-- Phase 45: BADE asaan buttons — 2 ek line me, bada icon,
-         bada label, neeche ek chhoti asaan line. Chhoti 4-wali
-         tiles kam padhe-likhe parents ke liye mushkil thi. -->
-    <div class="grid grid-cols-2 gap-3 mb-5">
-      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe">📅</span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
-      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7">🔔</span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
-      <router-link to="/homework" class="big-btn"><span class="big-ico" style="background:#ffedd5">📚</span><span><span class="big-label">Homework</span><span class="big-sub">Today's homework</span></span></router-link>
-      <router-link to="/fees" class="big-btn"><span class="big-ico" style="background:#fce7f3">💳</span><span><span class="big-label">Fees</span><span class="big-sub">Fees &amp; receipts</span></span></router-link>
-      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff">📣</span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
-      <router-link to="/leave" class="big-btn"><span class="big-ico" style="background:#ede9fe">✉️</span><span><span class="big-label">Leave</span><span class="big-sub">Tell school about leave</span></span></router-link>
-      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3">🚌</span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
-      <router-link to="/timetable" class="big-btn"><span class="big-ico" style="background:#e0f2fe">🗓️</span><span><span class="big-label">Time Table</span><span class="big-sub">Daily class timings</span></span></router-link>
-      <a href="#teachers" class="big-btn"><span class="big-ico" style="background:#dcfce7">🧑‍🏫</span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
-      <a href="#prefs" class="big-btn"><span class="big-ico" style="background:#f1f5f9">⚙️</span><span><span class="big-label">More</span><span class="big-sub">Settings &amp; preferences</span></span></a>
-    </div>
-
+    <!-- Phase 47b: baccho ke cards SABSE UPAR (shakir: 'inhe upr
+         set kro') — parent app kholte hi pehle apne bacche dikhte
+         hain, bade buttons unke neeche gaye. -->
     <div v-if="loading" class="card text-slate-500 text-sm mb-4 animate-pulse">Loading your children…</div>
     <div v-else-if="!children.length" class="card text-slate-500 text-sm mb-4">
       No children are linked to your account yet. Ask the school office to link your guardian profile.
@@ -131,6 +136,12 @@ onMounted(load);
           </div>
         </div>
         <div class="rounded-2xl border px-4 py-3 mb-3 text-center text-lg font-extrabold" :class="statusBanner(child).cls">{{ statusBanner(child).emoji }} {{ statusBanner(child).text }}</div>
+        <div v-if="entryLine(child)" class="flex items-center justify-center gap-2 text-sm font-bold text-slate-700 bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 mb-3">
+          <span>🕗 {{ entryLine(child).when }}</span>
+          <span class="text-emerald-700">Entry: {{ entryLine(child).entry }}</span>
+          <span class="text-slate-300">|</span>
+          <span class="text-rose-700">Exit: {{ entryLine(child).exit }}</span>
+        </div>
 
         <div class="flex items-center gap-4">
           <svg class="w-[76px] h-[76px]" viewBox="0 0 76 76">
@@ -140,7 +151,7 @@ onMounted(load);
             <text x="38" y="42" text-anchor="middle" font-size="14" font-weight="800" class="fill-slate-800">{{ attPct(child) ?? "–" }}%</text>
           </svg>
           <div class="flex-1">
-            <div class="text-xs font-semibold text-slate-500 mb-1.5">Attendance (recent school days)</div>
+            <div class="text-xs font-semibold text-slate-500 mb-1.5">Last 10 school days</div>
             <div class="flex gap-1.5 flex-wrap">
               <span v-for="d in stripDays(child)" :key="d.id" class="w-3.5 h-3.5 rounded-full" :class="dotClass(d.status)"
                 :title="`${new Date(d.localDate).toLocaleDateString()} · ${d.status}`"></span>
@@ -154,6 +165,21 @@ onMounted(load);
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Phase 45 ke bade buttons — Phase 47b me baccho ke cards
+         ke NEECHE aa gaye (pehle bacche, phir buttons). -->
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe">📅</span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
+      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7">🔔</span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
+      <router-link to="/homework" class="big-btn"><span class="big-ico" style="background:#ffedd5">📚</span><span><span class="big-label">Homework</span><span class="big-sub">Today's homework</span></span></router-link>
+      <router-link to="/fees" class="big-btn"><span class="big-ico" style="background:#fce7f3">💳</span><span><span class="big-label">Fees</span><span class="big-sub">Fees &amp; receipts</span></span></router-link>
+      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff">📣</span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
+      <router-link to="/leave" class="big-btn"><span class="big-ico" style="background:#ede9fe">✉️</span><span><span class="big-label">Leave</span><span class="big-sub">Tell school about leave</span></span></router-link>
+      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3">🚌</span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
+      <router-link to="/timetable" class="big-btn"><span class="big-ico" style="background:#e0f2fe">🗓️</span><span><span class="big-label">Time Table</span><span class="big-sub">Daily class timings</span></span></router-link>
+      <a href="#teachers" class="big-btn"><span class="big-ico" style="background:#dcfce7">🧑‍🏫</span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
+      <a href="#prefs" class="big-btn"><span class="big-ico" style="background:#f1f5f9">⚙️</span><span><span class="big-label">More</span><span class="big-sub">Settings &amp; preferences</span></span></a>
     </div>
 
     <div class="grid md:grid-cols-2 gap-4 items-start">
