@@ -13,6 +13,16 @@ import { PushNotifications } from "@capacitor/push-notifications";
 import { api, session } from "./api.js";
 
 export async function initPush() {
+  // Phase 49b (10 Nov 2026): native push FILHAAL BAND hai.
+  // Shakir ke phone par teeno apps khulte hi band ho rahi thi —
+  // wajah yahi thi: Firebase (google-services.json) abhi app me
+  // hai hi nahi, aur bina uske PushNotifications.register()
+  // native taraf crash karta hai. Pehli baar permission popup
+  // par ruka raha, Allow ke baad har launch par register() seedha
+  // takraya. Jab Firebase setup ho jayega, app builds me
+  // VITE_NATIVE_PUSH=on karke ye rasta khulega. Tab tak app ke
+  // andar notifications app ke Inbox me hi aati hain.
+  if (import.meta.env.VITE_NATIVE_PUSH !== "on") return;
   if (!Capacitor.isNativePlatform() || !session.accessToken || !session.schoolId) return;
   try {
     const perm = await PushNotifications.requestPermissions();
