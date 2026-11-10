@@ -26,6 +26,10 @@ async function load() {
     const r = await api("/platform/schools", { school: false });
     if (r.status === 200) schools.value = r.json.schools;
     else err.value = r.json?.error || "Could not load schools";
+  } catch {
+    // Network gir jaye to khali "No schools yet" dikhna galat hai —
+    // error dikhao taaki asli wajah pata chale (Phase 44b).
+    err.value = "Could not load schools — check the connection and reload the page.";
   } finally {
     loading.value = false;
   }

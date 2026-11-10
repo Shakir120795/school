@@ -22,6 +22,12 @@ const msg = ref("");
 
 const isManager = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(role);
 
+// Phase 44b: dashboard header band ki pehchan — school ke initials
+// aur rang tile (App.vue wale hi helpers).
+const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
+function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
+const schoolInitials = computed(() => (school.value?.name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase());
+
 // Phase 29 WS4: setup wizard (managers only). One aggregate call;
 // a failed check leaves setup null and the card simply stays hidden
 // rather than breaking the dashboard.
@@ -149,15 +155,25 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
   <PlatformDashboard v-if="role === 'PLATFORM_ADMIN'" />
   <ParentView v-else-if="role === 'PARENT'" />
   <div v-else>
-    <!-- Header -->
-    <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
-      <div>
-        <h1 class="text-2xl font-extrabold tracking-tight">{{ school?.name || "Dashboard" }}</h1>
-        <p class="text-sm text-slate-500">{{ A?.date || "" }} · Welcome back, {{ user?.fullName }} ({{ role }})</p>
-      </div>
-      <div class="flex gap-2">
-        <button type="button" class="btn btn-ghost" @click="router.push('/attendance')">📋 Register</button>
-        <button type="button" class="btn btn-primary" @click="router.push('/notices')">✉️ New notice</button>
+    <!-- Header — Phase 44b: school ki apni band, peeche bada halka
+         logo/initials watermark ke roop me (cards ke upar nahi,
+         band ke andar hi dikhta hai). -->
+    <div class="relative overflow-hidden rounded-3xl bg-white border border-slate-200 px-4 py-4 md:px-5 mb-5">
+      <img v-if="school?.logoUrl" :src="school.logoUrl" alt="" aria-hidden="true" class="pointer-events-none absolute -right-4 -top-6 w-36 h-36 object-contain opacity-10" />
+      <div v-else-if="school" aria-hidden="true" class="pointer-events-none absolute -right-2 -top-8 text-[104px] leading-none font-black text-[#0a2436] opacity-[0.07] select-none">{{ schoolInitials }}</div>
+      <div class="relative flex flex-wrap items-end justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <img v-if="school?.logoUrl" :src="school.logoUrl" alt="" class="w-11 h-11 rounded-xl object-contain bg-white border shrink-0" />
+          <span v-else-if="school" class="grid place-items-center w-11 h-11 rounded-xl text-white font-bold shrink-0" :style="{ background: tileColor(school.name) }">{{ schoolInitials }}</span>
+          <div class="min-w-0">
+            <h1 class="text-2xl font-extrabold tracking-tight truncate">{{ school?.name || "Dashboard" }}</h1>
+            <p class="text-sm text-slate-500">{{ A?.date || "" }} · Welcome back, {{ user?.fullName }} ({{ role }})</p>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-ghost" @click="router.push('/attendance')">📋 Register</button>
+          <button type="button" class="btn btn-primary" @click="router.push('/notices')">✉️ New notice</button>
+        </div>
       </div>
     </div>
 

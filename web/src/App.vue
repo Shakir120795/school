@@ -10,6 +10,10 @@ const unreadCount = ref(0);
 // loader schoolId badalte hi dobara chalta hai (route watch se).
 const myChildren = ref([]);
 const loadedSchoolId = ref(null);
+// School selector me kachchi ID ki jagah school ka NAAM dikhe —
+// naam /schools/mine se aate hain (login wale memberships me sirf
+// ID hoti hai).
+const schoolNames = ref({});
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
 function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
 function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
@@ -20,6 +24,12 @@ async function loadBranding() {
   loadedSchoolId.value = sidNow;
   const sres = await api(`/schools/${sidNow}`).catch(() => null);
   if (sres?.json?.school) schoolInfo.value = sres.json.school;
+  const mres = await api("/schools/mine", { school: false }).catch(() => null);
+  if (mres?.json?.memberships) {
+    const map = {};
+    for (const m of mres.json.memberships) if (m.school?.id) map[m.school.id] = m.school.name;
+    schoolNames.value = map;
+  }
   if (myRole() === "PARENT") {
     const cres = await api(`/schools/${sidNow}/my-children`).catch(() => null);
     myChildren.value = cres?.json?.children || [];
@@ -142,8 +152,8 @@ function switchSchool(id) {
     <!-- Phase 44 watermark: har school login par peeche halka sa
          usi school ka logo (na ho to naam) — print me kabhi nahi. -->
     <div v-if="schoolInfo && role !== 'PLATFORM_ADMIN'" aria-hidden="true" class="pointer-events-none fixed inset-0 md:left-64 z-0 flex items-center justify-center overflow-hidden print:hidden">
-      <img v-if="schoolInfo.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-[380px] h-[380px] max-w-[80vw] object-contain opacity-[0.05]" />
-      <div v-else class="text-6xl md:text-7xl font-black text-[#0a2436] opacity-[0.04] text-center leading-tight px-6 select-none">{{ schoolInfo.name }}</div>
+      <img v-if="schoolInfo.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-[380px] h-[380px] max-w-[80vw] object-contain opacity-[0.07]" />
+      <div v-else class="text-6xl md:text-7xl font-black text-[#0a2436] opacity-[0.06] text-center leading-tight px-6 select-none">{{ schoolInfo.name }}</div>
     </div>
     <!-- Desktop sidebar -->
     <aside class="hidden md:flex md:w-64 md:flex-col bg-gradient-to-b from-[#0a2436] via-[#0b2e3f] to-[#07332a] text-white p-5 gap-1">
@@ -190,7 +200,7 @@ function switchSchool(id) {
       <div v-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
         <span class="label !mb-0">School</span>
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
-          <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ m.schoolId }} ({{ m.role }})</option>
+          <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ schoolNames[m.schoolId] || m.schoolId }} ({{ m.role }})</option>
         </select>
       </div>
       <div v-if="(installState === 'available' || installState === 'ios' || installState === 'menu') && !installDismissed" class="mb-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 flex flex-wrap items-center gap-2">
