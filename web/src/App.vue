@@ -25,6 +25,14 @@ async function loadBranding() {
   loadedSchoolId.value = sidNow;
   const sres = await api(`/schools/${sidNow}`).catch(() => null);
   if (sres?.json?.school) schoolInfo.value = sres.json.school;
+  // Phase 45b: pichli baar ka map pehle paint par hi dikha do —
+  // school switch (reload) par ek pal ke liye kachchi ID aur
+  // "No children linked" flash hota tha. Server se taza map
+  // aate hi cache bhi update ho jata hai.
+  try {
+    const cached = JSON.parse(localStorage.getItem("ss_school_info_v1") || "null");
+    if (cached && !Object.keys(schoolInfoById.value).length) schoolInfoById.value = cached;
+  } catch { /* cache kharab ho to ignore */ }
   const mres = await api("/schools/mine", { school: false }).catch(() => null);
   if (mres?.json?.memberships) {
     const map = {};
@@ -32,6 +40,7 @@ async function loadBranding() {
       if (m.school?.id) map[m.school.id] = { name: m.school.name, logoUrl: m.school.logoUrl || null, childrenCount: m.childrenCount || 0 };
     }
     schoolInfoById.value = map;
+    try { localStorage.setItem("ss_school_info_v1", JSON.stringify(map)); } catch { /* storage full ho to ignore */ }
   }
   if (myRole() === "PARENT") {
     const cres = await api(`/schools/${sidNow}/my-children`).catch(() => null);
