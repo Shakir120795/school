@@ -15,6 +15,8 @@ const loadedSchoolId = ref(null);
 // ID hoti hai). Phase 45: map me logo + childrenCount bhi —
 // parent ke school cards ke liye.
 const schoolInfoById = ref({});
+// Parent school dropdown khula hai ya band (Phase 46b).
+const schoolMenuOpen = ref(false);
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
 function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
 function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
@@ -209,12 +211,23 @@ function switchSchool(id) {
     </header>
 
     <main class="relative z-10 flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
-      <!-- Phase 45: parent ke liye bade school cards — har school
-           ka naam + uske bacche wahan kitne; school SIRF tap par
-           badalta hai, apne aap kabhi nahi. -->
+      <!-- Phase 45/46b: parent ke schools ab ek band DROPDOWN me
+           hain (shakir: bade cards hamesha khule rehte the, screen
+           kha jate the). Band haal me sirf current school ki ek
+           line; tap karne par list khulti hai — naam + bacche
+           count ke saath; school SIRF tap par badalta hai. -->
       <div v-if="role === 'PARENT' && memberships.length > 1" class="mb-4">
-        <div class="text-xs font-bold text-slate-500 mb-2">🏫 YOUR SCHOOLS — TAP TO OPEN</div>
-        <div class="grid gap-2">
+        <button type="button" class="w-full flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm" @click="schoolMenuOpen = !schoolMenuOpen" :aria-expanded="schoolMenuOpen">
+          <img v-if="schoolInfoById[session.schoolId]?.logoUrl" :src="schoolInfoById[session.schoolId].logoUrl" class="w-10 h-10 rounded-xl object-contain bg-white border shrink-0" alt="" />
+          <span v-else class="grid place-items-center w-10 h-10 rounded-xl text-white text-xs font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[session.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[session.schoolId]?.name || '?') }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-[10px] font-bold tracking-wide text-slate-400">SCHOOL</span>
+            <span class="block font-bold truncate leading-tight">{{ schoolInfoById[session.schoolId]?.name || session.schoolId }}</span>
+            <span class="block text-xs text-slate-500">{{ schoolInfoById[session.schoolId]?.childrenCount ? `Your ${schoolInfoById[session.schoolId].childrenCount} child${schoolInfoById[session.schoolId].childrenCount === 1 ? "" : "ren"} in this school` : "No children linked yet" }}</span>
+          </span>
+          <span class="text-slate-400 text-xl shrink-0">{{ schoolMenuOpen ? "▴" : "▾" }}</span>
+        </button>
+        <div v-if="schoolMenuOpen" class="grid gap-2 mt-2">
           <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
             class="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left shadow-sm"
             :class="m.schoolId === session.schoolId ? 'border-brand-600 ring-2 ring-brand-100' : 'border-slate-200'">
