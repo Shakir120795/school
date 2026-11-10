@@ -29,7 +29,12 @@ function ringStyle(p) {
 function stripDays(child) {
   // Last 10 attendance records, oldest → newest, as colored dots
   // (Phase 47b: shakir — 'last 10 day ki attendance dot se show ho').
-  return (child.attendances || []).slice(0, 10).reverse();
+  // Phase 47c: strip hamesha pure 10 dots ki — records kam hon to
+  // shuru me halke grey 'no record' dots pad jate hain, taaki
+  // parent ko phone par pure 10 dots hi dikhen.
+  const days = (child.attendances || []).slice(0, 10).reverse();
+  while (days.length < 10) days.unshift({ status: "NONE" });
+  return days;
 }
 
 // Phase 47b: present wale sabse taze din ka entry/exit time —
