@@ -64,6 +64,7 @@ import { useRoute, useRouter } from "vue-router";
 import { lang, setLang, availableLangs } from "./i18n.js";
 import { session, currentUser, myRole, myMemberships, api, pruneDeadActiveAccount } from "./api.js";
 import { installState, promptInstall } from "./install.js";
+import Icon from "./components/Icon.vue";
 
 // PWA install banner (Phase 41): shown until the app is installed
 // or the user dismisses it on this device.
@@ -92,28 +93,31 @@ const memberships = computed(() => { void navTick.value; return myMemberships();
 // inside the sidebar of whoever was still logged in.)
 const isLogin = computed(() => route.meta.public === true);
 
+// Phase 48: icon ab emoji nahi — components/Icon.vue ke modern
+// stroke SVG ke NAAM hain (shakir: 'emoji old wale h, modern kro').
 const NAV = [
-  { to: "/", label: "Dashboard", icon: "▦", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PLATFORM_ADMIN"] },
-  { to: "/students", label: "My Students", icon: "🎓", roles: ["TEACHER"] },
-  { to: "/people", label: "Students & Staff", icon: "👥", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
-  { to: "/attendance", label: "Attendance", icon: "✓", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
-  { to: "/scanner", label: "Gate Scanner", icon: "▣", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"] },
-  { to: "/pickup", label: "Pickup", icon: "🛡️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
-  { to: "/rollcall", label: "Roll-Call", icon: "📋", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
-  { to: "/homework", label: "Homework", icon: "📚", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
-  { to: "/leave", label: "Leave", icon: "✉️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
-  { to: "/fees", label: "Fees", icon: "💳", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF", "PARENT"] },
-  { to: "/timetable", label: "Timetable", icon: "🗓️", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
-  { to: "/exams", label: "Exams", icon: "📝", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
-  { to: "/data", label: "Import/Export", icon: "📥", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
-  { to: "/console", label: "Super Admin", icon: "👑", roles: ["PLATFORM_ADMIN"] },
-  { to: "/support", label: "Support & PTM", icon: "🎫", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
-  { to: "/notices", label: "Notices", icon: "✉", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
-  { to: "/parent", label: "My Children", icon: "🏠", roles: ["PARENT"] },
-  { to: "/notices", label: "Notices", icon: "✉", roles: ["PARENT"] },
-  { to: "/notifications", label: "Notifications", icon: "🔔", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"], badge: true },
-  { to: "/team", label: "Team & Access", icon: "🔐", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
-  { to: "/settings", label: "Settings", icon: "⚙", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
+  { to: "/", label: "Dashboard", icon: "grid", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PLATFORM_ADMIN"] },
+  { to: "/students", label: "My Students", icon: "cap", roles: ["TEACHER"] },
+  { to: "/people", label: "Students & Staff", icon: "users", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
+  { to: "/attendance", label: "Attendance", icon: "check-circle", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
+  { to: "/scanner", label: "Gate Scanner", icon: "scan", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF"] },
+  { to: "/pickup", label: "Pickup", icon: "shield", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
+  { to: "/rollcall", label: "Roll-Call", icon: "clipboard", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
+  { to: "/homework", label: "Homework", icon: "book", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
+  { to: "/leave", label: "Leave", icon: "mail", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
+  { to: "/fees", label: "Fees", icon: "card", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF", "PARENT"] },
+  { to: "/timetable", label: "Timetable", icon: "calendar", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
+  { to: "/exams", label: "Exams", icon: "file", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
+  { to: "/data", label: "Import/Export", icon: "download", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
+  { to: "/console", label: "Super Admin", icon: "crown", roles: ["PLATFORM_ADMIN"] },
+  { to: "/support", label: "Support & PTM", icon: "chat", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
+  { to: "/notices", label: "Notices", icon: "megaphone", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
+  { to: "/parent", label: "My Children", icon: "home", roles: ["PARENT"] },
+  { to: "/notices", label: "Notices", icon: "megaphone", roles: ["PARENT"] },
+  { to: "/parent?open=prefs", label: "Settings", icon: "sliders", roles: ["PARENT"] },
+  { to: "/notifications", label: "Notifications", icon: "bell", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"], badge: true },
+  { to: "/team", label: "Team & Access", icon: "lock", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
+  { to: "/settings", label: "Settings", icon: "sliders", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
 // Role themes from the UI reference: Parent = blue, Teacher = green,
@@ -127,6 +131,18 @@ const THEME_VARS = {
 };
 const themeStyle = computed(() => THEME_VARS[role.value] || {});
 const mobileNav = computed(() => {
+  // Phase 48: parent ki bottom bar FIXED hai (shakir: 'isme home
+  // ka option h hi nahi — pickup hata kr home set kro, or setting
+  // ka option nhi h'): Home, Homework, Leave, Fees, Timetable,
+  // Settings. Pickup ab sirf home page ke bade button me hai.
+  if (role.value === "PARENT") return [
+    { to: "/parent", label: "Home", icon: "home" },
+    { to: "/homework", label: "Homework", icon: "book" },
+    { to: "/leave", label: "Leave", icon: "mail" },
+    { to: "/fees", label: "Fees", icon: "card" },
+    { to: "/timetable", label: "Timetable", icon: "calendar" },
+    { to: "/parent?open=prefs", label: "Settings", icon: "sliders" },
+  ];
   const items = nav.value.slice(0, 5);
   const scanIdx = items.findIndex((n) => n.to === "/scanner");
   if (scanIdx > -1 && items.length === 5) {
@@ -196,7 +212,7 @@ function switchSchool(id) {
       <router-link v-for="n in nav" :key="n.to + n.label" :to="n.to"
         class="rounded-xl px-3 py-2.5 text-sm hover:bg-white/10"
         :class="route.path === n.to ? 'bg-white/15 font-semibold' : ''">
-        <span class="mr-2">{{ n.icon }}</span>{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
+        <Icon :name="n.icon" :size="16" class="inline-block align-[-3px] mr-2" />{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
       </router-link>
       <div class="mt-auto text-xs text-slate-300">
         <div class="mb-3">
@@ -291,11 +307,11 @@ function switchSchool(id) {
     <!-- Mobile bottom nav -->
     <nav class="md:hidden fixed bottom-0 inset-x-0 z-20 safe-b bg-white/95 backdrop-blur border-t border-slate-200 flex justify-around items-end px-1 pt-1.5">
       <router-link v-for="n in mobileNav" :key="n.to + n.label" :to="n.to"
-        class="relative flex flex-col items-center gap-0.5 text-[10px] font-medium px-2.5 py-1.5 rounded-2xl min-w-14"
-        :class="route.path === n.to ? 'text-brand-700' : 'text-slate-500'">
+        class="relative flex flex-col items-center gap-0.5 text-[10px] font-medium px-2.5 py-1.5 rounded-2xl"
+        :class="[mobileNav.length > 5 ? 'min-w-11 px-1.5' : 'min-w-14', (n.to.includes('?') ? route.fullPath === n.to : route.path === n.to && !route.query.open) ? 'text-brand-700' : 'text-slate-500']">
         <span v-if="n.to === '/scanner'"
-          class="grid place-items-center w-12 h-12 -mt-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white text-2xl shadow-lg shadow-emerald-600/30 border-4 border-white">{{ n.icon }}</span>
-        <span v-else class="text-[22px] leading-none py-1 px-3 rounded-full" :class="route.path === n.to ? 'bg-brand-50' : ''">{{ n.icon }}</span>
+          class="grid place-items-center w-12 h-12 -mt-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-lg shadow-emerald-600/30 border-4 border-white"><Icon :name="n.icon" :size="24" /></span>
+        <span v-else class="grid place-items-center py-1 px-3 rounded-full" :class="(n.to.includes('?') ? route.fullPath === n.to : route.path === n.to && !route.query.open) ? 'bg-brand-50' : ''"><Icon :name="n.icon" :size="22" /></span>
         {{ n.label.split(" ")[0] }}
         <span v-if="n.badge && unreadCount" class="absolute top-0.5 right-1.5 bg-red-600 text-white text-[9px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
       </router-link>

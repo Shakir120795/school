@@ -1,6 +1,10 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { api, session, currentUser } from "../api.js";
+import Icon from "../components/Icon.vue";
+
+const route = useRoute();
 
 const sid = session.schoolId;
 const user = currentUser();
@@ -12,6 +16,60 @@ const inbox = ref([]);
 const unread = ref(0);
 const whatsapp = ref(true);
 const msg = ref("");
+
+// Phase 48: parent apne bacche ki info khud bhare/badle —
+// classrooms (class dropdown ke liye) + edit form ki state.
+const classrooms = ref([]);
+const editingId = ref(null);
+const form = ref({});
+const saving = ref(false);
+const editMsg = ref("");
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
+function openEdit(child) {
+  editMsg.value = "";
+  form.value = {
+    fullName: child.fullName || "",
+    classroomId: child.classroomId || "",
+    dateOfBirth: child.dateOfBirth ? String(child.dateOfBirth).slice(0, 10) : "",
+    gender: child.gender || "",
+    bloodGroup: child.bloodGroup || "",
+    fatherName: child.fatherName || "",
+    motherName: child.motherName || "",
+    address: child.address || "",
+    photoUrl: child.photoUrl || "",
+  };
+  editingId.value = child.id;
+}
+function onPhoto(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    form.value.photoUrl = canvas.toDataURL("image/jpeg", 0.85);
+    URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(file);
+}
+async function saveEdit(child) {
+  saving.value = true;
+  editMsg.value = "";
+  try {
+    const r = await api(`/schools/${sid}/my-children/${child.id}`, { method: "PATCH", body: { ...form.value } });
+    if (r.status === 200) {
+      editingId.value = null;
+      await load();
+    } else {
+      editMsg.value = `Could not save (${r.json?.error || r.status}). Please try again.`;
+    }
+  } finally {
+    saving.value = false;
+  }
+}
 
 const COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2"];
 const initials = (name) => name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
@@ -80,13 +138,15 @@ function statusBanner(child) {
 async function load() {
   loading.value = true;
   try {
-    const [c, t, n, s] = await Promise.all([
+    const [c, t, n, s, rooms] = await Promise.all([
       api(`/schools/${sid}/my-children`),
       api(`/schools/${sid}/teachers`),
       api(`/schools/${sid}/my-notifications`),
       api(`/schools/${sid}`).catch(() => null),
+      api(`/schools/${sid}/classrooms`).catch(() => null),
     ]);
     school.value = s?.json?.school || null;
+    classrooms.value = rooms?.json?.classrooms || [];
     children.value = c.json.children || [];
     teachers.value = t.json.teachers || [];
     if (n.status === 200) {
@@ -104,7 +164,14 @@ async function savePref() {
   });
   msg.value = r.status < 300 ? "Preference saved." : "Could not save preference.";
 }
-onMounted(load);
+onMounted(async () => {
+  await load();
+  // Phase 48: neeche wali bar / sidebar ke Settings se aaye to
+  // seedha Preferences hisse par le jao.
+  if (route.query.open === "prefs") {
+    setTimeout(() => document.getElementById("prefs")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+  }
+});
 </script>
 
 <template>
@@ -134,10 +201,15 @@ onMounted(load);
     <div class="grid md:grid-cols-2 gap-4 items-start mb-4">
       <div v-for="(child, i) in children" :key="child.id" class="card">
         <div class="flex items-center gap-3 mb-3">
-          <div class="avatar w-14 h-14 text-xl" :style="{ background: COLORS[i % COLORS.length] }">{{ initials(child.fullName) }}</div>
+          <img v-if="child.photoUrl" :src="child.photoUrl" alt="" class="w-14 h-14 rounded-full object-cover border shrink-0" />
+          <div v-else class="avatar w-14 h-14 text-xl" :style="{ background: COLORS[i % COLORS.length] }">{{ initials(child.fullName) }}</div>
           <div class="min-w-0">
             <div class="font-extrabold text-xl leading-tight truncate">{{ child.fullName }}</div>
             <div class="text-xs text-slate-500">Adm {{ child.admissionNo }} · Class {{ child.classroom?.name }}<span v-if="child.classroom?.section">-{{ child.classroom.section }}</span></div>
+            <div v-if="child.bloodGroup || child.dateOfBirth" class="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span v-if="child.bloodGroup" class="inline-flex items-center gap-1"><Icon name="drop" :size="12" class="text-rose-500" />Blood group {{ child.bloodGroup }}</span>
+              <span v-if="child.dateOfBirth">Born {{ new Date(child.dateOfBirth).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) }}</span>
+            </div>
           </div>
         </div>
         <div class="rounded-2xl border px-4 py-3 mb-3 text-center text-lg font-extrabold" :class="statusBanner(child).cls">{{ statusBanner(child).emoji }} {{ statusBanner(child).text }}</div>
@@ -169,22 +241,85 @@ onMounted(load);
             </div>
           </div>
         </div>
+
+        <!-- Phase 48: parent khud bacche ki jaankari bhare/badle -->
+        <button v-if="editingId !== child.id" type="button" class="mt-3 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-brand-700 inline-flex items-center justify-center gap-2" @click="openEdit(child)">
+          <Icon name="pencil" :size="15" /> Edit child's information
+        </button>
+        <form v-else class="mt-3 border-t border-slate-100 pt-3 grid gap-2.5" @submit.prevent="saveEdit(child)">
+          <div>
+            <span class="label">Child's full name</span>
+            <input v-model="form.fullName" class="input" required minlength="2" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <span class="label">Class</span>
+              <select v-model="form.classroomId" class="input">
+                <option value="">— Select class —</option>
+                <option v-for="r in classrooms" :key="r.id" :value="r.id">{{ r.name }}<span v-if="r.section">-{{ r.section }}</span></option>
+              </select>
+            </div>
+            <div>
+              <span class="label">Date of birth</span>
+              <input v-model="form.dateOfBirth" type="date" class="input" />
+            </div>
+            <div>
+              <span class="label">Gender</span>
+              <select v-model="form.gender" class="input">
+                <option value="">— Select —</option>
+                <option>Male</option>
+                <option>Female</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div>
+              <span class="label">Blood group</span>
+              <select v-model="form.bloodGroup" class="input">
+                <option value="">— Select —</option>
+                <option v-for="g in BLOOD_GROUPS" :key="g" :value="g">{{ g }}</option>
+              </select>
+            </div>
+            <div>
+              <span class="label">Father's name</span>
+              <input v-model="form.fatherName" class="input" />
+            </div>
+            <div>
+              <span class="label">Mother's name</span>
+              <input v-model="form.motherName" class="input" />
+            </div>
+          </div>
+          <div>
+            <span class="label">Home address</span>
+            <textarea v-model="form.address" class="input" rows="2"></textarea>
+          </div>
+          <div class="flex items-center gap-3">
+            <img v-if="form.photoUrl" :src="form.photoUrl" alt="" class="w-12 h-12 rounded-full object-cover border" />
+            <label class="btn btn-ghost !w-auto cursor-pointer inline-flex items-center gap-2">
+              <Icon name="camera" :size="16" /> {{ form.photoUrl ? "Change photo" : "Add photo" }}
+              <input type="file" accept="image/*" class="hidden" @change="onPhoto" />
+            </label>
+            <button v-if="form.photoUrl" type="button" class="text-xs text-rose-600 underline" @click="form.photoUrl = ''">Remove photo</button>
+          </div>
+          <p v-if="editMsg" class="text-sm text-rose-600">{{ editMsg }}</p>
+          <div class="flex gap-2">
+            <button type="submit" class="btn btn-primary flex-1" :disabled="saving">{{ saving ? "Saving…" : "Save information" }}</button>
+            <button type="button" class="btn btn-ghost" @click="editingId = null">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
 
     <!-- Phase 45 ke bade buttons — Phase 47b me baccho ke cards
-         ke NEECHE aa gaye (pehle bacche, phir buttons). -->
+         ke NEECHE aaye. Phase 48: jo options neeche wali bar me
+         pehle se hain (Homework, Leave, Fees, Timetable, Settings)
+         yahan se HATA diye (shakir: 'nav wale hata do, ye nav me
+         already show hote rhenge'); icons ab modern SVG hain. -->
     <div class="grid grid-cols-2 gap-3 mb-5">
-      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe">📅</span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
-      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7">🔔</span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
-      <router-link to="/homework" class="big-btn"><span class="big-ico" style="background:#ffedd5">📚</span><span><span class="big-label">Homework</span><span class="big-sub">Today's homework</span></span></router-link>
-      <router-link to="/fees" class="big-btn"><span class="big-ico" style="background:#fce7f3">💳</span><span><span class="big-label">Fees</span><span class="big-sub">Fees &amp; receipts</span></span></router-link>
-      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff">📣</span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
-      <router-link to="/leave" class="big-btn"><span class="big-ico" style="background:#ede9fe">✉️</span><span><span class="big-label">Leave</span><span class="big-sub">Tell school about leave</span></span></router-link>
-      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3">🚌</span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
-      <router-link to="/timetable" class="big-btn"><span class="big-ico" style="background:#e0f2fe">🗓️</span><span><span class="big-label">Time Table</span><span class="big-sub">Daily class timings</span></span></router-link>
-      <a href="#teachers" class="big-btn"><span class="big-ico" style="background:#dcfce7">🧑‍🏫</span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
-      <a href="#prefs" class="big-btn"><span class="big-ico" style="background:#f1f5f9">⚙️</span><span><span class="big-label">More</span><span class="big-sub">Settings &amp; preferences</span></span></a>
+      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe;color:#2563eb"><Icon name="calendar-check" :size="26" /></span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
+      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7;color:#d97706"><Icon name="bell" :size="26" /></span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
+      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff;color:#4f46e5"><Icon name="megaphone" :size="26" /></span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
+      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3;color:#a16207"><Icon name="shield" :size="26" /></span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
+      <a href="#teachers" class="big-btn col-span-2"><span class="big-ico" style="background:#dcfce7;color:#16a34a"><Icon name="user" :size="26" /></span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
     </div>
 
     <div class="grid md:grid-cols-2 gap-4 items-start">

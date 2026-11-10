@@ -29,6 +29,23 @@ export async function familySelect() {
     : {};
 }
 
+// Phase 48: bloodGroup bhi naya column hai — family fields wala
+// hi probe pattern, taaki column live hone se pehle ke reads na
+// giren.
+let bgCached = null;
+export function bloodGroupReady() {
+  if (!bgCached) {
+    bgCached = prisma
+      .$queryRaw`SELECT "bloodGroup" FROM "Student" LIMIT 1`
+      .then(() => true)
+      .catch(() => false);
+  }
+  return bgCached;
+}
+export async function bloodGroupSelect() {
+  return (await bloodGroupReady()) ? { bloodGroup: true } : {};
+}
+
 // Every Student scalar EXCEPT the family fields (+ family fields
 // when ready) — for list reads that previously used a bare include
 // and therefore selected the whole model.
@@ -39,6 +56,6 @@ export async function studentScalars() {
     dateOfBirth: true, gender: true, status: true,
     createdAt: true, updatedAt: true,
   };
-  Object.assign(base, await familySelect());
+  Object.assign(base, await familySelect(), await bloodGroupSelect());
   return base;
 }

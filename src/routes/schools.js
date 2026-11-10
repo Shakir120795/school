@@ -6,7 +6,7 @@ import { hashPassword, randomToken, hashToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
-import { studentScalars, familyFieldsReady } from "../utils/studentCompat.js";
+import { studentScalars, familyFieldsReady, bloodGroupReady } from "../utils/studentCompat.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 import { teacherClassIds } from "../services/teacherClasses.js";
 
@@ -900,6 +900,72 @@ router.get(
     });
     const children = guardians.flatMap((g) => g.studentLinks.map((l) => l.student));
     return res.json({ children });
+  })
+);
+
+// Phase 48: parent apne bacche ki ID-card wali jaankari KHUD bhar /
+// badal sakta hai (shakir: 'parent apne child ki information khud
+// fill kre — name, class, address, blood group, etc jo bhi unke ID
+// card pr hota h'). Sirf whitelist fields; admission no. aur IDs
+// band. Baccha caller ki guardian-link se juda hona chahiye.
+router.patch(
+  "/:schoolId/my-children/:studentId",
+  requireAuth,
+  requireSchool(["PARENT"]),
+  asyncRoute(async (req, res) => {
+    const { schoolId, studentId } = req.params;
+    const guardians = await prisma.guardian.findMany({
+      where: { schoolId, userId: req.user.id },
+      select: { studentLinks: { select: { studentId: true } } },
+    });
+    const linked = new Set(guardians.flatMap((g) => g.studentLinks.map((l) => l.studentId)));
+    if (!linked.has(studentId)) return res.status(404).json({ error: "CHILD_NOT_FOUND" });
+    const b = req.body || {};
+    const data = {};
+    const str = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : undefined);
+    if (b.fullName !== undefined) {
+      const v = str(b.fullName, 80);
+      if (!v || v.length < 2) return res.status(400).json({ error: "NAME_REQUIRED" });
+      data.fullName = v;
+    }
+    if (b.classroomId !== undefined) {
+      if (b.classroomId === null || b.classroomId === "") data.classroomId = null;
+      else {
+        const room = await prisma.classroom.findFirst({ where: { id: b.classroomId, schoolId }, select: { id: true } });
+        if (!room) return res.status(400).json({ error: "CLASS_NOT_FOUND" });
+        data.classroomId = room.id;
+      }
+    }
+    if (b.dateOfBirth !== undefined) {
+      if (!b.dateOfBirth) data.dateOfBirth = null;
+      else {
+        const d = new Date(b.dateOfBirth);
+        if (Number.isNaN(d.getTime())) return res.status(400).json({ error: "BAD_DOB" });
+        data.dateOfBirth = d;
+      }
+    }
+    if (b.gender !== undefined) data.gender = str(b.gender, 20) || null;
+    if (b.bloodGroup !== undefined) {
+      const v = str(b.bloodGroup, 4);
+      if (v && !["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].includes(v)) return res.status(400).json({ error: "BAD_BLOOD_GROUP" });
+      if (v && !(await bloodGroupReady())) return res.status(503).json({ error: "SETUP_PENDING" });
+      data.bloodGroup = v || null;
+    }
+    if (b.fatherName !== undefined) data.fatherName = str(b.fatherName, 80) || null;
+    if (b.motherName !== undefined) data.motherName = str(b.motherName, 80) || null;
+    if (b.address !== undefined) data.address = str(b.address, 300) || null;
+    if (b.photoUrl !== undefined) {
+      if (!b.photoUrl) data.photoUrl = null;
+      else if (typeof b.photoUrl === "string" && (/^https:\/\//.test(b.photoUrl) || /^data:image\/(png|jpeg|webp);base64,/.test(b.photoUrl)) && b.photoUrl.length <= 350000) data.photoUrl = b.photoUrl;
+      else return res.status(400).json({ error: "BAD_PHOTO" });
+    }
+    if (!Object.keys(data).length) return res.status(400).json({ error: "NOTHING_TO_UPDATE" });
+    const student = await prisma.student.update({
+      where: { id: studentId },
+      data,
+      select: { ...(await studentScalars()), classroom: true },
+    });
+    return res.json({ student });
   })
 );
 

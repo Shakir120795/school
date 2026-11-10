@@ -400,6 +400,8 @@ model Student {
   fullName       String
   dateOfBirth    DateTime?    @db.Date
   gender         String?
+  // Phase 48: ID-card detail jo parent khud bhar sakta hai.
+  bloodGroup     String?
   // Family details (Phase 27): shown on the student detail cards in
   // the school + teacher logins and on parent rows in the console.
   // All optional — older records simply show "—".

@@ -102,3 +102,6 @@ BEGIN
 EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Phase 48: Student blood group (parent khud bharta hai)
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;
