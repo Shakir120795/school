@@ -31,6 +31,46 @@ const calItems = ref([]);
 const eventForm = ref({ title: "", eventDate: "", endDate: "", type: "EVENT", description: "" });
 const TYPE_ICON = { EVENT: "📌", EXAM: "📝", SPORTS: "🏆", CULTURAL: "🎭", PTM: "👨‍👩‍👧", OTHER: "•", HOLIDAY: "🌴" };
 
+// Phase 54: manager ke alawa INCHARGE teacher bhi apni class ka
+// timetable bana sakti hai — canEdit usi hisaab se khulta hai.
+const myInchargeIds = computed(() => {
+  const me = teachers.value.find((tp) => tp.membershipId === session.membership?.id);
+  return (me?.inchargeAssignments || []).map((a) => a.classroomId);
+});
+const canEdit = computed(() => isManager || (isTeacher && myInchargeIds.value.includes(classroomId.value)));
+
+// Phase 54: copy — ek din pure hafte par, ya ek class dusri par.
+const copyFromWeekday = ref(1);
+const copyToWeekdays = ref([]);
+const copyFromClassId = ref("");
+function toggleCopyDay(wd) {
+  const i = copyToWeekdays.value.indexOf(wd);
+  if (i >= 0) copyToWeekdays.value.splice(i, 1);
+  else copyToWeekdays.value.push(wd);
+}
+async function copyDay() {
+  err.value = ""; msg.value = "";
+  if (!copyToWeekdays.value.length) { err.value = "Choose at least one target day."; return; }
+  const r = await api(`/schools/${sid}/timetable/copy`, {
+    method: "POST",
+    body: { mode: "DAY", classroomId: classroomId.value, fromWeekday: copyFromWeekday.value, toWeekdays: copyToWeekdays.value },
+  });
+  if (r.status === 200) { msg.value = `${r.json.copied} period(s) copied.`; slots.value = r.json.slots || slots.value; copyToWeekdays.value = []; }
+  else err.value = r.json?.error || "Copy failed";
+}
+async function copyClass() {
+  err.value = ""; msg.value = "";
+  if (!copyFromClassId.value) return;
+  const src = classes.value.find((c) => c.id === copyFromClassId.value);
+  if (!confirm(`Copy the full week from Class ${src?.name || ""}${src?.section ? "-" + src.section : ""} into this class? Periods with the same day and number will be replaced.`)) return;
+  const r = await api(`/schools/${sid}/timetable/copy`, {
+    method: "POST",
+    body: { mode: "CLASS", fromClassroomId: copyFromClassId.value, toClassroomId: classroomId.value },
+  });
+  if (r.status === 200) { msg.value = `${r.json.copied} period(s) copied into this class.`; slots.value = r.json.slots || slots.value; }
+  else err.value = r.json?.error || "Copy failed";
+}
+
 const periods = computed(() => [...new Set(slots.value.map((s) => s.periodNo))].sort((a, b) => a - b));
 const byCell = computed(() => {
   const m = {};
@@ -161,7 +201,7 @@ onMounted(async () => { await loadMeta(); await loadGrid(); await loadCalendar()
                   <template v-if="byCell[`${wd}:${p}`]">
                     <div class="font-semibold">{{ byCell[`${wd}:${p}`].display }}</div>
                     <div class="text-xs text-slate-400">{{ byCell[`${wd}:${p}`].startTime }}–{{ byCell[`${wd}:${p}`].endTime }}<span v-if="byCell[`${wd}:${p}`].teacherName"> · {{ byCell[`${wd}:${p}`].teacherName }}</span><span v-if="byCell[`${wd}:${p}`].room"> · {{ byCell[`${wd}:${p}`].room }}</span></div>
-                    <button v-if="isManager" class="text-xs text-red-500 font-semibold" @click="deleteSlot(byCell[`${wd}:${p}`])">Remove</button>
+                    <button v-if="canEdit" class="text-xs text-red-500 font-semibold" @click="deleteSlot(byCell[`${wd}:${p}`])">Remove</button>
                   </template>
                   <span v-else class="text-slate-300">—</span>
                 </td>
@@ -181,13 +221,13 @@ onMounted(async () => { await loadMeta(); await loadGrid(); await loadCalendar()
               <span class="font-semibold">{{ s.display }}</span>
               <span v-if="s.teacherName" class="text-slate-400 text-xs">{{ s.teacherName }}</span>
               <span class="ml-auto text-xs text-slate-500">{{ s.startTime }}–{{ s.endTime }}</span>
-              <button v-if="isManager" class="text-xs text-red-500 font-semibold" @click="deleteSlot(s)">✕</button>
+              <button v-if="canEdit" class="text-xs text-red-500 font-semibold" @click="deleteSlot(s)">✕</button>
             </div>
             <p v-if="!slots.filter((x) => x.weekday === dayTab).length" class="text-sm text-slate-400">No periods on this day.</p>
           </div>
         </div>
 
-        <form v-if="isManager" class="grid md:grid-cols-4 gap-2 mt-4 border-t border-slate-100 pt-3" @submit.prevent="saveSlot">
+        <form v-if="canEdit" class="grid md:grid-cols-4 gap-2 mt-4 border-t border-slate-100 pt-3" @submit.prevent="saveSlot">
           <select v-model.number="slotForm.weekday" class="input">
             <option v-for="wd in 7" :key="wd" :value="wd">{{ DAYS[wd - 1] }}</option>
           </select>
@@ -206,6 +246,37 @@ onMounted(async () => { await loadMeta(); await loadGrid(); await loadCalendar()
           <input v-model="slotForm.room" class="input" placeholder="Room (optional)" />
           <button class="btn btn-primary md:col-span-4">Save period</button>
         </form>
+
+        <!-- Phase 54: copy tools — pura hafta ek-ek period bharne
+             ki jagah ek din ya ek class se copy kar lo -->
+        <div v-if="canEdit" class="grid md:grid-cols-2 gap-3 mt-4">
+          <div class="border border-slate-100 rounded-xl p-3">
+            <div class="font-bold text-sm mb-2">📋 Copy a day</div>
+            <div class="flex items-center gap-2 mb-2 text-sm">
+              <span class="text-slate-500">From</span>
+              <select v-model.number="copyFromWeekday" class="input !w-auto !py-1.5">
+                <option v-for="wd in 6" :key="wd" :value="wd">{{ DAYS[wd - 1] }}</option>
+              </select>
+              <span class="text-slate-500">to</span>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mb-2.5">
+              <button v-for="wd in 6" :key="wd" type="button" class="btn !py-1.5 !px-3 text-xs"
+                :class="copyToWeekdays.includes(wd) ? 'btn-primary' : 'btn-ghost'"
+                :disabled="wd === copyFromWeekday" @click="toggleCopyDay(wd)">{{ DAYS[wd - 1] }}</button>
+            </div>
+            <button type="button" class="btn btn-primary !py-2 w-full" @click="copyDay">Copy day to selected days</button>
+            <p class="text-xs text-slate-400 mt-1.5">All periods of that day are copied over — a period with the same number on a target day is replaced.</p>
+          </div>
+          <div class="border border-slate-100 rounded-xl p-3">
+            <div class="font-bold text-sm mb-2">🏫 Copy from another class</div>
+            <select v-model="copyFromClassId" class="input mb-2.5">
+              <option value="">Choose a class…</option>
+              <option v-for="c in classes.filter((x) => x.id !== classroomId)" :key="c.id" :value="c.id">Class {{ c.name }}{{ c.section ? "-" + c.section : "" }}</option>
+            </select>
+            <button type="button" class="btn btn-primary !py-2 w-full" :disabled="!copyFromClassId" @click="copyClass">Copy into this class</button>
+            <p class="text-xs text-slate-400 mt-1.5">The whole week of the chosen class is copied into the class open above — same day and period number are replaced.</p>
+          </div>
+        </div>
       </section>
     </template>
 
