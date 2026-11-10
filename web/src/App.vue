@@ -17,9 +17,10 @@ const loadedSchoolId = ref(null);
 const schoolInfoById = ref({});
 // Parent school dropdown khula hai ya band (Phase 46b).
 const schoolMenuOpen = ref(false);
-// Phase 48c: parent ke 3-line (hamburger) menu ki state + helpers.
-// Menu sirf PARENT par hai (legal pages bhi usi me — Phase 39b ki
-// 'sirf parent side' wali shart isiliye bani rehti hai).
+// Phase 48c: 3-line (hamburger) menu ki state + helpers — pehle
+// sirf PARENT par tha; Phase 50 se SAB roles par hai (bottom bar
+// ke alawa ke tabs yahi milte hain). Legal pages wala hissa sirf
+// parent par render hota hai (Phase 39b ki shart barkarar).
 const menuOpen = ref(false);
 function goSection(id) {
   menuOpen.value = false;
@@ -169,6 +170,15 @@ const mobileNav = computed(() => {
   }
   return items;
 });
+// Phase 50: bottom bar ke 5 ke ALAWA ke saare tabs upar wale
+// 3-line menu me jayenge (shakir: 'bottom nav me jo 5 ho rhe h
+// uske alawa 3line menu me adjust kro jisse mobile me bhi sabhi
+// tab visible ho ske — teacher ka bhi check kro'). Har role ke
+// liye apne bache hue items (admin ke 12, teacher ke 8...).
+const overflowNav = computed(() => {
+  const inBar = new Set(mobileNav.value.map((n) => n.to));
+  return nav.value.filter((n) => !inBar.has(n.to));
+});
 
 async function logout() {
   await api("/auth/logout", { method: "POST", body: {} }).catch(() => {});
@@ -269,27 +279,28 @@ function switchSchool(id) {
         <router-link to="/notifications" class="relative ml-auto p-1.5" aria-label="Notifications"><Icon name="bell" :size="21" />
           <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
         </router-link>
-        <!-- Phase 48c: parent ke liye right side me 3-line menu —
-             avatar + Logout header se hat kar menu ke andar gaye
-             (Logout sabse neeche). Staff par purana hi rakha. -->
-        <button v-if="role === 'PARENT'" type="button" class="p-1.5" aria-label="Menu" @click="menuOpen = !menuOpen; schoolMenuOpen = false"><Icon name="menu" :size="24" /></button>
-        <template v-else>
-          <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
-          <button class="text-xs underline text-white/80" @click="logout">Logout</button>
-        </template>
+        <!-- Phase 48c: parent ke liye 3-line menu aaya tha.
+             Phase 50: menu ab SAB roles ke liye hai — staff ke
+             header se avatar + Logout text hat kar menu ke andar
+             gaye (Logout sabse neeche), kyunki bottom bar ke 5 ke
+             alawa ke saare tabs yahi milenge. -->
+        <button type="button" class="p-1.5" aria-label="Menu" @click="menuOpen = !menuOpen; schoolMenuOpen = false"><Icon name="menu" :size="24" /></button>
       </div>
-      <!-- 3-line menu ka panel: Teachers, Pickup, phir
-           teeno legal pages, sabse neeche Logout. -->
-      <div v-if="menuOpen && role === 'PARENT'" class="absolute right-3 top-full mt-1 w-64 max-w-[86vw] bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-100 py-2 z-40">
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> Teachers</button>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage('/pickup')"><Icon name="shield" :size="18" class="text-brand-600" /> Pickup</button>
-        <!-- Phase 49: Settings menu se hata — uska ekmatra section
-             (WhatsApp preference) hi khatm ho gaya, notifications
-             ab sirf app se jati hain. -->
-        <div class="my-2 border-t border-slate-100"></div>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/privacy')"><Icon name="lock" :size="18" class="text-slate-400" /> Privacy Policy</button>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/terms')"><Icon name="file" :size="18" class="text-slate-400" /> Terms of Service</button>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/safety')"><Icon name="heart" :size="18" class="text-slate-400" /> Safety &amp; Security</button>
+      <!-- 3-line menu ka panel (Phase 50): bottom bar me jo 5
+           hain unke ALAWA ke saare tabs (overflowNav), parent ke
+           liye Teachers upar + legal pages neeche (Phase 39b:
+           legal sirf parent side), sabse neeche Logout. -->
+      <div v-if="menuOpen" class="absolute right-3 top-full mt-1 w-64 max-w-[86vw] max-h-[78vh] overflow-y-auto bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-100 py-2 z-40">
+        <button v-if="role === 'PARENT'" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> Teachers</button>
+        <button v-for="n in overflowNav" :key="n.to + n.label" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage(n.to)"><Icon :name="n.icon" :size="18" class="text-brand-600" /> {{ n.label }}<span v-if="n.badge && unreadCount" class="ml-auto bg-red-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">{{ unreadCount }}</span></button>
+        <!-- Phase 49: Settings parent menu se hata — uska ekmatra
+             section (WhatsApp preference) hi khatm ho gaya tha. -->
+        <template v-if="role === 'PARENT'">
+          <div class="my-2 border-t border-slate-100"></div>
+          <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/privacy')"><Icon name="lock" :size="18" class="text-slate-400" /> Privacy Policy</button>
+          <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/terms')"><Icon name="file" :size="18" class="text-slate-400" /> Terms of Service</button>
+          <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/safety')"><Icon name="heart" :size="18" class="text-slate-400" /> Safety &amp; Security</button>
+        </template>
         <div class="my-2 border-t border-slate-100"></div>
         <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-left text-rose-600 hover:bg-rose-50" @click="logout"><Icon name="logout" :size="18" /> Logout</button>
       </div>

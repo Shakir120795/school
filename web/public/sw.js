@@ -6,7 +6,7 @@
 // every icon incl. maskable + apple-touch), a complete never-cache
 // API list (incl. /platform and /push/config, missed before), and
 // only successful (ok) responses are ever put in the cache.
-const CACHE = "smart-school-v27";
+const CACHE = "smart-school-v28";
 const CORE = [
   "/",
   "/manifest.webmanifest",
