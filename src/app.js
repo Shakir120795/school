@@ -24,6 +24,15 @@ import { errorHandler } from "./utils/http.js";
 
 export function createApp() {
   const app = express();
+  // Phase 48b (live bug, 10 Nov 2026): Vercel ke peeche trust proxy
+  // ke bina req.ip HAR user ke liye ek hi proxy address tha — to
+  // login rate-limit (10/min per IP+email) asal me PURE platform
+  // ke liye global ban gaya tha: mere + checker ke test logins aur
+  // shakir ki koshishen ek hi bucket me gin kar parent login
+  // RATE_LIMITED ho gaya. trust proxy=1 se req.ip asal client IP
+  // (X-Forwarded-For ka pehla) banta hai — limit ab per-user hai.
+  // Global API limiter (600/min) par bhi yahi asar tha.
+  app.set("trust proxy", 1);
   // CORS for the web app (Phase 3). Origins are allow-listed via CORS_ORIGINS
   // (comma-separated); default covers local Vite dev/preview.
   // Phase 42: the native apps (Capacitor) always run on the local
