@@ -105,3 +105,6 @@ END $$;
 
 -- Phase 48: Student blood group (parent khud bharta hai)
 ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;
+
+-- Phase 48d: AuthSession rotation grace
+ALTER TABLE "AuthSession" ADD COLUMN IF NOT EXISTS "rotatedAt" TIMESTAMP(3);

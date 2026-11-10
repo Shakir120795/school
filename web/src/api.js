@@ -134,22 +134,9 @@ export const session = {
       if (s.last) localStorage.setItem(LAST_KEY, s.last); else localStorage.removeItem(LAST_KEY);
     } catch { /* ignore */ }
   },
-  // Phase 35: this tab's account is dead server-side (its session
-  // was revoked, e.g. the member was removed). Drop it from the
-  // book and fall back to another signed-in account if one exists,
-  // so a removed ID never lingers looking alive. (This is a cleanup
-  // of a DEAD login, not a user-facing switch.)
-  dropActiveAndFallback() {
-    accounts = loadAccounts();
-    if (activeId && accounts[activeId]) { delete accounts[activeId]; saveAccounts(); }
-    if (localStorage.getItem(LAST_KEY) === activeId) localStorage.removeItem(LAST_KEY);
-    pending = null;
-    const next = Object.keys(accounts)[0] || null;
-    activeId = next;
-    if (next) { sessionStorage.setItem(TAB_KEY, next); localStorage.setItem(LAST_KEY, next); }
-    else sessionStorage.setItem(TAB_KEY, "");
-    return !!next;
-  },
+  // Phase 35 ki drop-and-fallback Phase 48d me HATA di: dead
+  // session par dusra account adopt karna ek silent switch tha.
+  // Ab handleDeadSession session.clear() karke login bhejta hai.
   // Log out THIS tab's account only; accounts open in other tabs
   // stay signed in.
   clear() {
@@ -177,7 +164,22 @@ async function raw(path, { method = "GET", body, school = true, deviceKey } = {}
   return { status: res.status, json };
 }
 
-async function tryRefresh() {
+// Phase 48d: refresh SINGLE-FLIGHT hai. Pehle hard refresh par
+// shell + page ki saari parallel calls ek saath token refresh
+// karti thi; server rotation pehla token turant revoke kar deta
+// hai, to dusri call ko 401 milta aur account "dead" maan kar
+// app dusre account par switch ho jata tha (shakir: hard refresh
+// par admin console khul raha tha). Ab ek samay par ek hi
+// refresh chalti hai, baaki usi ka result use karti hain.
+let refreshInFlight = null;
+function tryRefresh() {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doRefresh() {
   const rt = session.refreshToken;
   if (!rt) return "dead";
   let res;
@@ -199,8 +201,12 @@ let deadHandled = false;
 function handleDeadSession() {
   if (deadHandled) return;
   deadHandled = true;
-  if (session.dropActiveAndFallback()) location.reload();
-  else location.href = "/login";
+  // Phase 48d: dead session par dusra account ADOPT nahi hoga —
+  // wo bhi ek silent switch hi tha (Phase 41 ka rule: koi switch
+  // nahi, kabhi nahi). Is tab ka dead account saaf karke seedha
+  // login page par bhejo; dusre tabs ke accounts waise hi rahe.
+  session.clear();
+  location.href = "/login";
 }
 
 // Phase 35: called once when the app shell loads. If this tab's

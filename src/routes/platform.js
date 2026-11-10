@@ -155,6 +155,7 @@ const DB_UPDATE_STATEMENTS = [
   ["Hisab: OwnerPayment index", `CREATE INDEX IF NOT EXISTS "OwnerPayment_schoolId_idx" ON "OwnerPayment"("schoolId")`],
   ["Hisab: OwnerPayment FK", `DO $$ BEGIN ALTER TABLE "OwnerPayment" ADD CONSTRAINT "OwnerPayment_schoolId_fkey" FOREIGN KEY ("schoolId") REFERENCES "School"("id") ON DELETE CASCADE ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
   ["Student: blood group column (Phase 48)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT`],
+  ["AuthSession: rotation grace column (Phase 48d)", `ALTER TABLE "AuthSession" ADD COLUMN IF NOT EXISTS "rotatedAt" TIMESTAMP(3)`],
 ];
 
 router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {
