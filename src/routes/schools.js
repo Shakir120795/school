@@ -60,9 +60,27 @@ router.get(
   asyncRoute(async (req, res) => {
     const memberships = await prisma.schoolMembership.findMany({
       where: { userId: req.user.id, status: "ACTIVE" },
-      include: { school: { select: { id: true, name: true, slug: true, timezone: true } } },
+      include: { school: { select: { id: true, name: true, slug: true, timezone: true, logoUrl: true } } },
     });
-    return res.json({ memberships });
+    // Phase 45: parent ke school cards ke liye — har school me
+    // USKE apne kitne bacche padte hain (guardian-linked, ACTIVE).
+    // Staff/admin ke liye count 0 hi rahega (guardian nahi hote).
+    const guardians = await prisma.guardian.findMany({
+      where: { userId: req.user.id, schoolId: { in: memberships.map((m) => m.schoolId) } },
+      select: {
+        schoolId: true,
+        studentLinks: { select: { student: { select: { status: true } } } },
+      },
+    });
+    const counts = {};
+    for (const g of guardians) {
+      for (const l of g.studentLinks) {
+        if (l.student.status === "ACTIVE") counts[g.schoolId] = (counts[g.schoolId] || 0) + 1;
+      }
+    }
+    return res.json({
+      memberships: memberships.map((m) => ({ ...m, childrenCount: counts[m.schoolId] || 0 })),
+    });
   })
 );
 

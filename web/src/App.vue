@@ -12,8 +12,9 @@ const myChildren = ref([]);
 const loadedSchoolId = ref(null);
 // School selector me kachchi ID ki jagah school ka NAAM dikhe —
 // naam /schools/mine se aate hain (login wale memberships me sirf
-// ID hoti hai).
-const schoolNames = ref({});
+// ID hoti hai). Phase 45: map me logo + childrenCount bhi —
+// parent ke school cards ke liye.
+const schoolInfoById = ref({});
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
 function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
 function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
@@ -27,8 +28,10 @@ async function loadBranding() {
   const mres = await api("/schools/mine", { school: false }).catch(() => null);
   if (mres?.json?.memberships) {
     const map = {};
-    for (const m of mres.json.memberships) if (m.school?.id) map[m.school.id] = m.school.name;
-    schoolNames.value = map;
+    for (const m of mres.json.memberships) {
+      if (m.school?.id) map[m.school.id] = { name: m.school.name, logoUrl: m.school.logoUrl || null, childrenCount: m.childrenCount || 0 };
+    }
+    schoolInfoById.value = map;
   }
   if (myRole() === "PARENT") {
     const cres = await api(`/schools/${sidNow}/my-children`).catch(() => null);
@@ -197,10 +200,30 @@ function switchSchool(id) {
     </header>
 
     <main class="relative z-10 flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
-      <div v-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
+      <!-- Phase 45: parent ke liye bade school cards — har school
+           ka naam + uske bacche wahan kitne; school SIRF tap par
+           badalta hai, apne aap kabhi nahi. -->
+      <div v-if="role === 'PARENT' && memberships.length > 1" class="mb-4">
+        <div class="text-xs font-bold text-slate-500 mb-2">🏫 YOUR SCHOOLS — TAP TO OPEN</div>
+        <div class="grid gap-2">
+          <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
+            class="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left shadow-sm"
+            :class="m.schoolId === session.schoolId ? 'border-brand-600 ring-2 ring-brand-100' : 'border-slate-200'">
+            <img v-if="schoolInfoById[m.schoolId]?.logoUrl" :src="schoolInfoById[m.schoolId].logoUrl" class="w-10 h-10 rounded-xl object-contain bg-white border shrink-0" alt="" />
+            <span v-else class="grid place-items-center w-10 h-10 rounded-xl text-white text-xs font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[m.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[m.schoolId]?.name || '?') }}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block font-bold truncate">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }}</span>
+              <span class="block text-xs text-slate-500">{{ schoolInfoById[m.schoolId]?.childrenCount ? `Your ${schoolInfoById[m.schoolId].childrenCount} child${schoolInfoById[m.schoolId].childrenCount === 1 ? "" : "ren"} in this school` : "No children linked yet" }}</span>
+            </span>
+            <span v-if="m.schoolId === session.schoolId" class="chip bg-brand-600 text-white shrink-0">Open now</span>
+            <span v-else class="text-brand-700 font-bold text-sm shrink-0">Open →</span>
+          </button>
+        </div>
+      </div>
+      <div v-else-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
         <span class="label !mb-0">School</span>
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
-          <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ schoolNames[m.schoolId] || m.schoolId }} ({{ m.role }})</option>
+          <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }} ({{ m.role }})</option>
         </select>
       </div>
       <div v-if="(installState === 'available' || installState === 'ios' || installState === 'menu') && !installDismissed" class="mb-4 rounded-2xl border border-brand-100 bg-brand-50 px-4 py-3 flex flex-wrap items-center gap-2">

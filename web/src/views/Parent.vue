@@ -5,6 +5,7 @@ import { api, session, currentUser } from "../api.js";
 const sid = session.schoolId;
 const user = currentUser();
 const loading = ref(true);
+const school = ref(null);
 const children = ref([]);
 const teachers = ref([]);
 const inbox = ref([]);
@@ -33,14 +34,36 @@ const dotClass = (s) =>
   s === "PRESENT" ? "bg-emerald-500" : s === "LATE" ? "bg-amber-500" : s === "ABSENT" ? "bg-rose-500" : "bg-slate-300";
 const todayStatus = (child) => (child.attendances || [])[0] || null;
 
+// Phase 45: bacche ka sabse taza status BADA banner banke dikhta
+// hai — kam padhe-likhe parent bhi ek nazar me samjhe. Tarih bhi
+// saath me, taaki purana record "aaj" na lage.
+const STATUS_VIEW = {
+  PRESENT: { emoji: "✅", word: "Present", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  LATE: { emoji: "🟡", word: "Came late", cls: "bg-amber-100 text-amber-800 border-amber-200" },
+  ABSENT: { emoji: "❌", word: "Absent", cls: "bg-rose-100 text-rose-800 border-rose-200" },
+  ON_LEAVE: { emoji: "🏠", word: "On leave", cls: "bg-sky-100 text-sky-800 border-sky-200" },
+};
+function statusBanner(child) {
+  const a = todayStatus(child);
+  if (!a) return { emoji: "⏳", text: "No school news yet", cls: "bg-slate-100 text-slate-600 border-slate-200" };
+  const v = STATUS_VIEW[a.status] || { emoji: "📋", word: a.status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
+  const d = new Date(a.localDate);
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const when = sameDay ? "today" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return { emoji: v.emoji, text: `${v.word} · ${when}`, cls: v.cls };
+}
+
 async function load() {
   loading.value = true;
   try {
-    const [c, t, n] = await Promise.all([
+    const [c, t, n, s] = await Promise.all([
       api(`/schools/${sid}/my-children`),
       api(`/schools/${sid}/teachers`),
       api(`/schools/${sid}/my-notifications`),
+      api(`/schools/${sid}`).catch(() => null),
     ]);
+    school.value = s?.json?.school || null;
     children.value = c.json.children || [];
     teachers.value = t.json.teachers || [];
     if (n.status === 200) {
@@ -64,28 +87,33 @@ onMounted(load);
 <template>
   <div>
     <div class="rounded-3xl text-white p-5 mb-4 shadow" style="background: linear-gradient(100deg, #1e3a8a, #2563eb)">
-      <div class="text-sm text-white/70">Welcome,</div>
+      <div class="text-sm text-white/70">Hello 👋</div>
       <h1 class="text-2xl font-extrabold">{{ user?.fullName }}</h1>
+      <div v-if="school" class="mt-1.5 flex items-center gap-2 text-sm font-bold text-white/95">
+        <img v-if="school.logoUrl" :src="school.logoUrl" class="w-6 h-6 rounded-md object-contain bg-white shrink-0" alt="" />
+        <span v-else>🏫</span>
+        <span class="truncate">{{ school.name }}</span>
+      </div>
       <div class="flex flex-wrap gap-2 mt-3">
         <span class="chip bg-white/15 text-white">{{ loading ? "Loading…" : `${children.length} child${children.length === 1 ? "" : "ren"} linked` }}</span>
         <router-link to="/notifications" class="chip bg-white text-emerald-800 font-bold">🔔 {{ unread }} new notification{{ unread === 1 ? "" : "s" }}</router-link>
       </div>
     </div>
 
-    <!-- Quick tiles (UI reference layout) -->
-    <div class="grid grid-cols-4 gap-2.5 mb-5">
-      <router-link to="/parent" class="tile"><span class="tile-ico" style="background:#dbeafe">📅</span>Attendance</router-link>
-      <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#fef3c7">🔔</span>Alerts<span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
-      <router-link to="/notices" class="tile"><span class="tile-ico" style="background:#e0e7ff">📣</span>Notices</router-link>
-      <a href="#teachers" class="tile"><span class="tile-ico" style="background:#dcfce7">🧑‍🏫</span>Teachers</a>
-      <router-link to="/homework" class="tile"><span class="tile-ico" style="background:#ffedd5">📚</span>Homework</router-link>
-      <router-link to="/fees" class="tile"><span class="tile-ico" style="background:#fce7f3">💳</span>Fees</router-link>
-      <router-link to="/timetable" class="tile"><span class="tile-ico" style="background:#e0f2fe">🗓️</span>Time Table</router-link>
-      <router-link to="/pickup" class="tile"><span class="tile-ico" style="background:#fef9c3">🚌</span>Pickup</router-link>
-      <router-link to="/leave" class="tile"><span class="tile-ico" style="background:#ede9fe">✉️</span>Leave</router-link>
-      <div class="tile tile-soon"><span class="tile-ico" style="background:#f1f5f9">🖼️</span>Gallery<span class="soon">Soon</span></div>
-      <router-link to="/notifications" class="tile"><span class="tile-ico" style="background:#ffe4e6">📩</span>Inbox</router-link>
-      <a href="#prefs" class="tile"><span class="tile-ico" style="background:#f1f5f9">⚙️</span>More</a>
+    <!-- Phase 45: BADE asaan buttons — 2 ek line me, bada icon,
+         bada label, neeche ek chhoti asaan line. Chhoti 4-wali
+         tiles kam padhe-likhe parents ke liye mushkil thi. -->
+    <div class="grid grid-cols-2 gap-3 mb-5">
+      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe">📅</span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
+      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7">🔔</span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
+      <router-link to="/homework" class="big-btn"><span class="big-ico" style="background:#ffedd5">📚</span><span><span class="big-label">Homework</span><span class="big-sub">Today's homework</span></span></router-link>
+      <router-link to="/fees" class="big-btn"><span class="big-ico" style="background:#fce7f3">💳</span><span><span class="big-label">Fees</span><span class="big-sub">Fees &amp; receipts</span></span></router-link>
+      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff">📣</span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
+      <router-link to="/leave" class="big-btn"><span class="big-ico" style="background:#ede9fe">✉️</span><span><span class="big-label">Leave</span><span class="big-sub">Tell school about leave</span></span></router-link>
+      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3">🚌</span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
+      <router-link to="/timetable" class="big-btn"><span class="big-ico" style="background:#e0f2fe">🗓️</span><span><span class="big-label">Time Table</span><span class="big-sub">Daily class timings</span></span></router-link>
+      <a href="#teachers" class="big-btn"><span class="big-ico" style="background:#dcfce7">🧑‍🏫</span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
+      <a href="#prefs" class="big-btn"><span class="big-ico" style="background:#f1f5f9">⚙️</span><span><span class="big-label">More</span><span class="big-sub">Settings &amp; preferences</span></span></a>
     </div>
 
     <div v-if="loading" class="card text-slate-500 text-sm mb-4 animate-pulse">Loading your children…</div>
@@ -96,16 +124,13 @@ onMounted(load);
     <div class="grid md:grid-cols-2 gap-4 items-start mb-4">
       <div v-for="(child, i) in children" :key="child.id" class="card">
         <div class="flex items-center gap-3 mb-3">
-          <div class="avatar w-12 h-12 text-lg" :style="{ background: COLORS[i % COLORS.length] }">{{ initials(child.fullName) }}</div>
+          <div class="avatar w-14 h-14 text-xl" :style="{ background: COLORS[i % COLORS.length] }">{{ initials(child.fullName) }}</div>
           <div class="min-w-0">
-            <div class="font-extrabold text-lg leading-tight truncate">{{ child.fullName }}</div>
+            <div class="font-extrabold text-xl leading-tight truncate">{{ child.fullName }}</div>
             <div class="text-xs text-slate-500">Adm {{ child.admissionNo }} · Class {{ child.classroom?.name }}<span v-if="child.classroom?.section">-{{ child.classroom.section }}</span></div>
           </div>
-          <span v-if="todayStatus(child)" class="chip ml-auto"
-            :class="todayStatus(child).status === 'PRESENT' ? 'bg-emerald-100 text-emerald-700' : todayStatus(child).status === 'LATE' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'">
-            Today: {{ todayStatus(child).status }}
-          </span>
         </div>
+        <div class="rounded-2xl border px-4 py-3 mb-3 text-center text-lg font-extrabold" :class="statusBanner(child).cls">{{ statusBanner(child).emoji }} {{ statusBanner(child).text }}</div>
 
         <div class="flex items-center gap-4">
           <svg class="w-[76px] h-[76px]" viewBox="0 0 76 76">
@@ -178,9 +203,9 @@ onMounted(load);
   </div>
 </template>
 <style scoped>
-.tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; background: #fff; border: 1px solid #e8edf3; border-radius: 18px; padding: 10px 2px 8px; font-size: 11px; font-weight: 600; color: #334155; box-shadow: 0 1px 2px rgba(16,24,40,.05); }
-.tile-ico { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; font-size: 19px; }
-.tile-soon { opacity: .75; }
-.tile .soon { position: absolute; top: 6px; right: 6px; font-size: 8px; font-weight: 800; letter-spacing: .03em; background: #f59e0b; color: #fff; border-radius: 999px; padding: 1px 5px; text-transform: uppercase; }
+.big-btn { position: relative; display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #e8edf3; border-radius: 20px; padding: 12px; box-shadow: 0 1px 2px rgba(16,24,40,.05); text-align: left; }
+.big-ico { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; font-size: 26px; flex-shrink: 0; }
+.big-label { display: block; font-size: 16px; font-weight: 800; color: #1e293b; line-height: 1.15; }
+.big-sub { display: block; font-size: 11.5px; color: #64748b; margin-top: 2px; line-height: 1.25; }
 .tile-badge { position: absolute; top: 6px; right: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 9px; font-weight: 800; display: grid; place-items: center; }
 </style>
