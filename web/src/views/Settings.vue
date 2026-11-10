@@ -77,6 +77,40 @@ async function savePolicy() {
 async function saveSchool() {
   note(await api(`/schools/${sid}`, { method: "PATCH", body: { name: school.value.name, timezone: school.value.timezone, logoUrl: school.value.logoUrl || "", address: school.value.address || "", phone: school.value.phone || "", email: school.value.email || "" } }), "School settings saved.");
 }
+
+// Phase 44: logo photo direct upload — badi photo ko browser me hi
+// 256px tak chhota karke data-URL banate hain, phir wahi logoUrl me
+// Save hota hai (server data-image logos bhi accept karta hai).
+// Isse school ko koi link/hosting nahi dhundhna padta.
+async function onLogoFile(e) {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { msg.value = "Error: please choose an image file."; return; }
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const scale = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    let data = canvas.toDataURL("image/png");
+    if (data.length > 340000) data = canvas.toDataURL("image/jpeg", 0.85);
+    if (data.length > 340000) { msg.value = "Error: logo image is too large even after resizing."; return; }
+    school.value.logoUrl = data;
+    msg.value = "Logo ready — press Save to keep it.";
+  } catch {
+    msg.value = "Error: could not read that image.";
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 </script>
 
 <template>
@@ -90,6 +124,7 @@ async function saveSchool() {
       <div><label class="label">Timezone (IANA)</label><input v-model="school.timezone" class="input" /></div>
       <div><label class="label">School ID (for gate devices)</label><input :value="school.id" readonly class="input bg-slate-50" /></div>
       <div><label class="label">Logo URL (school photo/logo)</label><input v-model="school.logoUrl" class="input" placeholder="https://…/logo.png" /></div>
+      <div><label class="label">…or upload logo photo</label><input type="file" accept="image/*" class="input" @change="onLogoFile" /><p class="text-xs text-slate-400 mt-1">Photo chhoti karke apne aap lag jayegi — phir Save dabao. Yehi logo dashboard, watermark aur parent app me dikhega.</p></div>
       <div><label class="label">Address</label><input v-model="school.address" class="input" /></div>
       <div><label class="label">Phone</label><input v-model="school.phone" class="input" /></div>
       <div><label class="label">Email</label><input v-model="school.email" class="input" /></div>

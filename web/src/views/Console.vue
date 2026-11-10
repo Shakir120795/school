@@ -9,6 +9,11 @@ import MemberCard from "../components/MemberCard.vue";
 import Pager from "../components/Pager.vue";
 
 // Super Admin console (Phase 21) — platform operator only.
+// Phase 44: har school card par usi school ki pehchan (logo ya
+// naam wala rang tile) — helper App.vue wale hi rang/initials.
+const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
+function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
+function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 const schools = ref([]);
 const loading = ref(true);
 const msg = ref("");
@@ -389,6 +394,8 @@ onMounted(async () => {
     <div v-else class="grid gap-3 mb-4">
       <div v-for="s in filteredSchools" :key="s.id" :id="`school-card-${s.id}`" class="card !py-3">
         <div class="flex flex-wrap items-center gap-2">
+          <img v-if="s.logoUrl" :src="s.logoUrl" class="w-9 h-9 rounded-lg object-contain bg-white border shrink-0" alt="" />
+          <span v-else class="grid place-items-center w-9 h-9 rounded-lg text-white text-xs font-bold shrink-0" :style="{ background: tileColor(s.name) }">{{ initialsOf(s.name) }}</span>
           <span class="font-bold">{{ s.name }}</span>
           <span class="text-xs text-slate-400">{{ s.slug }}</span>
           <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="s.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ s.status }}</span>

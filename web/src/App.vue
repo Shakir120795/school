@@ -3,12 +3,35 @@ import { computed, onMounted, ref, watch } from "vue";
 import { initPush } from "./push.js";
 const schoolInfo = ref(null);
 const unreadCount = ref(0);
+// Phase 44 (per-login branding): school ki pehchan (logo/naam) har
+// login par usi school ki dikhti hai; parent par student bhi upar.
+// schoolInfo pehle sirf onMounted par banta tha — school switch ya
+// dusri ID se sign-in par purani pehchan atki rehti thi. Ab branding
+// loader schoolId badalte hi dobara chalta hai (route watch se).
+const myChildren = ref([]);
+const loadedSchoolId = ref(null);
+const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
+function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
+function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
+function childClass(c) { return c?.classroom ? `Class ${c.classroom.name}${c.classroom.section ? "-" + c.classroom.section : ""}` : ""; }
+async function loadBranding() {
+  const sidNow = session.schoolId;
+  if (!sidNow) { schoolInfo.value = null; myChildren.value = []; loadedSchoolId.value = null; return; }
+  loadedSchoolId.value = sidNow;
+  const sres = await api(`/schools/${sidNow}`).catch(() => null);
+  if (sres?.json?.school) schoolInfo.value = sres.json.school;
+  if (myRole() === "PARENT") {
+    const cres = await api(`/schools/${sidNow}/my-children`).catch(() => null);
+    myChildren.value = cres?.json?.children || [];
+  } else {
+    myChildren.value = [];
+  }
+}
 onMounted(async () => {
   initPush();
   if (!route.meta.public) pruneDeadActiveAccount();
+  await loadBranding();
   if (session.schoolId) {
-    const sres = await api(`/schools/${session.schoolId}`).catch(() => null);
-    if (sres?.json?.school) schoolInfo.value = sres.json.school;
     const nres = await api(`/schools/${session.schoolId}/my-notifications`).catch(() => null);
     if (nres?.json) unreadCount.value = nres.json.unread || 0;
   }
@@ -32,7 +55,11 @@ const router = useRouter();
 // PREVIOUS account after an in-app sign-in until a full reload
 // (seen live in the Phase 30 multi-tab test). Re-read on navigation.
 const navTick = ref(0);
-watch(() => route.fullPath, () => { navTick.value += 1; });
+watch(() => route.fullPath, () => {
+  navTick.value += 1;
+  // Phase 44: dusri ID/school par gaye to branding bhi badlo.
+  if (session.schoolId !== loadedSchoolId.value) loadBranding();
+});
 const role = computed(() => { void navTick.value; return myRole(); });
 const user = computed(() => { void navTick.value; return currentUser(); });
 const memberships = computed(() => { void navTick.value; return myMemberships(); });
@@ -112,10 +139,17 @@ function switchSchool(id) {
        in-app navigation never remounts the shell. -->
   <div v-if="isLogin"><router-view :key="route.fullPath" /></div>
   <div v-else class="min-h-screen md:flex" :style="themeStyle">
+    <!-- Phase 44 watermark: har school login par peeche halka sa
+         usi school ka logo (na ho to naam) — print me kabhi nahi. -->
+    <div v-if="schoolInfo && role !== 'PLATFORM_ADMIN'" aria-hidden="true" class="pointer-events-none fixed inset-0 md:left-64 z-0 flex items-center justify-center overflow-hidden print:hidden">
+      <img v-if="schoolInfo.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-[380px] h-[380px] max-w-[80vw] object-contain opacity-[0.05]" />
+      <div v-else class="text-6xl md:text-7xl font-black text-[#0a2436] opacity-[0.04] text-center leading-tight px-6 select-none">{{ schoolInfo.name }}</div>
+    </div>
     <!-- Desktop sidebar -->
     <aside class="hidden md:flex md:w-64 md:flex-col bg-gradient-to-b from-[#0a2436] via-[#0b2e3f] to-[#07332a] text-white p-5 gap-1">
       <div class="mb-6">
         <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="School logo" class="w-10 h-10 rounded-lg object-contain bg-white mb-2" />
+        <span v-else-if="schoolInfo" class="grid place-items-center w-10 h-10 rounded-lg text-white text-sm font-bold mb-2" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
         <div class="text-lg font-bold">{{ schoolInfo?.name || "Smart School" }}</div>
         <div class="text-xs text-slate-300">Attendance & Communication</div>
       </div>
@@ -140,6 +174,7 @@ function switchSchool(id) {
     <!-- Mobile top bar -->
     <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 flex items-center gap-3 shadow">
       <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white" />
+      <span v-else-if="schoolInfo" class="grid place-items-center w-8 h-8 rounded-lg text-white text-[11px] font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
       <div class="min-w-0">
         <div class="font-bold leading-tight truncate">{{ schoolInfo?.name || "Smart School" }}</div>
         <div class="text-[11px] text-white/60 leading-tight">{{ role }}</div>
@@ -151,7 +186,7 @@ function switchSchool(id) {
       <button class="text-xs underline text-white/80" @click="logout">Logout</button>
     </header>
 
-    <main class="flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
+    <main class="relative z-10 flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
       <div v-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
         <span class="label !mb-0">School</span>
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
@@ -165,6 +200,17 @@ function switchSchool(id) {
         <button class="btn btn-ghost !py-1.5 !w-auto" aria-label="Dismiss" @click="dismissInstall">✕</button>
         <p v-if="installState === 'ios' && iosHelp" class="w-full text-xs text-slate-600 mt-1">On iPhone/iPad (Safari): tap the <b>Share</b> button → choose <b>“Add to Home Screen”</b> → tap <b>Add</b>. The Smart School icon will appear on your home screen.</p>
         <p v-if="installState === 'menu' && iosHelp" class="w-full text-xs text-slate-600 mt-1">Open your browser menu (<b>⋮</b>) and tap <b>“Install app”</b> (or <b>“Add to Home screen”</b>). On a computer, you can also click the install icon at the right end of the address bar. The Smart School icon will then open the app directly.</p>
+      </div>
+      <!-- Phase 44: parent strip — parent ko upar hi apna school
+           aur apne bachche (naam + class) dikhte hain. -->
+      <div v-if="role === 'PARENT' && schoolInfo" class="mb-4 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 flex items-center gap-3">
+        <img v-if="schoolInfo.logoUrl" :src="schoolInfo.logoUrl" class="w-11 h-11 rounded-xl object-contain bg-white border shrink-0" alt="" />
+        <span v-else class="grid place-items-center w-11 h-11 rounded-xl text-white font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
+        <div class="min-w-0">
+          <div class="font-bold truncate">{{ schoolInfo.name }}</div>
+          <div v-if="myChildren.length" class="text-xs text-slate-500 truncate">🎓 {{ myChildren.map((c) => c.fullName + (childClass(c) ? " · " + childClass(c) : "")).join("   •   ") }}</div>
+          <div v-else class="text-xs text-slate-400">Parent account</div>
+        </div>
       </div>
       <router-view />
     </main>

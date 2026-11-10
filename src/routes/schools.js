@@ -85,8 +85,20 @@ router.patch(
     for (const f of ["name", "timezone", "logoUrl", "address", "phone", "email"]) {
       if (req.body[f] !== undefined) data[f] = req.body[f] === "" ? null : req.body[f];
     }
-    if (data.logoUrl && !/^https?:\/\//i.test(data.logoUrl)) {
-      return res.status(400).json({ error: "LOGO_URL_MUST_BE_HTTP_URL" });
+    if (data.logoUrl) {
+      // Logo do tareeke se aa sakta hai: (1) http(s) link, ya
+      // (2) Settings se direct photo upload — chhoti ki hui image
+      // data-URL bankar aati hai (Phase 44). Data-URL par size cap
+      // hai taaki DB me badi files na bharein (client 256px tak
+      // resize karke bhejta hai, ~340KB se upar nahi jana chahiye).
+      const isHttp = /^https?:\/\//i.test(data.logoUrl);
+      const isDataImg = /^data:image\/(png|jpe?g|webp);base64,/i.test(data.logoUrl);
+      if (!isHttp && !isDataImg) {
+        return res.status(400).json({ error: "LOGO_URL_MUST_BE_HTTP_URL" });
+      }
+      if (isDataImg && data.logoUrl.length > 350000) {
+        return res.status(400).json({ error: "LOGO_TOO_LARGE" });
+      }
     }
     const school = await prisma.school.update({ where: { id: req.params.schoolId }, data });
     return res.json({ school });

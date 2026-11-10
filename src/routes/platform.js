@@ -31,7 +31,7 @@ async function revokeSessions(userId) {
 }
 
 router.get("/platform/schools", asyncRoute(async (req, res) => {
-  const schools = await prisma.school.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, status: true, timezone: true, createdAt: true } });
+  const schools = await prisma.school.findMany({ orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true, status: true, timezone: true, createdAt: true, logoUrl: true } });
   const out = [];
   for (const s of schools) {
     const [students, teachers, classes, parents] = await Promise.all([
