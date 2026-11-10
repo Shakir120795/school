@@ -225,6 +225,15 @@ export async function pruneDeadActiveAccount() {
   const u = r.json.user;
   const ms = r.json.memberships || [];
   if (!u?.isPlatformAdmin && !ms.some((m) => m.status === "ACTIVE")) handleDeadSession();
+  // Phase 53 fix: server se aayi taaza memberships (ab membership
+  // id ke saath) stored account me bhi bhar do — warna purane
+  // saved login par naya field kabhi pahunchega hi nahi aur
+  // teacher ki pehchan (My classes card, subject scope) fail
+  // hoti rahegi.
+  const fresh = ms.filter((m) => m.status === "ACTIVE").map((m) => ({ id: m.id, schoolId: m.schoolId, role: m.role }));
+  if (fresh.length && JSON.stringify(fresh) !== JSON.stringify(session.memberships)) {
+    persistActive({ memberships: fresh });
+  }
 }
 
 export async function api(path, opts = {}) {

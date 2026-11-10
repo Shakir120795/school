@@ -93,7 +93,7 @@ router.post(
     });
     const memberships = await prisma.schoolMembership.findMany({
       where: { userId: user.id, status: "ACTIVE" },
-      select: { schoolId: true, role: true },
+      select: { id: true, schoolId: true, role: true },
     });
     return res.json({
       accessToken: signAccessToken(user),

@@ -88,7 +88,11 @@ router.post(
       issueSession(req, user),
       prisma.schoolMembership.findMany({
         where: { userId: user.id, status: "ACTIVE" },
-        select: { schoolId: true, role: true },
+        // Phase 53 fix: id bhi bhejo — client ko apni membership
+        // id chahiye (teacher apna profile pehchanne ke liye);
+        // bina id ke Dashboard ka My classes card aur Homework
+        // ke subject-scope dono chup-chaap fail ho rahe the.
+        select: { id: true, schoolId: true, role: true },
       }),
     ]);
     return res.json({
@@ -169,7 +173,7 @@ router.get(
     if (!user) return res.status(404).json({ error: "USER_NOT_FOUND" });
     const memberships = await prisma.schoolMembership.findMany({
       where: { userId: user.id },
-      select: { schoolId: true, role: true, status: true },
+      select: { id: true, schoolId: true, role: true, status: true },
     });
     return res.json({ user: publicUser(user), memberships });
   })
