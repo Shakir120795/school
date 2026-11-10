@@ -1390,6 +1390,11 @@ model AuthSession {
   ipAddress        String?
   expiresAt        DateTime
   revokedAt        DateTime?
+  // Phase 48d: rotation ka samay — revoked session agar ROTATE
+  // hui thi (logout/revoke nahi) to uska purana token 60s grace
+  // ke andar ek aur fresh pair le sakta hai (parallel refresh
+  // race se bachav). Logout/member-remove par ye null rehta hai.
+  rotatedAt        DateTime?
   createdAt        DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
