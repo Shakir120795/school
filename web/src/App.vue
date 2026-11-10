@@ -176,6 +176,22 @@ function switchSchool(id) {
         <span v-else-if="schoolInfo" class="grid place-items-center w-10 h-10 rounded-lg text-white text-sm font-bold mb-2" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
         <div class="text-lg font-bold">{{ schoolInfo?.name || "Smart School" }}</div>
         <div class="text-xs text-slate-300">Attendance & Communication</div>
+        <!-- Phase 47: desktop par bhi school yahi se badalta hai -->
+        <template v-if="memberships.length > 1">
+          <button type="button" class="mt-3 w-full rounded-xl bg-white/10 hover:bg-white/15 px-3 py-2 text-xs font-bold text-left" @click="schoolMenuOpen = !schoolMenuOpen">🏫 Switch school {{ schoolMenuOpen ? "▴" : "▾" }}</button>
+          <div v-if="schoolMenuOpen" class="grid gap-1.5 mt-2">
+            <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
+              class="flex items-center gap-2 rounded-xl px-2.5 py-2 text-left bg-white/5 hover:bg-white/10"
+              :class="m.schoolId === session.schoolId ? 'ring-1 ring-white/50' : ''">
+              <span class="grid place-items-center w-7 h-7 rounded-lg text-white text-[10px] font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[m.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[m.schoolId]?.name || '?') }}</span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-xs font-bold truncate">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }}</span>
+                <span class="block text-[10px] text-white/50">{{ m.role === "PARENT" && schoolInfoById[m.schoolId]?.childrenCount ? `${schoolInfoById[m.schoolId].childrenCount} child${schoolInfoById[m.schoolId].childrenCount === 1 ? "" : "ren"}` : m.role }}</span>
+              </span>
+              <span v-if="m.schoolId === session.schoolId" class="text-[10px] font-bold text-emerald-300 shrink-0">OPEN</span>
+            </button>
+          </div>
+        </template>
       </div>
       <router-link v-for="n in nav" :key="n.to + n.label" :to="n.to"
         class="rounded-xl px-3 py-2.5 text-sm hover:bg-white/10"
@@ -195,54 +211,56 @@ function switchSchool(id) {
       </div>
     </aside>
 
-    <!-- Mobile top bar -->
-    <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 flex items-center gap-3 shadow">
-      <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white" />
-      <span v-else-if="schoolInfo" class="grid place-items-center w-8 h-8 rounded-lg text-white text-[11px] font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
-      <div class="min-w-0">
-        <div class="font-bold leading-tight truncate">{{ schoolInfo?.name || "Smart School" }}</div>
-        <div class="text-[11px] text-white/60 leading-tight">{{ role }}</div>
+    <!-- Mobile top bar — Phase 47: school naam wala hissa hi
+         dropdown hai (1 se zyada school ho to): yahi tap karke
+         school badalta hai. -->
+    <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 shadow">
+      <div class="flex items-center gap-3">
+        <button v-if="memberships.length > 1" type="button" class="flex items-center gap-3 min-w-0 text-left" @click="schoolMenuOpen = !schoolMenuOpen" :aria-expanded="schoolMenuOpen">
+          <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white shrink-0" />
+          <span v-else-if="schoolInfo" class="grid place-items-center w-8 h-8 rounded-lg text-white text-[11px] font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
+          <span class="min-w-0">
+            <span class="block font-bold leading-tight truncate">{{ schoolInfo?.name || "Smart School" }} <span class="text-white/50 text-xs">{{ schoolMenuOpen ? "▴" : "▾" }}</span></span>
+            <span class="block text-[11px] text-white/60 leading-tight">{{ role }}<span v-if="role === 'PARENT' && schoolInfoById[session.schoolId]?.childrenCount"> · {{ schoolInfoById[session.schoolId].childrenCount }} child{{ schoolInfoById[session.schoolId].childrenCount === 1 ? "" : "ren" }}</span></span>
+          </span>
+        </button>
+        <template v-else>
+          <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white" />
+          <span v-else-if="schoolInfo" class="grid place-items-center w-8 h-8 rounded-lg text-white text-[11px] font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
+          <div class="min-w-0">
+            <div class="font-bold leading-tight truncate">{{ schoolInfo?.name || "Smart School" }}</div>
+            <div class="text-[11px] text-white/60 leading-tight">{{ role }}</div>
+          </div>
+        </template>
+        <router-link to="/notifications" class="relative ml-auto text-xl p-1" aria-label="Notifications">🔔
+          <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
+        </router-link>
+        <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
+        <button class="text-xs underline text-white/80" @click="logout">Logout</button>
       </div>
-      <router-link to="/notifications" class="relative ml-auto text-xl p-1" aria-label="Notifications">🔔
-        <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
-      </router-link>
-      <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
-      <button class="text-xs underline text-white/80" @click="logout">Logout</button>
+      <div v-if="schoolMenuOpen && memberships.length > 1" class="grid gap-2 mt-3">
+        <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
+          class="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left shadow-sm"
+          :class="m.schoolId === session.schoolId ? 'border-brand-600 ring-2 ring-brand-100' : 'border-slate-200'">
+          <img v-if="schoolInfoById[m.schoolId]?.logoUrl" :src="schoolInfoById[m.schoolId].logoUrl" class="w-10 h-10 rounded-xl object-contain bg-white border shrink-0" alt="" />
+          <span v-else class="grid place-items-center w-10 h-10 rounded-xl text-white text-xs font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[m.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[m.schoolId]?.name || '?') }}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-bold truncate text-slate-800">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }}</span>
+            <span class="block text-xs text-slate-500">{{ m.role === "PARENT" ? (schoolInfoById[m.schoolId]?.childrenCount ? `Your ${schoolInfoById[m.schoolId].childrenCount} child${schoolInfoById[m.schoolId].childrenCount === 1 ? "" : "ren"} in this school` : "No children linked yet") : m.role }}</span>
+          </span>
+          <span v-if="m.schoolId === session.schoolId" class="chip bg-brand-600 text-white shrink-0">Open now</span>
+          <span v-else class="text-brand-700 font-bold text-sm shrink-0">Open →</span>
+        </button>
+      </div>
     </header>
 
     <main class="relative z-10 flex-1 p-4 md:p-6 pb-28 md:pb-6 max-w-6xl mx-auto w-full">
-      <!-- Phase 45/46b: parent ke schools ab ek band DROPDOWN me
-           hain (shakir: bade cards hamesha khule rehte the, screen
-           kha jate the). Band haal me sirf current school ki ek
-           line; tap karne par list khulti hai — naam + bacche
-           count ke saath; school SIRF tap par badalta hai. -->
-      <div v-if="role === 'PARENT' && memberships.length > 1" class="mb-4">
-        <button type="button" class="w-full flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm" @click="schoolMenuOpen = !schoolMenuOpen" :aria-expanded="schoolMenuOpen">
-          <img v-if="schoolInfoById[session.schoolId]?.logoUrl" :src="schoolInfoById[session.schoolId].logoUrl" class="w-10 h-10 rounded-xl object-contain bg-white border shrink-0" alt="" />
-          <span v-else class="grid place-items-center w-10 h-10 rounded-xl text-white text-xs font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[session.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[session.schoolId]?.name || '?') }}</span>
-          <span class="min-w-0 flex-1">
-            <span class="block text-[10px] font-bold tracking-wide text-slate-400">SCHOOL</span>
-            <span class="block font-bold truncate leading-tight">{{ schoolInfoById[session.schoolId]?.name || session.schoolId }}</span>
-            <span class="block text-xs text-slate-500">{{ schoolInfoById[session.schoolId]?.childrenCount ? `Your ${schoolInfoById[session.schoolId].childrenCount} child${schoolInfoById[session.schoolId].childrenCount === 1 ? "" : "ren"} in this school` : "No children linked yet" }}</span>
-          </span>
-          <span class="text-slate-400 text-xl shrink-0">{{ schoolMenuOpen ? "▴" : "▾" }}</span>
-        </button>
-        <div v-if="schoolMenuOpen" class="grid gap-2 mt-2">
-          <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
-            class="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 text-left shadow-sm"
-            :class="m.schoolId === session.schoolId ? 'border-brand-600 ring-2 ring-brand-100' : 'border-slate-200'">
-            <img v-if="schoolInfoById[m.schoolId]?.logoUrl" :src="schoolInfoById[m.schoolId].logoUrl" class="w-10 h-10 rounded-xl object-contain bg-white border shrink-0" alt="" />
-            <span v-else class="grid place-items-center w-10 h-10 rounded-xl text-white text-xs font-bold shrink-0" :style="{ background: tileColor(schoolInfoById[m.schoolId]?.name || '?') }">{{ initialsOf(schoolInfoById[m.schoolId]?.name || '?') }}</span>
-            <span class="min-w-0 flex-1">
-              <span class="block font-bold truncate">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }}</span>
-              <span class="block text-xs text-slate-500">{{ schoolInfoById[m.schoolId]?.childrenCount ? `Your ${schoolInfoById[m.schoolId].childrenCount} child${schoolInfoById[m.schoolId].childrenCount === 1 ? "" : "ren"} in this school` : "No children linked yet" }}</span>
-            </span>
-            <span v-if="m.schoolId === session.schoolId" class="chip bg-brand-600 text-white shrink-0">Open now</span>
-            <span v-else class="text-brand-700 font-bold text-sm shrink-0">Open →</span>
-          </button>
-        </div>
-      </div>
-      <div v-else-if="memberships.length > 1" class="mb-4 flex items-center gap-2">
+      <!-- Phase 47: parent ka school switch ab PAGE par nahi —
+           upar wale header (mobile) / sidebar (desktop) ke school
+           naam se hota hai (shakir: 'yahi se school change hoga,
+           page wale ko hta de'). Yahan sirf staff ke liye purana
+           select bacha hai. -->
+      <div v-if="role !== 'PARENT' && memberships.length > 1" class="mb-4 flex items-center gap-2">
         <span class="label !mb-0">School</span>
         <select class="input !w-auto" :value="session.schoolId" @change="switchSchool($event.target.value)">
           <option v-for="m in memberships" :key="m.schoolId" :value="m.schoolId">{{ schoolInfoById[m.schoolId]?.name || m.schoolId }} ({{ m.role }})</option>
