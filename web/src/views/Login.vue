@@ -30,30 +30,27 @@ const password = ref("");
 const error = ref("");
 const busy = ref(false);
 
-// A login page can be opened while an account is signed in
-// (26 Oct: login links must always show their own page). The banner
-// names the account this TAB is on; signing in below pins THIS tab
-// to the new account — accounts open in other tabs stay untouched.
-// Phase 41: there is no switcher or switch link anywhere; an
-// account opens only by typing its own credentials here.
-const signedInUser = ref(session.accessToken ? currentUser() : null);
-const signedInRole = computed(() => {
-  if (!signedInUser.value) return "";
-  if (signedInUser.value.isPlatformAdmin) return "PLATFORM_ADMIN";
-  return myRole() || myMemberships()[0]?.role || "";
-});
-
-function goDashboard() {
-  if (signedInUser.value?.isPlatformAdmin) return router.push("/console");
-  router.push(myRole() === "PARENT" ? "/parent" : "/");
+// Phase 46 (shakir ki correction): login page par "You are
+// logged in as…" wala banner, "Go to my dashboard" aur "Logout"
+// buttons HATA diye — login nahi hua to logout dikhna hi galat
+// tha, aur ID login hote hi apne aap dashboard khulta hai. Ab:
+// - Is tab ki ID ISI page ki hai → seedha dashboard (redirect).
+// - Dusri ID is tab me khuli hai (jaise operator) aur page parent
+//   ka hai → saaf form dikhta hai, koi banner nahi; sign-in karte
+//   hi ye tab nayi ID par chala jata hai (Phase 41 per-tab rule).
+function homeForCurrentAccount() {
+  if (!session.accessToken || !currentUser()) return null;
+  if (currentUser().isPlatformAdmin) return "/console";
+  return myRole() === "PARENT" ? "/parent" : "/";
 }
-
-async function bannerLogout() {
-  await api("/auth/logout", { method: "POST", body: {} }).catch(() => {});
-  session.clear();
-  signedInUser.value = null;
-  error.value = "";
-  notice.value = "";
+function accountMatchesVariant() {
+  if (!session.accessToken || !currentUser()) return false;
+  if (variant === "admin") return !!currentUser().isPlatformAdmin;
+  const roles = myMemberships().map((m) => m.role);
+  if (variant === "parent") return roles.includes("PARENT");
+  if (variant === "teacher") return roles.includes("TEACHER");
+  if (variant === "school") return roles.some((x) => ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(x));
+  return false;
 }
 
 // Snapshot/restore of the whole account book, so a sign-in attempt
@@ -75,9 +72,25 @@ const notice = ref("");
 // and re-enabled any time by flipping that one server setting).
 const parentMode = ref("password");
 onMounted(async () => {
+  // Phase 46: is tab ki ID ka apna page hai (ya chooser hai) to
+  // form dikhane ki jagah seedha dashboard bhej do.
+  const home = homeForCurrentAccount();
+  if (home && (isChooser.value || accountMatchesVariant())) {
+    router.replace(home);
+    return;
+  }
   const r = await api("/auth/config", { school: false }).catch(() => null);
   if (r && r.status === 200 && r.json.parentAuthMode) parentMode.value = r.json.parentAuthMode;
 });
+
+// Phase 46: har login page ke neeche dusre logins ka saaf
+// section — Parent / Teacher / School. (Admin/owner ka link
+// jaan-bujh kar kahin nahi: wo owner ka private link hai.)
+const OTHER_LOGINS = [
+  { key: "parent", to: "/login/parent", icon: "👨‍👩‍👧", name: "Parent Login", sub: "Apne bachcho ki attendance, fees aur notices" },
+  { key: "teacher", to: "/login/teacher", icon: "🧑‍🏫", name: "Teacher Login", sub: "Apni classes, roll-call aur homework" },
+  { key: "school", to: "/login/school", icon: "🏫", name: "School Login", sub: "School admin & office team" },
+];
 
 const pageTitle = computed(() => {
   if (variant === "parent") return "Parent Login";
@@ -159,15 +172,6 @@ async function submit() {
       <p class="text-sm text-white/60">Attendance & Communication</p>
     </div>
     <div class="card w-full max-w-sm !rounded-[28px] !p-6 shadow-2xl">
-      <div v-if="signedInUser" class="mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
-        <p class="text-sm text-blue-900">You are logged in as <b>{{ signedInUser.fullName }}</b><span v-if="signedInRole"> ({{ signedInRole }})</span></p>
-        <div class="flex gap-2 mt-2">
-          <button type="button" class="btn btn-primary flex-1 !py-2 !text-sm" @click="goDashboard">Go to my dashboard</button>
-          <button type="button" class="btn btn-ghost flex-1 !py-2 !text-sm" @click="bannerLogout">Logout</button>
-        </div>
-        <p class="text-xs text-blue-700/70 mt-2">Want a different account in this tab? Sign in below with that account's own ID & password. Accounts open in your other tabs stay as they are — this app has no account switcher.</p>
-      </div>
-
       <!-- CHOOSER (plain /login): three doors, no form. The admin
            door is unlisted on purpose — /login/admin is the owner's
            private direct link only. -->
@@ -232,8 +236,24 @@ async function submit() {
         <button class="btn btn-primary w-full !py-3 !text-base" :disabled="busy">{{ busy ? "Signing in…" : "Sign in" }}</button>
       </form>
 
-      <div v-if="locked" class="mt-5 pt-4 border-t border-slate-100 text-center text-sm text-slate-500">
-        <router-link class="underline font-semibold" to="/login">← All logins</router-link>
+      <!-- Phase 46: dusre logins ka saaf section — jo page khula
+           hai wo "You are here" banke rehta hai, baaki do par tap
+           karke unke login page par jao. -->
+      <div v-if="locked" class="mt-5 pt-4 border-t border-slate-100">
+        <div class="text-[11px] font-bold tracking-wide text-slate-400 text-center mb-2">OTHER LOGINS</div>
+        <div class="grid gap-2">
+          <template v-for="l in OTHER_LOGINS" :key="l.key">
+            <div v-if="l.key === variant" class="flex items-center gap-3 rounded-2xl border-2 border-brand-600 bg-brand-50 px-4 py-3">
+              <span class="text-2xl">{{ l.icon }}</span>
+              <span class="flex-1"><span class="block font-bold">{{ l.name }}</span><span class="block text-xs text-slate-500">{{ l.sub }}</span></span>
+              <span class="chip bg-brand-600 text-white shrink-0">You are here</span>
+            </div>
+            <router-link v-else-if="flavorAllowsLogin(l.key)" :to="l.to" class="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 hover:bg-slate-50">
+              <span class="text-2xl">{{ l.icon }}</span>
+              <span><span class="block font-bold">{{ l.name }}</span><span class="block text-xs text-slate-500">{{ l.sub }}</span></span>
+            </router-link>
+          </template>
+        </div>
       </div>
     </div>
     <button v-if="installState === 'available' || installState === 'menu'" type="button" class="btn mt-5 !w-auto px-5 !py-2.5 bg-white/10 text-white hover:bg-white/20" @click="doInstall">📲 Install App</button>
