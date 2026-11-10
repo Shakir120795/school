@@ -158,7 +158,9 @@ const DB_UPDATE_STATEMENTS = [
   ["AuthSession: rotation grace column (Phase 48d)", `ALTER TABLE "AuthSession" ADD COLUMN IF NOT EXISTS "rotatedAt" TIMESTAMP(3)`],
   ["SupportTicket: audience routing column (Phase 52)", `ALTER TABLE "SupportTicket" ADD COLUMN IF NOT EXISTS "audience" TEXT NOT NULL DEFAULT 'OFFICE'`],
   ["HomeworkTarget: specific-students table (Phase 53)", `CREATE TABLE IF NOT EXISTS "HomeworkTarget" ("id" TEXT NOT NULL, "schoolId" TEXT NOT NULL, "homeworkId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "HomeworkTarget_pkey" PRIMARY KEY ("id"), CONSTRAINT "HomeworkTarget_homeworkId_fkey" FOREIGN KEY ("homeworkId") REFERENCES "Homework"("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "HomeworkTarget_schoolId_studentId_fkey" FOREIGN KEY ("schoolId", "studentId") REFERENCES "Student"("schoolId", "id") ON DELETE CASCADE ON UPDATE CASCADE)`],
-  ["HomeworkTarget: indexes (Phase 53)", `CREATE UNIQUE INDEX IF NOT EXISTS "HomeworkTarget_homeworkId_studentId_key" ON "HomeworkTarget"("homeworkId", "studentId"); CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId"); CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId")`],
+  ["HomeworkTarget: unique index (Phase 53)", `CREATE UNIQUE INDEX IF NOT EXISTS "HomeworkTarget_homeworkId_studentId_key" ON "HomeworkTarget"("homeworkId", "studentId")`],
+  ["HomeworkTarget: homework index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId")`],
+  ["HomeworkTarget: student index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId")`],
 ];
 
 router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {
