@@ -3,6 +3,17 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api, session, currentUser } from "../api.js";
 import Icon from "../components/Icon.vue";
+import FunLearn from "../components/FunLearn.vue";
+
+// Phase 49: Fun & Learn ke liye bacche ki class ka number —
+// classroom ke naam ("5", "Class 5", "1-A") se pehla number.
+function gradeOf(child) {
+  const raw = child.classroom?.gradeLevel || child.classroom?.name || "";
+  const m = String(raw).match(/\d{1,2}/);
+  const g = m ? parseInt(m[0], 10) : 5;
+  return g >= 1 && g <= 12 ? g : 5;
+}
+const firstName = (n) => (n || "").split(" ")[0];
 
 const route = useRoute();
 
@@ -14,8 +25,9 @@ const children = ref([]);
 const teachers = ref([]);
 const inbox = ref([]);
 const unread = ref(0);
-const whatsapp = ref(true);
-const msg = ref("");
+// Phase 49: WhatsApp preference HATA diya (shakir: 'hme koi bhi
+// notification whatsapp nhi krna h, only app se hi notification
+// jayegi') — isiliye whatsapp/msg/savePref bhi gaye.
 
 // Phase 48: parent apne bacche ki info khud bhare/badle —
 // classrooms (class dropdown ke liye) + edit form ki state.
@@ -157,13 +169,7 @@ async function load() {
     loading.value = false;
   }
 }
-async function savePref() {
-  const r = await api(`/schools/${sid}/my-consents`, {
-    method: "PUT",
-    body: { channel: "WHATSAPP", optedIn: whatsapp.value },
-  });
-  msg.value = r.status < 300 ? "Preference saved." : "Could not save preference.";
-}
+
 // Phase 48c: Settings/Teachers par le jana pakka karo — pehle ye
 // sirf page khulte samay hota tha, isiliye shakir ko 'kaam nhi kr
 // rha, wahi home page khul rha h' laga. Ab query badalte hi bhi
@@ -324,6 +330,12 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
          bell par aate hain, Notice aur Alert ek hi baat hai, aur
          Pickup/Teachers/Settings ab upar wale 3-line menu me hain). -->
 
+    <!-- Phase 49: har bacche ka Fun & Learn card — thought,
+         riddle aur uski class ka maths sawal, roz naya. -->
+    <div v-if="children.length" class="grid md:grid-cols-2 gap-4 items-start mb-4">
+      <FunLearn v-for="child in children" :key="'fun-' + child.id" :name="firstName(child.fullName)" :grade="gradeOf(child)" />
+    </div>
+
     <div class="grid md:grid-cols-2 gap-4 items-start">
       <div class="card">
         <div class="flex items-center justify-between mb-2">
@@ -349,16 +361,6 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
               <div v-if="t.approvedContactChannel" class="text-slate-400 text-xs">Contact: {{ t.approvedContactChannel }}</div>
             </div>
           </div>
-        </div>
-
-        <div class="card" id="prefs">
-          <h3 class="font-bold mb-2">Communication preferences</h3>
-          <label class="flex items-center gap-2 text-sm">
-            <input type="checkbox" v-model="whatsapp" class="w-4 h-4 accent-emerald-600" />
-            Also receive school notices on WhatsApp (when enabled by the school)
-          </label>
-          <button type="button" class="btn btn-primary mt-3 !py-2" @click="savePref">Save preference</button>
-          <p v-if="msg" class="text-xs text-brand-700 mt-2">{{ msg }}</p>
         </div>
 
       </div>

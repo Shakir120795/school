@@ -131,7 +131,6 @@ const NAV = [
   { to: "/notices", label: "Notices", icon: "megaphone", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"] },
   { to: "/parent", label: "My Children", icon: "home", roles: ["PARENT"] },
   { to: "/notices", label: "Notices", icon: "megaphone", roles: ["PARENT"] },
-  { to: "/parent?open=prefs", label: "Settings", icon: "sliders", roles: ["PARENT"] },
   { to: "/notifications", label: "Notifications", icon: "bell", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"], badge: true },
   { to: "/team", label: "Team & Access", icon: "lock", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
   { to: "/settings", label: "Settings", icon: "sliders", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
@@ -279,12 +278,14 @@ function switchSchool(id) {
           <button class="text-xs underline text-white/80" @click="logout">Logout</button>
         </template>
       </div>
-      <!-- 3-line menu ka panel: Teachers, Pickup, Settings, phir
+      <!-- 3-line menu ka panel: Teachers, Pickup, phir
            teeno legal pages, sabse neeche Logout. -->
       <div v-if="menuOpen && role === 'PARENT'" class="absolute right-3 top-full mt-1 w-64 max-w-[86vw] bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-100 py-2 z-40">
         <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> Teachers</button>
         <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage('/pickup')"><Icon name="shield" :size="18" class="text-brand-600" /> Pickup</button>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('prefs')"><Icon name="sliders" :size="18" class="text-brand-600" /> Settings</button>
+        <!-- Phase 49: Settings menu se hata — uska ekmatra section
+             (WhatsApp preference) hi khatm ho gaya, notifications
+             ab sirf app se jati hain. -->
         <div class="my-2 border-t border-slate-100"></div>
         <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/privacy')"><Icon name="lock" :size="18" class="text-slate-400" /> Privacy Policy</button>
         <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/terms')"><Icon name="file" :size="18" class="text-slate-400" /> Terms of Service</button>
