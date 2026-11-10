@@ -159,7 +159,7 @@ onMounted(load);
             <div class="text-xs font-semibold text-slate-500 mb-1.5">Last 10 school days</div>
             <div class="flex gap-1.5 flex-wrap">
               <span v-for="d in stripDays(child)" :key="d.id" class="w-3.5 h-3.5 rounded-full" :class="dotClass(d.status)"
-                :title="`${new Date(d.localDate).toLocaleDateString()} · ${d.status}`"></span>
+                :title="d.localDate ? `${new Date(d.localDate).toLocaleDateString()} · ${d.status}` : 'No record'"></span>
               <span v-if="!stripDays(child).length" class="text-sm text-slate-400">No records yet</span>
             </div>
             <div class="flex gap-3 mt-2 text-[11px] text-slate-500">
