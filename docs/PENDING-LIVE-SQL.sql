@@ -108,3 +108,6 @@ ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bloodGroup" TEXT;
 
 -- Phase 48d: AuthSession rotation grace
 ALTER TABLE "AuthSession" ADD COLUMN IF NOT EXISTS "rotatedAt" TIMESTAMP(3);
+
+-- Phase 52: SupportTicket audience routing
+ALTER TABLE "SupportTicket" ADD COLUMN IF NOT EXISTS "audience" TEXT NOT NULL DEFAULT 'OFFICE';
