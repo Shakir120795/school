@@ -111,3 +111,9 @@ ALTER TABLE "AuthSession" ADD COLUMN IF NOT EXISTS "rotatedAt" TIMESTAMP(3);
 
 -- Phase 52: SupportTicket audience routing
 ALTER TABLE "SupportTicket" ADD COLUMN IF NOT EXISTS "audience" TEXT NOT NULL DEFAULT 'OFFICE';
+
+-- Phase 53: HomeworkTarget (specific students)
+CREATE TABLE IF NOT EXISTS "HomeworkTarget" ("id" TEXT NOT NULL, "schoolId" TEXT NOT NULL, "homeworkId" TEXT NOT NULL, "studentId" TEXT NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "HomeworkTarget_pkey" PRIMARY KEY ("id"), CONSTRAINT "HomeworkTarget_homeworkId_fkey" FOREIGN KEY ("homeworkId") REFERENCES "Homework"("id") ON DELETE CASCADE ON UPDATE CASCADE, CONSTRAINT "HomeworkTarget_schoolId_studentId_fkey" FOREIGN KEY ("schoolId", "studentId") REFERENCES "Student"("schoolId", "id") ON DELETE CASCADE ON UPDATE CASCADE);
+CREATE UNIQUE INDEX IF NOT EXISTS "HomeworkTarget_homeworkId_studentId_key" ON "HomeworkTarget"("homeworkId", "studentId");
+CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId");
+CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId");
