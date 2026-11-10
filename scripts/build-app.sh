@@ -9,6 +9,13 @@
 #     VITE_API_BASE — app live API se baat karti hai, isliye native
 #     build me API base absolute URL hota hai; website build hamesha
 #     relative rehta hai).
+#  Phase 43 (auto-update): flavor configs me server.url hai — app
+#  khulte hi LIVE website load karti hai, isliye website ka har
+#  update bina naya APK banaye app me aa jata hai. Bundled web
+#  build sirf Capacitor ki webDir requirement ke liye pack hoti
+#  hai. App apna flavor live site ko ?appFlavor= se batati hai
+#  (web/src/flavor.js ka runtime lock — sirf native me lagta hai,
+#  browser website par kabhi nahi).
 #  2. Capacitor config + Android applicationId/app_name ko flavor ke
 #     hisab se badal kar `cap sync` + Gradle assembleDebug chalata
 #     hai, phir saari files wapas original kar deta hai (repo hamesha
