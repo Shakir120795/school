@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { api, session } from "../api.js";
 
 // Support tickets + PTM (Phase 20).
@@ -20,7 +20,12 @@ const tickets = ref([]);
 const open = ref(null);
 const thread = ref([]);
 const reply = ref("");
-const form = ref({ subject: "", body: "", category: "GENERAL", studentId: "" });
+const form = ref({ subject: "", body: "", category: "GENERAL", studentId: "", audience: "OFFICE" });
+// Phase 52: ticket list do sections me — School Office aur Class Teacher.
+const sections = computed(() => [
+  { key: "OFFICE", title: "🏫 School Office", list: tickets.value.filter((t) => t.audience !== "TEACHER") },
+  { key: "TEACHER", title: "👩‍🏫 Class Teacher", list: tickets.value.filter((t) => t.audience === "TEACHER") },
+].filter((s) => s.list.length));
 const STATUS_CLS = { OPEN: "bg-rose-100 text-rose-700", IN_PROGRESS: "bg-amber-100 text-amber-700", RESOLVED: "bg-emerald-100 text-emerald-700", CLOSED: "bg-slate-200 text-slate-500" };
 
 const ptms = ref([]);
@@ -40,7 +45,14 @@ async function createTicket() {
   if (isParent && !form.value.studentId) { err.value = "Please choose which child this ticket is about."; return; }
   const body = { ...form.value, studentId: form.value.studentId || undefined };
   const r = await api(`/schools/${sid}/tickets`, { method: "POST", body });
-  if (r.status === 201) { msg.value = `Ticket #${r.json.ticket.ticketNo} raised. The school office will reply here.`; form.value = { subject: "", body: "", category: "GENERAL", studentId: "" }; await loadTickets(); await openTicket(r.json.ticket); }
+  if (r.status === 201) {
+    msg.value = body.audience === "TEACHER"
+      ? `Ticket #${r.json.ticket.ticketNo} raised — sent to the class teacher. She will reply here.`
+      : `Ticket #${r.json.ticket.ticketNo} raised. The school office will reply here.`;
+    form.value = { subject: "", body: "", category: "GENERAL", studentId: "", audience: "OFFICE" };
+    await loadTickets(); await openTicket(r.json.ticket);
+  }
+  else if (r.json?.error === "NO_CLASS_TEACHER") err.value = "This class has no class teacher set yet — please send this ticket to the School Office instead.";
   else err.value = r.json?.error || "Could not raise ticket";
 }
 async function openTicket(t) {
@@ -139,6 +151,13 @@ onMounted(async () => {
         </div>
         <div><label class="label">Subject</label><input v-model="form.subject" class="input" required placeholder="e.g. Bus route change request" /></div>
       </div>
+      <div v-if="isParent"><label class="label">Send to</label>
+        <div class="flex gap-2">
+          <button type="button" class="btn flex-1 !py-2.5" :class="form.audience === 'OFFICE' ? 'btn-primary' : 'btn-ghost'" @click="form.audience = 'OFFICE'">🏫 School Office</button>
+          <button type="button" class="btn flex-1 !py-2.5" :class="form.audience === 'TEACHER' ? 'btn-primary' : 'btn-ghost'" @click="form.audience = 'TEACHER'">👩‍🏫 Class Teacher</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">{{ form.audience === 'TEACHER' ? "Class work, leave or studies — goes straight to your child's class teacher." : "Fees, bus or office matters — goes to the school office." }}</p>
+      </div>
       <div><label class="label">Message</label><textarea v-model="form.body" class="input" rows="2" required placeholder="Write your query in detail…"></textarea></div>
       <button class="btn btn-primary">Submit ticket</button>
     </form>
@@ -146,15 +165,18 @@ onMounted(async () => {
     <!-- TICKET LIST + THREAD -->
     <div class="grid md:grid-cols-2 gap-4 mb-4">
       <div class="grid gap-2 content-start">
-        <div v-for="t in tickets" :key="t.id" class="card !py-3 cursor-pointer" :class="{ 'ring-2 ring-brand-500': open?.id === t.id }" @click="openTicket(t)">
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-sm">#{{ t.ticketNo }}</span>
-            <span class="font-semibold text-sm truncate">{{ t.subject }}</span>
-            <span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" :class="STATUS_CLS[t.status]">{{ t.status.replace("_", " ") }}</span>
+        <template v-for="sec in sections" :key="sec.key">
+          <h3 class="font-bold text-sm mt-1">{{ sec.title }}</h3>
+          <div v-for="t in sec.list" :key="t.id" class="card !py-3 cursor-pointer" :class="{ 'ring-2 ring-brand-500': open?.id === t.id }" @click="openTicket(t)">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-sm">#{{ t.ticketNo }}</span>
+              <span class="font-semibold text-sm truncate">{{ t.subject }}</span>
+              <span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" :class="STATUS_CLS[t.status]">{{ t.status.replace("_", " ") }}</span>
+            </div>
+            <div class="text-xs text-slate-400 mt-0.5">{{ t.category }}<span v-if="t.studentName"> · {{ t.studentName }}<span v-if="t.studentClass"> · {{ t.studentClass }}</span></span><span v-else> · General</span> · {{ String(t.updatedAt).slice(0, 10) }}</div>
+            <div v-if="t.classTeacher" class="text-xs text-slate-400 mt-0.5">👩‍🏫 Class teacher: {{ t.classTeacher }}</div>
           </div>
-          <div class="text-xs text-slate-400 mt-0.5">{{ t.category }}<span v-if="t.studentName"> · {{ t.studentName }}<span v-if="t.studentClass"> · {{ t.studentClass }}</span></span><span v-else> · General</span> · {{ String(t.updatedAt).slice(0, 10) }}</div>
-          <div v-if="t.classTeacher" class="text-xs text-slate-400 mt-0.5">👩‍🏫 Class teacher: {{ t.classTeacher }}</div>
-        </div>
+        </template>
         <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading tickets…</p>
         <p v-else-if="!tickets.length" class="card text-sm text-slate-400">No tickets yet.</p>
       </div>
@@ -166,6 +188,7 @@ onMounted(async () => {
         </div>
         <div v-if="open.studentName" class="text-xs text-slate-500 mb-2">🎓 {{ open.studentName }}<span v-if="open.studentClass"> · {{ open.studentClass }}</span><span v-if="open.classTeacher"> · 👩‍🏫 Class teacher: {{ open.classTeacher }}</span></div>
         <div v-else class="text-xs text-slate-400 mb-2">General ticket — no specific student</div>
+        <div class="text-xs text-slate-400 mb-2">Sent to: {{ open.audience === 'TEACHER' ? '👩‍🏫 Class Teacher' : '🏫 School Office' }}</div>
         <div class="grid gap-2 max-h-80 overflow-y-auto mb-3">
           <div v-for="m in thread" :key="m.id" class="rounded-xl px-3 py-2 text-sm" :class="m.isStaff ? 'bg-brand-50 ml-6' : 'bg-slate-50 mr-6'">
             <div class="text-[11px] font-bold text-slate-400">{{ m.authorName }} · {{ m.isStaff ? "School" : "Parent" }} · {{ String(m.createdAt).slice(0, 16).replace("T", " ") }}</div>

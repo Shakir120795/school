@@ -1308,6 +1308,7 @@ model SupportTicket {
   raisedByMembershipId String
   studentId            String?
   category             String       @default("GENERAL") // GENERAL | FEES | TRANSPORT | ACADEMIC | OTHER
+  audience             String       @default("OFFICE") // OFFICE | TEACHER (Phase 52: parent chooses who the ticket goes to)
   subject              String
   status               TicketStatus @default(OPEN)
   createdAt            DateTime     @default(now())

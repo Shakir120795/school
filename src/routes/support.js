@@ -66,11 +66,59 @@ async function studentBriefs(schoolId, studentIds) {
 }
 const NO_STUDENT = { studentName: null, studentClass: null, classTeacher: null };
 
+// Phase 52: ticket routing. A TEACHER-audience ticket is addressed to
+// the incharge of the student's class; that teacher alone sees it in
+// her queue (plus managers, who see everything).
+async function teacherInchargeClassIds(schoolId, membershipId) {
+  const profile = await prisma.teacherProfile.findFirst({ where: { schoolId, membershipId }, select: { id: true } });
+  if (!profile) return [];
+  const rows = await prisma.classInchargeAssignment.findMany({
+    where: { schoolId, teacherId: profile.id, effectiveTo: null },
+    select: { classroomId: true },
+  });
+  return rows.map((r) => r.classroomId);
+}
+
+async function studentIdsOfClasses(schoolId, classroomIds) {
+  if (!classroomIds.length) return [];
+  const rows = await prisma.student.findMany({
+    where: { schoolId, classroomId: { in: classroomIds }, status: "ACTIVE" },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
+}
+
+// Class teacher (incharge name) of one student, or null.
+async function classTeacherOfStudent(schoolId, studentId) {
+  const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { classroomId: true } });
+  if (!student?.classroomId) return null;
+  const assignment = await prisma.classInchargeAssignment.findFirst({
+    where: { schoolId, classroomId: student.classroomId, effectiveTo: null },
+    include: { teacher: { select: { displayName: true } } },
+  });
+  return assignment?.teacher?.displayName || null;
+}
+
 async function ticketAccess(req, schoolId, ticketId) {
   const ticket = await prisma.supportTicket.findFirst({ where: { id: ticketId, schoolId } });
   if (!ticket) return null;
-  if (isStaffRole(req.membership.role)) return ticket;
-  return ticket.raisedByUserId === req.user.id ? ticket : null;
+  const role = req.membership.role;
+  if (role === "PARENT") return ticket.raisedByUserId === req.user.id ? ticket : null;
+  if (role === "SCHOOL_ADMIN" || role === "PRINCIPAL") return ticket; // managers see everything
+  if (role === "TEACHER") {
+    // Phase 52: a teacher opens only TEACHER tickets of students in
+    // classes she is incharge of.
+    if (ticket.audience !== "TEACHER" || !ticket.studentId) return null;
+    const classIds = await teacherInchargeClassIds(schoolId, req.membership.id);
+    if (!classIds.length) return null;
+    const student = await prisma.student.findFirst({
+      where: { id: ticket.studentId, schoolId },
+      select: { classroomId: true },
+    });
+    return student?.classroomId && classIds.includes(student.classroomId) ? ticket : null;
+  }
+  // STAFF (office team): the office queue only.
+  return ticket.audience !== "TEACHER" ? ticket : null;
 }
 
 // --- Tickets ----------------------------------------------------------------------
@@ -95,6 +143,16 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
       return res.status(404).json({ error: "NOT_FOUND" });
     }
   }
+  // Phase 52: parent chun sakta hai ticket kisko jaye — School
+  // Office ya uske bacche ki Class Teacher (jaise leave ki baat
+  // teacher ko, fees ki baat office ko). Teacher wali ticket ke
+  // liye student hona aur uski class ka incharge hona zaroori hai.
+  const audience = req.body.audience === "TEACHER" ? "TEACHER" : "OFFICE";
+  if (audience === "TEACHER") {
+    if (!studentId) return res.status(400).json({ error: "STUDENT_REQUIRED" });
+    const teacherName = await classTeacherOfStudent(schoolId, studentId);
+    if (!teacherName) return res.status(400).json({ error: "NO_CLASS_TEACHER" });
+  }
   // Resolve the author name BEFORE the transaction: on the hosted
   // pooler the client has connection_limit=1, so any global-client
   // query inside the tx callback deadlocks against the tx itself.
@@ -105,7 +163,7 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
       data: {
         schoolId, ticketNo: count + 1,
         raisedByUserId: req.user.id, raisedByMembershipId: req.membership.id,
-        studentId, category, subject: req.body.subject,
+        studentId, category, subject: req.body.subject, audience,
       },
     });
     await tx.ticketMessage.create({
@@ -122,7 +180,19 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
 router.get("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), asyncRoute(async (req, res) => {
   const schoolId = req.params.schoolId;
   const where = { schoolId };
-  if (!isStaffRole(req.membership.role)) where.raisedByUserId = req.user.id;
+  const role = req.membership.role;
+  if (role === "PARENT") {
+    where.raisedByUserId = req.user.id;
+  } else if (role === "TEACHER") {
+    // Phase 52: teacher ki queue = uski incharge classes ke baccho
+    // ki TEACHER tickets hi.
+    const classIds = await teacherInchargeClassIds(schoolId, req.membership.id);
+    const ids = await studentIdsOfClasses(schoolId, classIds);
+    where.audience = "TEACHER";
+    where.studentId = { in: ids };
+  } else if (role === "STAFF") {
+    where.audience = "OFFICE"; // office team: office queue only
+  }
   if (req.query.status && STATUSES.includes(req.query.status)) where.status = req.query.status;
   const tickets = await prisma.supportTicket.findMany({
     where, orderBy: { updatedAt: "desc" }, take: 100,
@@ -163,7 +233,7 @@ router.post("/schools/:schoolId/tickets/:ticketId/messages", requireAuth, requir
   if (staff && ticket.studentId) {
     await alertGuardians(schoolId, ticket.studentId,
       `🎫 Reply on your ticket #${ticket.ticketNo}`,
-      `${ticket.subject} — the school office has replied. Open Support in the app to read and respond.`);
+      `${ticket.subject} — the school has replied. Open Support in the app to read and respond.`);
   }
   return res.status(201).json({ message });
 }));
