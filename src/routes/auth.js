@@ -116,25 +116,11 @@ router.post(
       where: { refreshTokenHash: hashToken(refreshToken) },
       include: { user: true },
     });
-    if (!session || session.expiresAt < new Date() || !session.user.isActive) {
+    if (!session || session.revokedAt || session.expiresAt < new Date() || !session.user.isActive) {
       return res.status(401).json({ error: "INVALID_REFRESH_TOKEN" });
     }
-    // Phase 48d: ROTATE hui session ka purana token 60 second ke
-    // andar chalega (grace) — hard refresh par parallel calls /
-    // dusra tab ek hi token se refresh kare to dusri call 401
-    // kha kar account ko dead maan leti thi aur app dusre account
-    // par switch ho jata tha. Logout ya member-remove se revoke
-    // hui session par rotatedAt null hota hai — wo turant dead
-    // rehti hai, grace sirf rotation ko milta hai.
-    const GRACE_MS = 60_000;
-    if (session.revokedAt) {
-      const inGrace = session.rotatedAt && Date.now() - new Date(session.rotatedAt).getTime() < GRACE_MS;
-      if (!inGrace) return res.status(401).json({ error: "INVALID_REFRESH_TOKEN" });
-      const graceRefresh = await issueSession(req, session.user);
-      return res.json({ accessToken: signAccessToken(session.user), refreshToken: graceRefresh });
-    }
     // Rotate: revoke the used session and issue a fresh pair.
-    await prisma.authSession.update({ where: { id: session.id }, data: { revokedAt: new Date(), rotatedAt: new Date() } });
+    await prisma.authSession.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
     const newRefresh = await issueSession(req, session.user);
     return res.json({ accessToken: signAccessToken(session.user), refreshToken: newRefresh });
   })
