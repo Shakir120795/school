@@ -33,7 +33,7 @@ function stripDays(child) {
   // shuru me halke grey 'no record' dots pad jate hain, taaki
   // parent ko phone par pure 10 dots hi dikhen.
   const days = (child.attendances || []).slice(0, 10).reverse();
-  while (days.length < 10) days.unshift({ status: "NONE" });
+  while (days.length < 10) days.unshift({ status: "NONE", id: `pad-${days.length}` });
   return days;
 }
 
@@ -54,7 +54,7 @@ function entryLine(child) {
   return { when, entry: fmtTime(a.entryAt), exit: fmtTime(a.exitAt) };
 }
 const dotClass = (s) =>
-  s === "PRESENT" ? "bg-emerald-500" : s === "LATE" ? "bg-amber-500" : s === "ABSENT" ? "bg-rose-500" : "bg-slate-300";
+  s === "PRESENT" ? "bg-emerald-500" : s === "LATE" ? "bg-amber-500" : s === "ABSENT" ? "bg-rose-500" : s === "NONE" ? "bg-slate-200" : "bg-slate-300";
 const todayStatus = (child) => (child.attendances || [])[0] || null;
 
 // Phase 45: bacche ka sabse taza status BADA banner banke dikhta
