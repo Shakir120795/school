@@ -12,6 +12,10 @@ const err = ref("");
 
 const loading = ref(true);
 const children = ref([]);
+// Phase 51: staff ke form ke liye school ke students + class labels.
+const students = ref([]);
+const classMap = ref({});
+const classLabel = (c) => (c ? `Class ${c.name}${c.section ? "-" + c.section : ""}` : "");
 const tickets = ref([]);
 const open = ref(null);
 const thread = ref([]);
@@ -31,6 +35,9 @@ async function loadTickets() {
 }
 async function createTicket() {
   err.value = ""; msg.value = "";
+  // Phase 51: parent ko child chunna hi hoga — ticket hamesha
+  // kisi bacche ke baare me hoti hai (server bhi yahi kehta hai).
+  if (isParent && !form.value.studentId) { err.value = "Please choose which child this ticket is about."; return; }
   const body = { ...form.value, studentId: form.value.studentId || undefined };
   const r = await api(`/schools/${sid}/tickets`, { method: "POST", body });
   if (r.status === 201) { msg.value = `Ticket #${r.json.ticket.ticketNo} raised. The school office will reply here.`; form.value = { subject: "", body: "", category: "GENERAL", studentId: "" }; await loadTickets(); await openTicket(r.json.ticket); }
@@ -91,6 +98,12 @@ onMounted(async () => {
   if (isParent) {
     const c = await api(`/schools/${sid}/my-children`);
     if (c.status === 200) { children.value = c.json.children || []; if (children.value.length) form.value.studentId = children.value[0].id; }
+  } else {
+    // Phase 51: staff bhi ticket ko student se jod sake — form ke
+    // 'Student' select ke liye students + class labels lao.
+    const [sr, cr] = await Promise.all([api(`/schools/${sid}/students`), api(`/schools/${sid}/classrooms`)]);
+    if (cr.status === 200) classMap.value = Object.fromEntries((cr.json.classrooms || []).map((c) => [c.id, classLabel(c)]));
+    if (sr.status === 200) students.value = sr.json.students || [];
   }
   await loadTickets();
   await loadPtm();
@@ -110,8 +123,13 @@ onMounted(async () => {
       <div class="grid md:grid-cols-3 gap-3">
         <div v-if="isParent"><label class="label">About child</label>
           <select v-model="form.studentId" class="input">
-            <option value="">General (no child)</option>
-            <option v-for="c in children" :key="c.id" :value="c.id">{{ c.fullName }}</option>
+            <option v-for="c in children" :key="c.id" :value="c.id">{{ c.fullName }} — {{ classLabel(c.classroom) }}</option>
+          </select>
+        </div>
+        <div v-else><label class="label">Student</label>
+          <select v-model="form.studentId" class="input">
+            <option value="">General — no specific student</option>
+            <option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} — {{ classMap[s.classroomId] || "No class" }}</option>
           </select>
         </div>
         <div><label class="label">Category</label>
@@ -134,7 +152,8 @@ onMounted(async () => {
             <span class="font-semibold text-sm truncate">{{ t.subject }}</span>
             <span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" :class="STATUS_CLS[t.status]">{{ t.status.replace("_", " ") }}</span>
           </div>
-          <div class="text-xs text-slate-400 mt-0.5">{{ t.category }}<span v-if="t.studentName"> · {{ t.studentName }}</span> · {{ String(t.updatedAt).slice(0, 10) }}</div>
+          <div class="text-xs text-slate-400 mt-0.5">{{ t.category }}<span v-if="t.studentName"> · {{ t.studentName }}<span v-if="t.studentClass"> · {{ t.studentClass }}</span></span><span v-else> · General</span> · {{ String(t.updatedAt).slice(0, 10) }}</div>
+          <div v-if="t.classTeacher" class="text-xs text-slate-400 mt-0.5">👩‍🏫 Class teacher: {{ t.classTeacher }}</div>
         </div>
         <p v-if="loading" class="card text-sm text-slate-400 animate-pulse">Loading tickets…</p>
         <p v-else-if="!tickets.length" class="card text-sm text-slate-400">No tickets yet.</p>
@@ -145,6 +164,8 @@ onMounted(async () => {
           <h3 class="font-bold text-sm">#{{ open.ticketNo }} — {{ open.subject }}</h3>
           <span class="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full" :class="STATUS_CLS[open.status]">{{ open.status.replace("_", " ") }}</span>
         </div>
+        <div v-if="open.studentName" class="text-xs text-slate-500 mb-2">🎓 {{ open.studentName }}<span v-if="open.studentClass"> · {{ open.studentClass }}</span><span v-if="open.classTeacher"> · 👩‍🏫 Class teacher: {{ open.classTeacher }}</span></div>
+        <div v-else class="text-xs text-slate-400 mb-2">General ticket — no specific student</div>
         <div class="grid gap-2 max-h-80 overflow-y-auto mb-3">
           <div v-for="m in thread" :key="m.id" class="rounded-xl px-3 py-2 text-sm" :class="m.isStaff ? 'bg-brand-50 ml-6' : 'bg-slate-50 mr-6'">
             <div class="text-[11px] font-bold text-slate-400">{{ m.authorName }} · {{ m.isStaff ? "School" : "Parent" }} · {{ String(m.createdAt).slice(0, 16).replace("T", " ") }}</div>

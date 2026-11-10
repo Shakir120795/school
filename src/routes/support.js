@@ -34,6 +34,38 @@ async function ownsChild(req, schoolId, studentId) {
   const link = await prisma.studentGuardian.findFirst({ where: { schoolId, studentId, guardianId: { in: ids } } });
   return !!link;
 }
+// Phase 51: ticket ke saath student ki poori pehchan — sirf naam
+// nahi, uski CLASS aur CLASS TEACHER (incharge) bhi, taaki office
+// ko turant pata chale complaint kis bacche ki hai aur uski class
+// kiske paas hai (shakir: 'only student name or parent name hi
+// likha aa rha h, class nhi aa rhi, class teacher kon h ye bhi nhi').
+async function studentBriefs(schoolId, studentIds) {
+  const ids = [...new Set((studentIds || []).filter(Boolean))];
+  if (!ids.length) return {};
+  const students = await prisma.student.findMany({
+    where: { schoolId, id: { in: ids } },
+    select: { id: true, fullName: true, classroomId: true, classroom: { select: { name: true, section: true } } },
+  });
+  const classIds = [...new Set(students.map((s) => s.classroomId).filter(Boolean))];
+  const incharges = classIds.length
+    ? await prisma.classInchargeAssignment.findMany({
+        where: { schoolId, classroomId: { in: classIds }, effectiveTo: null },
+        select: { classroomId: true, teacher: { select: { displayName: true } } },
+      })
+    : [];
+  const teacherOf = Object.fromEntries(incharges.map((i) => [i.classroomId, i.teacher?.displayName || null]));
+  const out = {};
+  for (const s of students) {
+    out[s.id] = {
+      studentName: s.fullName,
+      studentClass: s.classroom ? `Class ${s.classroom.name}${s.classroom.section ? "-" + s.classroom.section : ""}` : null,
+      classTeacher: s.classroomId ? teacherOf[s.classroomId] || null : null,
+    };
+  }
+  return out;
+}
+const NO_STUDENT = { studentName: null, studentClass: null, classTeacher: null };
+
 async function ticketAccess(req, schoolId, ticketId) {
   const ticket = await prisma.supportTicket.findFirst({ where: { id: ticketId, schoolId } });
   if (!ticket) return null;
@@ -49,6 +81,13 @@ router.post("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), async
   const category = req.body.category || "GENERAL";
   if (!CATEGORIES.includes(category)) return res.status(400).json({ error: "INVALID_CATEGORY" });
   let studentId = req.body.studentId || null;
+  // Phase 51: parent ki ticket kisi bacche ke baare me hi hogi —
+  // bina child chune ticket nahi banegi (form me 'About child'
+  // chunna zaroori hai). Staff ke liye student ab bhi optional
+  // hai (General ticket ban sakti hai).
+  if (req.membership.role === "PARENT" && !studentId) {
+    return res.status(400).json({ error: "STUDENT_REQUIRED" });
+  }
   if (studentId) {
     const student = await prisma.student.findFirst({ where: { id: studentId, schoolId }, select: { id: true } });
     if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
@@ -88,12 +127,8 @@ router.get("/schools/:schoolId/tickets", requireAuth, requireSchool(ALL), asyncR
   const tickets = await prisma.supportTicket.findMany({
     where, orderBy: { updatedAt: "desc" }, take: 100,
   });
-  const studentIds = [...new Set(tickets.map((t) => t.studentId).filter(Boolean))];
-  const students = studentIds.length
-    ? await prisma.student.findMany({ where: { schoolId, id: { in: studentIds } }, select: { id: true, fullName: true } })
-    : [];
-  const nameOf = Object.fromEntries(students.map((s) => [s.id, s.fullName]));
-  return res.json({ tickets: tickets.map((t) => ({ ...t, studentName: t.studentId ? nameOf[t.studentId] || null : null })) });
+  const briefs = await studentBriefs(schoolId, tickets.map((t) => t.studentId));
+  return res.json({ tickets: tickets.map((t) => ({ ...t, ...NO_STUDENT, ...(t.studentId ? briefs[t.studentId] || {} : {}) })) });
 }));
 
 router.get("/schools/:schoolId/tickets/:ticketId", requireAuth, requireSchool(ALL), asyncRoute(async (req, res) => {
@@ -103,7 +138,8 @@ router.get("/schools/:schoolId/tickets/:ticketId", requireAuth, requireSchool(AL
   const messages = await prisma.ticketMessage.findMany({
     where: { schoolId, ticketId }, orderBy: { createdAt: "asc" }, take: 200,
   });
-  return res.json({ ticket, messages });
+  const briefs = await studentBriefs(schoolId, [ticket.studentId]);
+  return res.json({ ticket: { ...ticket, ...NO_STUDENT, ...(ticket.studentId ? briefs[ticket.studentId] || {} : {}) }, messages });
 }));
 
 router.post("/schools/:schoolId/tickets/:ticketId/messages", requireAuth, requireSchool(ALL), asyncRoute(async (req, res) => {
