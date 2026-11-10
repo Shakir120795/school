@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { api, session, currentUser } from "../api.js";
 import Icon from "../components/Icon.vue";
@@ -164,14 +164,24 @@ async function savePref() {
   });
   msg.value = r.status < 300 ? "Preference saved." : "Could not save preference.";
 }
+// Phase 48c: Settings/Teachers par le jana pakka karo — pehle ye
+// sirf page khulte samay hota tha, isiliye shakir ko 'kaam nhi kr
+// rha, wahi home page khul rha h' laga. Ab query badalte hi bhi
+// scroll hota hai, aur hisse ke render hone tak koshish rehti hai.
+function scrollToSection(id) {
+  let tries = 0;
+  const tick = () => {
+    const el = document.getElementById(id);
+    if (el) { el.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
+    if (++tries < 12) setTimeout(tick, 200);
+  };
+  tick();
+}
 onMounted(async () => {
   await load();
-  // Phase 48: neeche wali bar / sidebar ke Settings se aaye to
-  // seedha Preferences hisse par le jao.
-  if (route.query.open === "prefs") {
-    setTimeout(() => document.getElementById("prefs")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
-  }
+  if (route.query.open) scrollToSection(String(route.query.open));
 });
+watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
 </script>
 
 <template>
@@ -309,18 +319,10 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Phase 45 ke bade buttons — Phase 47b me baccho ke cards
-         ke NEECHE aaye. Phase 48: jo options neeche wali bar me
-         pehle se hain (Homework, Leave, Fees, Timetable, Settings)
-         yahan se HATA diye (shakir: 'nav wale hata do, ye nav me
-         already show hote rhenge'); icons ab modern SVG hain. -->
-    <div class="grid grid-cols-2 gap-3 mb-5">
-      <router-link to="/parent" class="big-btn"><span class="big-ico" style="background:#dbeafe;color:#2563eb"><Icon name="calendar-check" :size="26" /></span><span><span class="big-label">Attendance</span><span class="big-sub">See present / absent days</span></span></router-link>
-      <router-link to="/notifications" class="big-btn"><span class="big-ico" style="background:#fef3c7;color:#d97706"><Icon name="bell" :size="26" /></span><span><span class="big-label">Alerts</span><span class="big-sub">New messages from school</span></span><span v-if="unread" class="tile-badge">{{ unread }}</span></router-link>
-      <router-link to="/notices" class="big-btn"><span class="big-ico" style="background:#e0e7ff;color:#4f46e5"><Icon name="megaphone" :size="26" /></span><span><span class="big-label">Notices</span><span class="big-sub">School announcements</span></span></router-link>
-      <router-link to="/pickup" class="big-btn"><span class="big-ico" style="background:#fef9c3;color:#a16207"><Icon name="shield" :size="26" /></span><span><span class="big-label">Pickup</span><span class="big-sub">Who can pick your child</span></span></router-link>
-      <a href="#teachers" class="big-btn col-span-2"><span class="big-ico" style="background:#dcfce7;color:#16a34a"><Icon name="user" :size="26" /></span><span><span class="big-label">Teachers</span><span class="big-sub">Meet the teachers</span></span></a>
-    </div>
+    <!-- Phase 48c: bade buttons poori tarah HATA diye (shakir:
+         Attendance home par pehle se dikhti hai, Alerts upar wale
+         bell par aate hain, Notice aur Alert ek hi baat hai, aur
+         Pickup/Teachers/Settings ab upar wale 3-line menu me hain). -->
 
     <div class="grid md:grid-cols-2 gap-4 items-start">
       <div class="card">
@@ -359,12 +361,20 @@ onMounted(async () => {
           <p v-if="msg" class="text-xs text-brand-700 mt-2">{{ msg }}</p>
         </div>
 
-        <p class="text-center text-xs text-slate-400 mt-6 flex flex-wrap justify-center gap-x-3 gap-y-1">
-          <router-link to="/privacy" class="underline">Privacy Policy</router-link>
-          <router-link to="/terms" class="underline">Terms of Service</router-link>
-          <router-link to="/safety" class="underline">Safety & Security</router-link>
-        </p>
       </div>
+    </div>
+
+    <!-- Phase 48c: page ke sabse neeche — school ka naam, legal
+         links, aur sabse last me chhota sa Powered by (shakir:
+         abhi ke liye XYZ Technologies, baad me badal denge). -->
+    <div class="text-center mt-10 mb-2">
+      <div v-if="school" class="font-extrabold text-slate-600 text-lg">{{ school.name }}</div>
+      <p class="text-xs text-slate-400 mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1">
+        <router-link to="/privacy" class="underline">Privacy Policy</router-link>
+        <router-link to="/terms" class="underline">Terms of Service</router-link>
+        <router-link to="/safety" class="underline">Safety & Security</router-link>
+      </p>
+      <p class="text-[11px] text-slate-400 mt-2">Powered by XYZ Technologies</p>
     </div>
   </div>
 </template>

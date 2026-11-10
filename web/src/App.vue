@@ -17,6 +17,22 @@ const loadedSchoolId = ref(null);
 const schoolInfoById = ref({});
 // Parent school dropdown khula hai ya band (Phase 46b).
 const schoolMenuOpen = ref(false);
+// Phase 48c: parent ke 3-line (hamburger) menu ki state + helpers.
+// Menu sirf PARENT par hai (legal pages bhi usi me — Phase 39b ki
+// 'sirf parent side' wali shart isiliye bani rehti hai).
+const menuOpen = ref(false);
+function goSection(id) {
+  menuOpen.value = false;
+  if (route.path === "/parent" && route.query.open === id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } else {
+    router.push({ path: "/parent", query: { open: id } }).catch(() => {});
+  }
+}
+function goPage(to) {
+  menuOpen.value = false;
+  router.push(to).catch(() => {});
+}
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
 function tileColor(name) { let h = 0; for (const ch of String(name || "?")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return TILE_COLORS[h % TILE_COLORS.length]; }
 function initialsOf(name) { return String(name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
@@ -82,6 +98,7 @@ const router = useRouter();
 const navTick = ref(0);
 watch(() => route.fullPath, () => {
   navTick.value += 1;
+  menuOpen.value = false;
   // Phase 44: dusri ID/school par gaye to branding bhi badlo.
   if (session.schoolId !== loadedSchoolId.value) loadBranding();
 });
@@ -135,13 +152,15 @@ const mobileNav = computed(() => {
   // ka option h hi nahi — pickup hata kr home set kro, or setting
   // ka option nhi h'): Home, Homework, Leave, Fees, Timetable,
   // Settings. Pickup ab sirf home page ke bade button me hai.
+  // Phase 48c: Settings bottom bar se HATAYA (shakir: 'ye kaam
+  // nhi kr rha, wahi home page khul rha h') — Settings ab upar
+  // wale 3-line menu me hai. Bar wapas 5 ki: Home se Timetable.
   if (role.value === "PARENT") return [
     { to: "/parent", label: "Home", icon: "home" },
     { to: "/homework", label: "Homework", icon: "book" },
     { to: "/leave", label: "Leave", icon: "mail" },
     { to: "/fees", label: "Fees", icon: "card" },
     { to: "/timetable", label: "Timetable", icon: "calendar" },
-    { to: "/parent?open=prefs", label: "Settings", icon: "sliders" },
   ];
   const items = nav.value.slice(0, 5);
   const scanIdx = items.findIndex((n) => n.to === "/scanner");
@@ -230,9 +249,9 @@ function switchSchool(id) {
     <!-- Mobile top bar — Phase 47: school naam wala hissa hi
          dropdown hai (1 se zyada school ho to): yahi tap karke
          school badalta hai. -->
-    <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 shadow">
+    <header class="md:hidden sticky top-0 z-20 safe-t bg-gradient-to-r from-[#0a2436] to-[#07332a] text-white px-4 py-3 shadow relative">
       <div class="flex items-center gap-3">
-        <button v-if="memberships.length > 1" type="button" class="flex items-center gap-3 min-w-0 text-left" @click="schoolMenuOpen = !schoolMenuOpen" :aria-expanded="schoolMenuOpen">
+        <button v-if="memberships.length > 1" type="button" class="flex items-center gap-3 min-w-0 text-left" @click="schoolMenuOpen = !schoolMenuOpen; menuOpen = false" :aria-expanded="schoolMenuOpen">
           <img v-if="schoolInfo?.logoUrl" :src="schoolInfo.logoUrl" alt="" class="w-8 h-8 rounded-lg object-contain bg-white shrink-0" />
           <span v-else-if="schoolInfo" class="grid place-items-center w-8 h-8 rounded-lg text-white text-[11px] font-bold shrink-0" :style="{ background: tileColor(schoolInfo.name) }">{{ initialsOf(schoolInfo.name) }}</span>
           <span class="min-w-0">
@@ -248,11 +267,30 @@ function switchSchool(id) {
             <div class="text-[11px] text-white/60 leading-tight">{{ role }}</div>
           </div>
         </template>
-        <router-link to="/notifications" class="relative ml-auto text-xl p-1" aria-label="Notifications">🔔
+        <router-link to="/notifications" class="relative ml-auto p-1.5" aria-label="Notifications"><Icon name="bell" :size="21" />
           <span v-if="unreadCount" class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
         </router-link>
-        <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
-        <button class="text-xs underline text-white/80" @click="logout">Logout</button>
+        <!-- Phase 48c: parent ke liye right side me 3-line menu —
+             avatar + Logout header se hat kar menu ke andar gaye
+             (Logout sabse neeche). Staff par purana hi rakha. -->
+        <button v-if="role === 'PARENT'" type="button" class="p-1.5" aria-label="Menu" @click="menuOpen = !menuOpen; schoolMenuOpen = false"><Icon name="menu" :size="24" /></button>
+        <template v-else>
+          <div class="avatar w-8 h-8 text-xs bg-white/20">{{ (user?.fullName || "?").split(" ").map((w) => w[0]).slice(0, 2).join("") }}</div>
+          <button class="text-xs underline text-white/80" @click="logout">Logout</button>
+        </template>
+      </div>
+      <!-- 3-line menu ka panel: Teachers, Pickup, Settings, phir
+           teeno legal pages, sabse neeche Logout. -->
+      <div v-if="menuOpen && role === 'PARENT'" class="absolute right-3 top-full mt-1 w-64 max-w-[86vw] bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-100 py-2 z-40">
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> Teachers</button>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage('/pickup')"><Icon name="shield" :size="18" class="text-brand-600" /> Pickup</button>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('prefs')"><Icon name="sliders" :size="18" class="text-brand-600" /> Settings</button>
+        <div class="my-2 border-t border-slate-100"></div>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/privacy')"><Icon name="lock" :size="18" class="text-slate-400" /> Privacy Policy</button>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/terms')"><Icon name="file" :size="18" class="text-slate-400" /> Terms of Service</button>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/safety')"><Icon name="heart" :size="18" class="text-slate-400" /> Safety &amp; Security</button>
+        <div class="my-2 border-t border-slate-100"></div>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-left text-rose-600 hover:bg-rose-50" @click="logout"><Icon name="logout" :size="18" /> Logout</button>
       </div>
       <div v-if="schoolMenuOpen && memberships.length > 1" class="grid gap-2 mt-3">
         <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
