@@ -1,11 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { api, session } from "../api.js";
 
 // Homework (Phase 14). Teachers assign to their classes and track
 // completions; parents see homework per child and mark it done.
 const role = session.membership?.role;
 const isStaff = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"].includes(role);
+const isTeacher = role === "TEACHER";
 const sid = session.schoolId;
 const msg = ref("");
 const err = ref("");
@@ -15,6 +16,17 @@ const children = ref([]);
 const classes = ref([]);
 const subjects = ref([]);
 const form = ref({ classroomId: "", subjectId: "", title: "", description: "", dueDate: "", attachmentUrl: "" });
+// Phase 53: homework poori class ko ya kuch khaas students ko.
+const sendMode = ref("CLASS");
+const classStudents = ref([]);
+const selectedStudents = ref([]);
+// Phase 53: teacher ke apne subjects per class — form me subject
+// dropdown usi hisaab se bharega (dusri class ke subjects nahi).
+const mySubjectsByClass = ref({});
+const visibleSubjects = computed(() => {
+  const mine = isTeacher ? mySubjectsByClass.value[form.value.classroomId] : null;
+  return mine && mine.length ? mine : subjects.value;
+});
 const expanded = ref(null);
 const completionDetail = ref(null);
 
@@ -38,18 +50,50 @@ async function load() {
     loading.value = false;
   }
 }
+async function loadClassStudents() {
+  selectedStudents.value = [];
+  classStudents.value = [];
+  if (!form.value.classroomId) return;
+  const r = await api(`/schools/${sid}/students?classroomId=${form.value.classroomId}`);
+  if (r.status === 200) classStudents.value = r.json.students || [];
+}
 async function loadMeta() {
-  const [c, s] = await Promise.all([api(`/schools/${sid}/rollcall/classes`), api(`/schools/${sid}/subjects`)]);
+  const [c, s, t] = await Promise.all([
+    api(`/schools/${sid}/rollcall/classes`),
+    api(`/schools/${sid}/subjects`),
+    isTeacher ? api(`/schools/${sid}/teachers`) : Promise.resolve(null),
+  ]);
   if (c.status === 200) { classes.value = c.json.classes; if (classes.value.length) form.value.classroomId = classes.value[0].id; }
   if (s.status === 200) subjects.value = s.json.subjects || [];
+  if (t && t.status === 200) {
+    const me = (t.json.teachers || []).find((tp) => tp.membershipId === session.membership?.id);
+    const map = {};
+    for (const a of me?.classAssignments || []) {
+      if (a.subject) (map[a.classroomId] ||= []).push(a.subject);
+    }
+    mySubjectsByClass.value = map;
+  }
+  await loadClassStudents();
 }
+watch(() => form.value.classroomId, async () => {
+  form.value.subjectId = "";
+  await loadClassStudents();
+});
 async function create() {
   err.value = ""; msg.value = "";
+  if (sendMode.value === "STUDENTS" && !selectedStudents.value.length) {
+    err.value = "Choose at least one student, or switch to Whole class.";
+    return;
+  }
   const body = { ...form.value, subjectId: form.value.subjectId || undefined, attachmentUrl: form.value.attachmentUrl || undefined };
+  if (sendMode.value === "STUDENTS") body.studentIds = [...selectedStudents.value];
   const r = await api(`/schools/${sid}/homework`, { method: "POST", body });
   if (r.status === 201) {
-    msg.value = "Homework assigned — parents of this class have been notified in the app.";
+    msg.value = sendMode.value === "STUDENTS"
+      ? `Homework assigned to ${selectedStudents.value.length} student(s) — only their parents have been notified in the app.`
+      : "Homework assigned — parents of this class have been notified in the app.";
     form.value.title = ""; form.value.description = ""; form.value.attachmentUrl = "";
+    selectedStudents.value = [];
     await load();
   } else err.value = r.json?.error || "Could not assign homework";
 }
@@ -91,8 +135,29 @@ onMounted(async () => { await load(); if (isStaff) await loadMeta(); });
         <div><label class="label">Subject (optional)</label>
           <select v-model="form.subjectId" class="input">
             <option value="">No subject</option>
-            <option v-for="s in subjects" :key="s.id" :value="s.id">{{ s.name }}</option>
+            <option v-for="s in visibleSubjects" :key="s.id" :value="s.id">{{ s.name }}</option>
           </select>
+        </div>
+      </div>
+      <div><label class="label">Send to</label>
+        <div class="flex gap-2">
+          <button type="button" class="btn flex-1 !py-2" :class="sendMode === 'CLASS' ? 'btn-primary' : 'btn-ghost'" @click="sendMode = 'CLASS'">👨‍👩‍👧‍👦 Whole class</button>
+          <button type="button" class="btn flex-1 !py-2" :class="sendMode === 'STUDENTS' ? 'btn-primary' : 'btn-ghost'" @click="sendMode = 'STUDENTS'">🎯 Specific students</button>
+        </div>
+      </div>
+      <div v-if="sendMode === 'STUDENTS'" class="border border-slate-200 rounded-xl p-2.5">
+        <div class="flex items-center gap-2 mb-1.5">
+          <span class="text-xs font-bold text-slate-500">Choose students — {{ selectedStudents.length }} selected</span>
+          <button type="button" class="ml-auto text-xs font-semibold text-brand-700" @click="selectedStudents = classStudents.map((s) => s.id)">Select all</button>
+          <button type="button" class="text-xs font-semibold text-slate-400" @click="selectedStudents = []">Clear</button>
+        </div>
+        <div class="grid gap-1 max-h-44 overflow-y-auto">
+          <label v-for="s in classStudents" :key="s.id" class="flex items-center gap-2 text-sm px-1 py-0.5">
+            <input type="checkbox" :value="s.id" v-model="selectedStudents" class="w-4 h-4" />
+            <span>{{ s.fullName }}</span>
+            <span class="text-xs text-slate-400">Adm {{ s.admissionNo }}</span>
+          </label>
+          <p v-if="!classStudents.length" class="text-sm text-slate-400">No students in this class.</p>
         </div>
       </div>
       <div><label class="label">Title</label><input v-model="form.title" class="input" required placeholder="e.g. Maths chapter 4 — exercises 1 to 10" /></div>
@@ -112,6 +177,7 @@ onMounted(async () => { await load(); if (isStaff) await loadMeta(); });
             <div class="text-xs text-slate-400">
               Class {{ h.classroom?.name }}{{ h.classroom?.section ? "-" + h.classroom.section : "" }}
               <span v-if="h.subject"> · {{ h.subject.name }}</span>
+              <span v-if="h.targetCount"> · 🎯 For {{ h.targetCount }} student{{ h.targetCount === 1 ? "" : "s" }} only</span>
             </div>
             <p v-if="h.description" class="text-sm text-slate-600 mt-1 whitespace-pre-wrap">{{ h.description }}</p>
             <a v-if="h.attachmentUrl" :href="h.attachmentUrl" target="_blank" rel="noopener" class="text-sm text-brand-700 font-semibold">📎 Attachment</a>
@@ -122,9 +188,9 @@ onMounted(async () => { await load(); if (isStaff) await loadMeta(); });
         <!-- staff completion tracking -->
         <div v-if="isStaff" class="mt-2 flex items-center gap-2">
           <div class="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div class="h-full bg-emerald-500" :style="{ width: h.classSize ? Math.round((h.completedCount / h.classSize) * 100) + '%' : '0%' }"></div>
+            <div class="h-full bg-emerald-500" :style="{ width: (h.targetCount || h.classSize) ? Math.round((h.completedCount / (h.targetCount || h.classSize)) * 100) + '%' : '0%' }"></div>
           </div>
-          <span class="text-xs text-slate-500 font-semibold">{{ h.completedCount }}/{{ h.classSize }} done</span>
+          <span class="text-xs text-slate-500 font-semibold">{{ h.completedCount }}/{{ h.targetCount || h.classSize }} done</span>
           <button class="btn btn-ghost !py-1 !px-2 text-xs" @click="toggleDetail(h)">{{ expanded === h.id ? "Hide" : "Who's done?" }}</button>
           <button class="btn btn-ghost !py-1 !px-2 text-xs text-red-600" @click="removeHw(h)">Delete</button>
         </div>

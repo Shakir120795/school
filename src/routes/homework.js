@@ -10,6 +10,7 @@ import { asyncRoute, requireFields } from "../utils/http.js";
 import { teacherClassIds } from "../services/teacherClasses.js";
 import { sendNoticeCore } from "../services/notices.js";
 import { processOutboxOnce } from "../services/outbox.js";
+import { alertGuardians } from "../services/guardianAlerts.js";
 
 const router = Router();
 const STAFF = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -52,6 +53,18 @@ router.post(
       const subject = await prisma.subject.findFirst({ where: { id: req.body.subjectId, schoolId } });
       if (!subject) return res.status(400).json({ error: "SUBJECT_NOT_FOUND" });
     }
+    // Phase 53: homework poori class ko jaye ya kuch khaas
+    // students ko — studentIds aaye to wohi is homework ke
+    // targets hain; sab usi class ke ACTIVE students hone chahiye.
+    let targetIds = null;
+    if (Array.isArray(req.body.studentIds) && req.body.studentIds.length) {
+      targetIds = [...new Set(req.body.studentIds.map(String))];
+      const found = await prisma.student.findMany({
+        where: { schoolId, classroomId: classroom.id, status: "ACTIVE", id: { in: targetIds } },
+        select: { id: true },
+      });
+      if (found.length !== targetIds.length) return res.status(400).json({ error: "STUDENT_NOT_IN_CLASS" });
+    }
     const hw = await prisma.homework.create({
       data: {
         schoolId,
@@ -65,6 +78,18 @@ router.post(
       },
       include: { classroom: true, subject: true },
     });
+    if (targetIds) {
+      await prisma.homeworkTarget.createMany({
+        data: targetIds.map((studentId) => ({ schoolId, homeworkId: hw.id, studentId })),
+      });
+      // Sirf chune hue students ke parents ko alert jayega.
+      for (const studentId of targetIds) {
+        await alertGuardians(schoolId, studentId,
+          `📚 New homework: ${hw.title}`,
+          `${hw.title}${hw.subject ? ` (${hw.subject.name})` : ""} — Due: ${String(req.body.dueDate).slice(0, 10)}. Open Homework in the app to see the details and mark it done.`);
+      }
+      return res.status(201).json({ homework: { ...hw, targetCount: targetIds.length } });
+    }
     // Announce to the class's parents via the notice pipeline.
     try {
       const notice = await prisma.notice.create({
@@ -107,14 +132,27 @@ router.get(
         where: { schoolId, studentId: { in: children.map((c) => c.id) }, homeworkId: { in: homework.map((h) => h.id) } },
       });
       const doneSet = new Set(completions.map((c) => `${c.homeworkId}:${c.studentId}`));
+      // Phase 53: targeted homework sirf unhi parents ko dikhe
+      // jinka baccha target hai; whole-class sab ko.
+      const targetRows = await prisma.homeworkTarget.findMany({
+        where: { schoolId, homeworkId: { in: homework.map((h) => h.id) } },
+        select: { homeworkId: true, studentId: true },
+      });
+      const targetMap = new Map();
+      for (const t of targetRows) {
+        if (!targetMap.has(t.homeworkId)) targetMap.set(t.homeworkId, new Set());
+        targetMap.get(t.homeworkId).add(t.studentId);
+      }
       return res.json({
         children,
-        homework: homework.map((h) => ({
-          ...h,
-          forChildren: children
-            .filter((c) => c.classroomId === h.classroomId)
-            .map((c) => ({ studentId: c.id, fullName: c.fullName, done: doneSet.has(`${h.id}:${c.id}`) })),
-        })),
+        homework: homework
+          .map((h) => ({
+            ...h,
+            forChildren: children
+              .filter((c) => c.classroomId === h.classroomId && (!targetMap.has(h.id) || targetMap.get(h.id).has(c.id)))
+              .map((c) => ({ studentId: c.id, fullName: c.fullName, done: doneSet.has(`${h.id}:${c.id}`) })),
+          }))
+          .filter((h) => h.forChildren.length),
       });
     }
     // Staff view
@@ -138,6 +176,14 @@ router.get(
       _count: { _all: true },
     });
     const countOf = Object.fromEntries(counts.map((c) => [c.homeworkId, c._count._all]));
+    // Phase 53: targeted homework ka progress unhi students par
+    // gina jayega jinhe bheja gaya tha (targetCount > 0).
+    const targetCounts = await prisma.homeworkTarget.groupBy({
+      by: ["homeworkId"],
+      where: { schoolId, homeworkId: { in: homework.map((h) => h.id) } },
+      _count: { _all: true },
+    });
+    const targetOf = Object.fromEntries(targetCounts.map((c) => [c.homeworkId, c._count._all]));
     const classSizes = {};
     for (const h of homework) {
       if (classSizes[h.classroomId] === undefined) {
@@ -145,7 +191,7 @@ router.get(
       }
     }
     return res.json({
-      homework: homework.map((h) => ({ ...h, completedCount: countOf[h.id] || 0, classSize: classSizes[h.classroomId] })),
+      homework: homework.map((h) => ({ ...h, completedCount: countOf[h.id] || 0, classSize: classSizes[h.classroomId], targetCount: targetOf[h.id] || 0 })),
     });
   })
 );
@@ -159,10 +205,18 @@ router.get(
     const hw = await prisma.homework.findFirst({ where: { id: homeworkId, schoolId } });
     if (!hw) return res.status(404).json({ error: "NOT_FOUND" });
     if (!(await canActOnClass(req, schoolId, hw.classroomId))) return res.status(403).json({ error: "CLASS_NOT_ASSIGNED" });
-    const students = await prisma.student.findMany({
-      where: { schoolId, classroomId: hw.classroomId, status: "ACTIVE" },
-      orderBy: [{ rollNo: "asc" }, { fullName: "asc" }],
-    });
+    // Phase 53: targeted homework me "Who's done?" sirf unhi
+    // students ki list dega jinhe homework bheja gaya tha.
+    const targets = await prisma.homeworkTarget.findMany({ where: { schoolId, homeworkId }, select: { studentId: true } });
+    const students = targets.length
+      ? await prisma.student.findMany({
+          where: { schoolId, id: { in: targets.map((t) => t.studentId) } },
+          orderBy: [{ fullName: "asc" }],
+        })
+      : await prisma.student.findMany({
+          where: { schoolId, classroomId: hw.classroomId, status: "ACTIVE" },
+          orderBy: [{ rollNo: "asc" }, { fullName: "asc" }],
+        });
     const completions = await prisma.homeworkCompletion.findMany({ where: { schoolId, homeworkId } });
     const doneOf = Object.fromEntries(completions.map((c) => [c.studentId, c]));
     return res.json({
@@ -184,6 +238,12 @@ router.post(
     if (!hw) return res.status(404).json({ error: "NOT_FOUND" });
     const { guardianIds, childClass } = await myChildrenClassIds(req, schoolId);
     if (!childClass.has(studentId) || childClass.get(studentId) !== hw.classroomId) {
+      return res.status(404).json({ error: "NOT_FOUND" });
+    }
+    // Phase 53: targeted homework ko sirf target student hi
+    // done mark kar sakta hai.
+    const targets = await prisma.homeworkTarget.findMany({ where: { schoolId, homeworkId }, select: { studentId: true } });
+    if (targets.length && !targets.some((t) => t.studentId === studentId)) {
       return res.status(404).json({ error: "NOT_FOUND" });
     }
     const existing = await prisma.homeworkCompletion.findUnique({

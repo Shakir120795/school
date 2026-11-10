@@ -424,6 +424,7 @@ model Student {
   scanEvents          StudentScanEvent[]
   attendances         StudentAttendance[]
   homeworkCompletions HomeworkCompletion[]
+  homeworkTargets     HomeworkTarget[]
   leaveApplications   LeaveApplication[]
   feeInvoices         FeeInvoice[]
   examMarks           ExamMark[]
@@ -1041,6 +1042,7 @@ model Homework {
   classroom           Classroom            @relation(fields: [schoolId, classroomId], references: [schoolId, id], onDelete: Cascade)
   subject             Subject?             @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Restrict)
   homeworkCompletions HomeworkCompletion[]
+  homeworkTargets     HomeworkTarget[]
 
   @@index([schoolId, classroomId, dueDate])
 }
@@ -1058,6 +1060,24 @@ model HomeworkCompletion {
   student  Student  @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
 
   @@unique([homeworkId, studentId])
+  @@index([schoolId, studentId])
+}
+
+// Homework targets (Phase 53): no rows = the homework is for the
+// WHOLE class; rows present = only those students got it (progress
+// counts against them, other parents never see it).
+model HomeworkTarget {
+  id         String   @id @default(cuid())
+  schoolId   String
+  homeworkId String
+  studentId  String
+  createdAt  DateTime @default(now())
+
+  homework Homework @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([homeworkId, studentId])
+  @@index([schoolId, homeworkId])
   @@index([schoolId, studentId])
 }
 

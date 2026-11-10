@@ -22,6 +22,15 @@ const msg = ref("");
 
 const isManager = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(role);
 
+// Phase 53: teacher ke dashboard par uski apni pehchan — kis
+// class ki incharge hai, aur kin classes me kya padhati hai
+// (shakir: 'uske dashboard me show ho ki uski class kon si h
+// or wo kis kis class me padati h').
+const isTeacher = role === "TEACHER";
+const myProfile = computed(() => teachers.value.find((tp) => tp.membershipId === session.membership?.id) || null);
+const myIncharge = computed(() => myProfile.value?.inchargeAssignments || []);
+const myTeaching = computed(() => myProfile.value?.classAssignments || []);
+
 // Phase 44b: dashboard header band ki pehchan — school ke initials
 // aur rang tile (App.vue wale hi helpers).
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
@@ -175,6 +184,21 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
           <button type="button" class="btn btn-primary" @click="router.push('/notices')">✉️ New notice</button>
         </div>
       </div>
+    </div>
+
+    <!-- Phase 53: teacher ka apna card — meri incharge class aur
+         main kin classes me kya padhati hu -->
+    <div v-if="isTeacher && myProfile" class="card mb-4">
+      <h2 class="font-bold mb-2">👩‍🏫 My classes</h2>
+      <div class="flex flex-wrap gap-1.5 mb-2">
+        <span v-for="a in myIncharge" :key="'mi' + a.id" class="chip bg-amber-50 text-amber-700 text-xs">⭐ I am incharge: Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span></span>
+        <span v-if="!myIncharge.length" class="text-xs text-slate-400">You are not incharge of any class yet.</span>
+      </div>
+      <div class="flex flex-wrap gap-1.5">
+        <span v-for="a in myTeaching" :key="'mt' + a.id" class="chip bg-sky-50 text-sky-700 text-xs">📚 I teach: Class {{ a.classroom?.name }}<span v-if="a.classroom?.section">-{{ a.classroom.section }}</span> · {{ a.subject?.name }}</span>
+        <span v-if="!myTeaching.length" class="text-xs text-slate-400">No subjects assigned to you yet.</span>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">When you assign homework, only these classes — and your subjects in them — are shown.</p>
     </div>
 
     <!-- Phase 38: dashboard search — student (parent ke saath) aur teacher, click karke seedha detail -->
