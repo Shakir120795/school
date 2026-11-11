@@ -1,0 +1,32 @@
+{
+  "name": "Smart School Parent",
+  "short_name": "SS Parent",
+  "description": "Your child's attendance, homework, fees and school updates.",
+  "id": "/login/parent",
+  "start_url": "/login/parent",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a2436",
+  "theme_color": "#0a2436",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

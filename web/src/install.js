@@ -56,3 +56,42 @@ export async function promptInstall() {
   installState.value = "hidden";
   return false;
 }
+
+// Phase 56: teeno apps ke liye alag-alag PWA. Site ek hi hai, par
+// manifest teen hain — Parent / Staff / Owner — aur page (ya andar
+// logged-in role) ke hisab se <link rel="manifest"> badal jata hai,
+// taaki Install / Add to Home Screen se wahi app bane jis ke liye
+// user aaya hai. iOS ka home-screen naam apple-mobile-web-app-title
+// se aata hai, wo bhi saath badlo.
+const PWA_APPS = {
+  parent: { manifest: "/manifest-parent.webmanifest", title: "Smart School Parent" },
+  staff: { manifest: "/manifest-staff.webmanifest", title: "Smart School Staff" },
+  owner: { manifest: "/manifest-owner.webmanifest", title: "Smart School Owner" },
+};
+let pwaKind = null;
+export function syncPwaManifest(kind) {
+  const app = PWA_APPS[kind];
+  if (!app || kind === pwaKind) return;
+  pwaKind = kind;
+  document.querySelector('link[rel="manifest"]')?.setAttribute("href", app.manifest);
+  document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute("content", app.title);
+}
+function roleKind() {
+  try {
+    const book = JSON.parse(localStorage.getItem("ss_accounts_v3") || "{}");
+    const pin = sessionStorage.getItem("ss_active_account_v3");
+    const last = localStorage.getItem("ss_last_account_v3");
+    const acc = book[pin] || book[last] || book[Object.keys(book)[0]];
+    if (!acc) return null;
+    const m = (acc.memberships || []).find((x) => x.schoolId === acc.schoolId) || (acc.memberships || [])[0];
+    if (!m) return "owner"; // membership nahi = platform operator
+    return m.role === "PARENT" ? "parent" : "staff";
+  } catch { return null; }
+}
+export function syncPwaForRoute(path) {
+  if (path.startsWith("/login/parent")) return syncPwaManifest("parent");
+  if (path.startsWith("/login/admin")) return syncPwaManifest("owner");
+  if (path.startsWith("/login")) return syncPwaManifest("staff");
+  const kind = roleKind();
+  if (kind) syncPwaManifest(kind);
+}

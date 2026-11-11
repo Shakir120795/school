@@ -6,10 +6,13 @@
 // every icon incl. maskable + apple-touch), a complete never-cache
 // API list (incl. /platform and /push/config, missed before), and
 // only successful (ok) responses are ever put in the cache.
-const CACHE = "smart-school-v33";
+const CACHE = "smart-school-v34";
 const CORE = [
   "/",
   "/manifest.webmanifest",
+  "/manifest-parent.webmanifest",
+  "/manifest-staff.webmanifest",
+  "/manifest-owner.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/maskable-512.png",
@@ -42,7 +45,7 @@ self.addEventListener("fetch", (e) => {
   if (
     url.pathname.startsWith("/assets/") ||
     url.pathname.startsWith("/icons/") ||
-    url.pathname === "/manifest.webmanifest"
+    url.pathname.endsWith(".webmanifest")
   ) {
     e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
       if (res.ok) {
