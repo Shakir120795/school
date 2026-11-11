@@ -15,3 +15,8 @@ web/public/icons/
 
 # Phase 42: local app build outputs (APKs)
 build/
+
+# iOS icon/splash binaries — GitHub snapshot push text-only hai,
+# isliye ye scripts/ios-assets/*.b64 se build time par bante hain
+web/ios/App/App/Assets.xcassets/AppIcon.appiconset/*.png
+web/ios/App/App/Assets.xcassets/Splash.imageset/*.png
