@@ -14,6 +14,15 @@ const loginLimiter = rateLimit({
   keyFn: (req) => `${req.ip}:${String(req.body?.email || "").toLowerCase()}`,
 });
 
+// Phase 57 (audit H1): refresh par apna limiter — pehle sirf
+// global 600/min tha, token-guessing ki koi alag hadd nahi thi.
+const refreshLimiter = rateLimit({
+  name: "refresh",
+  limit: Number(process.env.RATE_LIMIT_REFRESH_PER_MIN || 30),
+  windowMs: 60_000,
+  keyFn: (req) => `${req.ip}`,
+});
+
 const router = Router();
 
 async function issueSession(req, user) {
@@ -113,6 +122,7 @@ router.get("/config", (req, res) => {
 
 router.post(
   "/refresh",
+  refreshLimiter,
   asyncRoute(async (req, res) => {
     const { refreshToken } = req.body || {};
     if (!refreshToken) return res.status(400).json({ error: "REFRESH_TOKEN_REQUIRED" });
@@ -134,6 +144,16 @@ router.post(
     if (session.revokedAt) {
       const inGrace = session.rotatedAt && Date.now() - new Date(session.rotatedAt).getTime() < GRACE_MS;
       if (!inGrace) return res.status(401).json({ error: "INVALID_REFRESH_TOKEN" });
+      // Phase 57 (audit H1): grace EK hi baar milegi. Pehle wahi
+      // purana token 60s ke andar baar-baar replay karke unlimited
+      // 30-din wale sessions bante the. Ab rotatedAt ko atomic
+      // tareeke se consume karte hain — jo request ye update
+      // jeet-ti hai sirf wahi aage badhti hai, baaki ko 401.
+      const consumed = await prisma.authSession.updateMany({
+        where: { id: session.id, rotatedAt: session.rotatedAt },
+        data: { rotatedAt: null },
+      });
+      if (consumed.count !== 1) return res.status(401).json({ error: "INVALID_REFRESH_TOKEN" });
       const graceRefresh = await issueSession(req, session.user);
       return res.json({ accessToken: signAccessToken(session.user), refreshToken: graceRefresh });
     }

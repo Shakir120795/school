@@ -11,7 +11,7 @@ import { config } from "../config.js";
 import { signAccessToken } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { rateLimit } from "../middleware/rateLimit.js";
-import { requestOtp, verifyOtp } from "../services/otp.js";
+import { requestOtp, verifyOtp, provider } from "../services/otp.js";
 
 const router = Router();
 
@@ -21,6 +21,22 @@ const otpLimiter = rateLimit({
   windowMs: 60_000,
   keyFn: (req) => `${req.ip}:${String(req.body?.phone || "")}`,
 });
+
+// Phase 57 (audit C1): OTP login SIRF tab jab asal SMS provider
+// laga ho. demo/log/test providers par ye endpoints BAND hain —
+// demo me code fixed "123456" hota hai aur request ke response me
+// hi mil jata tha, matlab sirf parent ka mobile number jaanna
+// uske poore account ke liye kaafi tha (account takeover).
+// Parent login aaj ID+password hai; jab SMS provider (MSG91 /
+// Twilio) sendOtp() me plug hoga aur OTP_PROVIDER uska naam
+// hoga, ye endpoints khud khul jayenge.
+function otpRouteEnabled(req, res, next) {
+  const p = provider();
+  if (p === "demo" || p === "log" || p === "test") {
+    return res.status(503).json({ error: "OTP_NOT_AVAILABLE" });
+  }
+  return next();
+}
 
 async function ensureParentAccount(guardians) {
   // One account per phone: reuse the account any guardian row already
@@ -58,6 +74,7 @@ async function ensureParentAccount(guardians) {
 
 router.post(
   "/parent-otp/request",
+  otpRouteEnabled,
   otpLimiter,
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["phone"]);
@@ -73,6 +90,7 @@ router.post(
 
 router.post(
   "/parent-otp/verify",
+  otpRouteEnabled,
   otpLimiter,
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["phone", "code"]);

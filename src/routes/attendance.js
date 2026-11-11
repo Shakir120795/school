@@ -231,6 +231,32 @@ router.get(
 // --- Correction workflow --------------------------------------------------------------
 // Request -> admin/principal decides. No self-approval (middleware-level rule
 // here AND a DB CHECK from the Phase 1 migration).
+//
+// Phase 57 (audit H2): correction me SIRF ye fields badal sakte
+// hain. Pehle proposedChanges jaisa-aaya waisa decide par Prisma
+// update me chala jata tha — schoolId/studentId tak badalna
+// mumkin tha (attendance row dusri school me move ho sakti thi).
+// Whitelist propose par bhi hai aur decide par bhi, taaki is fix
+// se pehle ke pending requests bhi safe rahen.
+const CORRECTION_FIELDS = ["status", "localDate", "entryAt", "exitAt", "checkInAt", "checkOutAt", "isLate", "isEarlyExit"];
+const CORRECTION_STATUSES = ["PRESENT", "LATE", "ABSENT", "ON_LEAVE", "HALF_DAY"];
+function cleanChanges(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!CORRECTION_FIELDS.includes(k)) return null;
+    out[k] = v;
+  }
+  if (out.status !== undefined && !CORRECTION_STATUSES.includes(out.status)) return null;
+  if (!Object.keys(out).length) return null;
+  return out;
+}
+function pruneForModel(changes, entityType) {
+  const out = { ...changes };
+  if (entityType === "StaffAttendance") { delete out.entryAt; delete out.exitAt; delete out.isEarlyExit; }
+  else { delete out.checkInAt; delete out.checkOutAt; }
+  return out;
+}
 router.post(
   "/schools/:schoolId/attendance/corrections",
   requireAuth,
@@ -238,6 +264,13 @@ router.post(
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["entityType", "entityId", "reason", "proposedChanges"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    const changes = cleanChanges(req.body.proposedChanges);
+    if (!changes) return res.status(400).json({ error: "INVALID_CHANGES" });
+    const model = req.body.entityType === "StaffAttendance" ? prisma.staffAttendance
+      : req.body.entityType === "StudentAttendance" ? prisma.studentAttendance : null;
+    if (!model) return res.status(400).json({ error: "INVALID_ENTITY_TYPE" });
+    const entity = await model.findUnique({ where: { id: String(req.body.entityId) }, select: { schoolId: true } });
+    if (!entity || entity.schoolId !== req.params.schoolId) return res.status(404).json({ error: "ENTITY_NOT_FOUND" });
     const request = await prisma.attendanceCorrectionRequest.create({
       data: {
         schoolId: req.params.schoolId,
@@ -245,7 +278,7 @@ router.post(
         entityId: req.body.entityId,
         requestedByUserId: req.user.id,
         reason: req.body.reason,
-        proposedChanges: req.body.proposedChanges,
+        proposedChanges: pruneForModel(changes, req.body.entityType),
       },
     });
     return res.status(201).json({ request });
@@ -277,7 +310,7 @@ router.post(
         const model = request.entityType === "StaffAttendance" ? tx.staffAttendance : tx.studentAttendance;
         const before = await model.findUnique({ where: { id: request.entityId } });
         if (before && before.schoolId === req.params.schoolId) {
-          const changes = { ...request.proposedChanges };
+          const changes = pruneForModel(cleanChanges(request.proposedChanges) || {}, request.entityType);
           if (changes.localDate) changes.localDate = new Date(`${changes.localDate}T00:00:00.000Z`);
           if (changes.entryAt) changes.entryAt = new Date(changes.entryAt);
           if (changes.exitAt) changes.exitAt = new Date(changes.exitAt);
