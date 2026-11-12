@@ -71,6 +71,27 @@ onMounted(load);
 
 // --- Tabs + search + pagination (page size owner khud chune) ---
 const tab = ref("staff");
+// Phase 66: Register tab — class-wise fees/kit summary (owner
+// sirf dekhta hai).
+const regSummary = ref(null);
+const regLoading = ref(false);
+async function loadRegister() {
+  if (regSummary.value || regLoading.value) return;
+  regLoading.value = true;
+  try {
+    const r = await api(`/platform/schools/${school.value.id}/register-summary`);
+    if (r.ok) regSummary.value = r.json;
+  } finally { regLoading.value = false; }
+}
+const regTotals = computed(() => {
+  const t = { students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0 };
+  for (const c of regSummary.value?.classes || []) {
+    t.students += c.students; t.feesDue += c.feesDue; t.examDue += c.examDue;
+    t.cardPending += c.cardPending; t.tiePending += c.tiePending; t.beltPending += c.beltPending;
+    t.capPending += c.capPending; t.bagPending += c.bagPending;
+  }
+  return t;
+});
 const pageSize = ref(20);
 const qStaff = ref(""); const qParents = ref(""); const qStudents = ref("");
 const match = (q, parts) => !q || parts.filter(Boolean).join(" ").toLowerCase().includes(q.trim().toLowerCase());
@@ -226,6 +247,7 @@ async function addMember() {
         <button type="button" class="!w-auto !py-2 text-sm" :class="tab === 'staff' ? 'btn btn-primary' : 'btn btn-ghost'" @click="tab = 'staff'">👩‍🏫 Teachers &amp; Staff ({{ staffItems.length }})</button>
         <button type="button" class="!w-auto !py-2 text-sm" :class="tab === 'parents' ? 'btn btn-primary' : 'btn btn-ghost'" @click="tab = 'parents'">👨‍👩‍👧 Parents ({{ parentItems.length }})</button>
         <button type="button" class="!w-auto !py-2 text-sm" :class="tab === 'students' ? 'btn btn-primary' : 'btn btn-ghost'" @click="tab = 'students'">🎓 Students ({{ students.length }})</button>
+        <button type="button" class="!w-auto !py-2 text-sm" :class="tab === 'register' ? 'btn btn-primary' : 'btn btn-ghost'" @click="tab = 'register'; loadRegister()">📋 Register</button>
         <label class="ml-auto text-xs text-slate-500 flex items-center gap-1.5">Per page
           <select v-model.number="pageSize" class="input !w-auto !py-1.5 !text-xs">
             <option :value="20">20</option><option :value="50">50</option><option :value="100">100</option>
@@ -283,7 +305,7 @@ async function addMember() {
       </div>
 
       <!-- Students -->
-      <div v-else class="card">
+      <div v-else-if="tab === 'students'" class="card">
         <div class="flex flex-wrap gap-1.5 mb-3">
           <button type="button" class="chip !px-3 !py-1.5 font-bold" :class="classFilter === '' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'" @click="classFilter = ''; studentsPager.page.value = 1">All classes ({{ students.length }})</button>
           <button v-for="c in classOptions" :key="c.label" type="button" class="chip !px-3 !py-1.5 font-bold" :class="classFilter === c.label ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'" @click="classFilter = c.label; studentsPager.page.value = 1">{{ c.label }} ({{ c.count }})</button>
@@ -297,6 +319,39 @@ async function addMember() {
           <span class="text-sm text-slate-500 ml-auto" v-if="s.guardianName">👨‍👩‍👧 {{ s.guardianName }}<span v-if="s.guardianPhone"> · {{ s.guardianPhone }}</span></span>
         </div>
         <Pager :page="studentsPager.page.value" :total-pages="studentsPager.totalPages.value" :from="studentsPager.from.value" :to="studentsPager.to.value" :total="studentsPager.total.value" @update:page="(p) => (studentsPager.page.value = p)" />
+      </div>
+
+      <!-- Phase 66: Register summary — class-wise fees/kit ki
+           baaki ginti. Owner sirf dekhta hai. -->
+      <div v-else-if="tab === 'register'" class="card">
+        <p v-if="regLoading" class="text-sm text-slate-400 animate-pulse">Loading register…</p>
+        <template v-else-if="regSummary">
+          <p v-if="!regSummary.kitReady" class="text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mb-3">⚠️ Kit wale columns abhi live nahi — Console se <b>Apply database updates</b> chalao, phir card/tie/belt/cap/bag ki ginti yahan dikhegi. Fees wali ginti abhi bhi sahi hai.</p>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+            <div class="rounded-xl bg-slate-50 px-3 py-2 text-center"><div class="text-xl font-extrabold">{{ regTotals.students }}</div><div class="text-[11px] text-slate-500 font-semibold">Students</div></div>
+            <div class="rounded-xl bg-rose-50 px-3 py-2 text-center"><div class="text-xl font-extrabold text-rose-600">{{ regTotals.feesDue }}</div><div class="text-[11px] text-slate-500 font-semibold">Fees baaki</div></div>
+            <div class="rounded-xl bg-rose-50 px-3 py-2 text-center"><div class="text-xl font-extrabold text-rose-600">{{ regTotals.examDue }}</div><div class="text-[11px] text-slate-500 font-semibold">Exam fee baaki</div></div>
+            <div class="rounded-xl bg-amber-50 px-3 py-2 text-center"><div class="text-xl font-extrabold text-amber-600">{{ regSummary.kitReady ? regTotals.cardPending : "—" }}</div><div class="text-[11px] text-slate-500 font-semibold">ID card pending</div></div>
+          </div>
+          <div v-for="c in regSummary.classes" :key="c.classLabel" class="py-2.5 border-b border-slate-50 last:border-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-bold text-[15px]">{{ c.classLabel }}</span>
+              <span class="chip bg-slate-100 text-slate-600">{{ c.students }} students</span>
+              <span class="ml-auto flex flex-wrap gap-1.5">
+                <span class="chip font-bold" :class="c.feesDue ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'">💳 Fees baaki: {{ c.feesDue }}</span>
+                <span class="chip font-bold" :class="c.examDue ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'">📝 Exam baaki: {{ c.examDue }}</span>
+              </span>
+            </div>
+            <div v-if="regSummary.kitReady" class="flex flex-wrap gap-1.5 mt-1.5 text-xs font-semibold text-slate-500">
+              <span>🪪 Card pending: <b class="text-slate-700">{{ c.cardPending }}</b></span>·
+              <span>👔 Tie: <b class="text-slate-700">{{ c.tiePending }}</b></span>·
+              <span>🎗️ Belt: <b class="text-slate-700">{{ c.beltPending }}</b></span>·
+              <span>🧢 Cap: <b class="text-slate-700">{{ c.capPending }}</b></span>·
+              <span>🎒 Bag: <b class="text-slate-700">{{ c.bagPending }}</b></span>
+            </div>
+          </div>
+        </template>
+        <p v-else class="text-sm text-slate-400">Register load nahi hua.</p>
       </div>
     </template>
   </div>

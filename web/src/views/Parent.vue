@@ -36,6 +36,20 @@ const classrooms = ref([]);
 // Phase 59 (audit UX): home par hi kul fees bakaya aur bacha
 // hua homework — parent ko har invoice alag jodna na pade.
 const feesDuePaise = ref(0);
+// Phase 66: Register — har bacche ki fees ki haalat + school kit
+// (card/tie/belt/cap/bag mila ya nahi), /register/my se.
+const registerByChild = ref({});
+const KIT_LIST = [
+  { key: "idCard", label: "ID Card", emoji: "🪪" },
+  { key: "tie", label: "Tie", emoji: "👔" },
+  { key: "belt", label: "Belt", emoji: "🎗️" },
+  { key: "cap", label: "Cap", emoji: "🧢" },
+  { key: "bag", label: "Bag", emoji: "🎒" },
+];
+const regFeeChip = (st) => st === "PAID" ? "bg-emerald-100 text-emerald-700"
+  : st === "PARTIAL" ? "bg-amber-100 text-amber-700"
+  : st === "DUE" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-400";
+const regFeeWord = (st) => st === "PAID" ? "✓ Paid" : st === "PARTIAL" ? "◐ Part paid" : st === "DUE" ? "✗ Due" : "—";
 const hwPending = ref(0);
 const editingId = ref(null);
 const form = ref({});
@@ -158,7 +172,7 @@ function statusBanner(child) {
 async function load() {
   loading.value = true;
   try {
-    const [c, t, n, s, rooms, f, h] = await Promise.all([
+    const [c, t, n, s, rooms, f, h, rg] = await Promise.all([
       api(`/schools/${sid}/my-children`),
       api(`/schools/${sid}/teachers`),
       api(`/schools/${sid}/my-notifications`),
@@ -166,7 +180,9 @@ async function load() {
       api(`/schools/${sid}/classrooms`).catch(() => null),
       api(`/schools/${sid}/fees/my-invoices`).catch(() => null),
       api(`/schools/${sid}/homework`).catch(() => null),
+      api(`/schools/${sid}/register/my`).catch(() => null),
     ]);
+    registerByChild.value = Object.fromEntries(((rg?.json?.children) || []).map((x) => [x.id, x]));
     feesDuePaise.value = (f?.json?.invoices || []).reduce((a, i) => a + Math.max(0, i.balancePaise || 0), 0);
     hwPending.value = (h?.json?.homework || []).filter((x) => (x.forChildren || []).some((k) => !k.done)).length;
     school.value = s?.json?.school || null;
@@ -385,6 +401,25 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- Phase 66: Register — har bacche ki fees ki haalat aur
+         school kit (card/tie/belt/cap/bag) mila ya nahi. -->
+    <div v-if="children.length" class="grid md:grid-cols-2 gap-4 items-start mb-4">
+      <div v-for="child in children" :key="'reg-' + child.id" class="card !mb-0">
+        <div class="font-extrabold mb-2">📋 {{ child.fullName }} — Fees &amp; Kit</div>
+        <template v-if="registerByChild[child.id]">
+          <div class="flex flex-wrap gap-1.5 mb-2">
+            <span class="chip font-bold" :class="regFeeChip(registerByChild[child.id].fees.status)">💳 Fees {{ regFeeWord(registerByChild[child.id].fees.status) }}<span v-if="registerByChild[child.id].fees.balancePaise"> · ₹{{ Math.round(registerByChild[child.id].fees.balancePaise / 100) }} due</span></span>
+            <span class="chip font-bold" :class="regFeeChip(registerByChild[child.id].fees.examStatus)">📝 Exam fee {{ regFeeWord(registerByChild[child.id].fees.examStatus) }}</span>
+          </div>
+          <div v-if="registerByChild[child.id].kit" class="flex flex-wrap gap-1.5">
+            <span v-for="k in KIT_LIST" :key="k.key" class="chip font-bold" :class="registerByChild[child.id].kit[k.key] ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ k.emoji }} {{ k.label }} {{ registerByChild[child.id].kit[k.key] ? '✓' : '✗' }}</span>
+          </div>
+          <div v-else class="text-xs text-slate-400">Kit ki jaankari jald aayegi.</div>
+        </template>
+        <div v-else class="text-sm text-slate-400">—</div>
       </div>
     </div>
 

@@ -124,6 +124,7 @@ const NAV = [
   { to: "/homework", label: "Homework", icon: "book", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/leave", label: "Leave", icon: "mail", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/fees", label: "Fees", icon: "card", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF", "PARENT"] },
+  { to: "/register", label: "Register", icon: "clipboard", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF", "TEACHER"] },
   { to: "/timetable", label: "Timetable", icon: "calendar", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
   { to: "/exams", label: "Exams", icon: "file", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/data", label: "Import/Export", icon: "download", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },

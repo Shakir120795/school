@@ -7,6 +7,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, signAccessToken } from "../middleware/auth.js";
 import { issueSession, publicUser } from "./auth.js";
+import { feeRollups, kitMap } from "./register.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, verifyPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
@@ -14,7 +15,7 @@ import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberR
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 import { localParts, dateOnly } from "../utils/time.js";
-import { studentScalars, familyFieldsReady } from "../utils/studentCompat.js";
+import { studentScalars, familyFieldsReady, kitReady } from "../utils/studentCompat.js";
 
 const router = Router();
 
@@ -163,6 +164,11 @@ const DB_UPDATE_STATEMENTS = [
   ["HomeworkTarget: homework index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId")`],
   ["HomeworkTarget: student index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId")`],
   ["PtmBooking: one BOOKED booking per slot+time (Phase 58)", `CREATE UNIQUE INDEX IF NOT EXISTS "PtmBooking_slot_time_booked_key" ON "PtmBooking" ("slotId", "startTime") WHERE "status" = 'BOOKED'`],
+  ["Student: ID card issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "idCardIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: tie issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "tieIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: belt issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "beltIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: cap issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "capIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: bag issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bagIssued" BOOLEAN NOT NULL DEFAULT false`],
 ];
 
 router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {
@@ -727,6 +733,46 @@ router.post("/platform/schools/:schoolId/members/:membershipId/reset-password", 
   });
   await revokeSessions(membership.userId);
   return res.json({ reset: true, role: membership.role });
+}));
+
+// Phase 66: owner ke liye school ka REGISTER SUMMARY — class-wise
+// kitne baccho ki fees / exam-fee baaki hai aur kitno ko card /
+// tie / belt / cap / bag nahi mila. Owner sirf dekhta hai; tick
+// school admin / teacher lagata hai.
+router.get("/platform/schools/:schoolId/register-summary", requirePlatform, asyncRoute(async (req, res) => {
+  const schoolId = req.params.schoolId;
+  const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  const students = await prisma.student.findMany({
+    where: { schoolId, status: "ACTIVE" },
+    select: { id: true, classroom: { select: { name: true, section: true } } },
+  });
+  const ids = students.map((s) => s.id);
+  const [fees, kit] = await Promise.all([feeRollups(schoolId, ids), kitMap(ids)]);
+  const byClass = new Map();
+  for (const s of students) {
+    const label = classLabel(s.classroom);
+    let c = byClass.get(label);
+    if (!c) {
+      c = { classLabel: label, students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0 };
+      byClass.set(label, c);
+    }
+    c.students += 1;
+    const f = fees.get(s.id);
+    if (f && (f.status === "DUE" || f.status === "PARTIAL")) c.feesDue += 1;
+    if (f && (f.examStatus === "DUE" || f.examStatus === "PARTIAL")) c.examDue += 1;
+    if (kit) {
+      const k = kit.get(s.id);
+      if (!k?.idCard) c.cardPending += 1;
+      if (!k?.tie) c.tiePending += 1;
+      if (!k?.belt) c.beltPending += 1;
+      if (!k?.cap) c.capPending += 1;
+      if (!k?.bag) c.bagPending += 1;
+    }
+  }
+  const classes = [...byClass.values()].sort((a, b) =>
+    a.classLabel.localeCompare(b.classLabel, undefined, { numeric: true }));
+  return res.json({ kitReady: kit !== null, classes });
 }));
 
 // Phase 64: owner kisi member ke account me "View as" karke ghus

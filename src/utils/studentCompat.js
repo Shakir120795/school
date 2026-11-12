@@ -46,6 +46,30 @@ export async function bloodGroupSelect() {
   return (await bloodGroupReady()) ? { bloodGroup: true } : {};
 }
 
+// Phase 66: school-kit columns (idCardIssued / tieIssued /
+// beltIssued / capIssued / bagIssued) — wahi probe pattern. Kit ka
+// data Prisma schema me NAHI rakha; register routes use raw SQL
+// se padhte/likhte hain, taaki live columns aane se pehle koi bhi
+// purana Student read na gire. Columns platform ke
+// apply-db-updates se aate hain.
+let kitCached = null;
+export function kitReady() {
+  if (!kitCached) {
+    kitCached = prisma
+      .$queryRaw`SELECT "idCardIssued", "tieIssued", "beltIssued", "capIssued", "bagIssued" FROM "Student" LIMIT 1`
+      .then(() => true)
+      .catch(() => false);
+  }
+  return kitCached;
+}
+export const KIT_FIELDS = [
+  { key: "idCard", column: "idCardIssued" },
+  { key: "tie", column: "tieIssued" },
+  { key: "belt", column: "beltIssued" },
+  { key: "cap", column: "capIssued" },
+  { key: "bag", column: "bagIssued" },
+];
+
 // Every Student scalar EXCEPT the family fields (+ family fields
 // when ready) — for list reads that previously used a bare include
 // and therefore selected the whole model.

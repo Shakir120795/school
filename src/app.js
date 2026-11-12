@@ -12,6 +12,7 @@ import rollcallRoutes from "./routes/rollcall.js";
 import homeworkRoutes from "./routes/homework.js";
 import leaveRoutes from "./routes/leave.js";
 import feesRoutes from "./routes/fees.js";
+import registerRoutes from "./routes/register.js";
 import timetableRoutes from "./routes/timetable.js";
 import examsRoutes from "./routes/exams.js";
 import dataRoutes from "./routes/data.js";
@@ -82,6 +83,7 @@ export function createApp() {
   app.use("/", homeworkRoutes); // /schools/:id/homework/*
   app.use("/", leaveRoutes); // /schools/:id/leave-applications/*
   app.use("/", feesRoutes); // /schools/:id fee heads, structures, invoices, payments
+  app.use("/", registerRoutes); // /schools/:id/register — class-wise fees + kit register
   app.use("/", timetableRoutes); // /schools/:id timetable + calendar
   app.use("/", examsRoutes); // /schools/:id/exams/*
   app.use("/", dataRoutes); // /schools/:id import + CSV exports
