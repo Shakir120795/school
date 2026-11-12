@@ -76,7 +76,31 @@ const qStaff = ref(""); const qParents = ref(""); const qStudents = ref("");
 const match = (q, parts) => !q || parts.filter(Boolean).join(" ").toLowerCase().includes(q.trim().toLowerCase());
 const staffFiltered = computed(() => staffItems.value.filter((m) => match(qStaff.value, [m.fullName, m.email, m.phone, m.role])));
 const parentsFiltered = computed(() => parentItems.value.filter((m) => match(qParents.value, [m.fullName, m.email, m.phone, ...((m.children || []).flatMap((c) => [c.name, c.classLabel]))])));
-const studentsFiltered = computed(() => students.value.filter((s) => match(qStudents.value, [s.fullName, s.admissionNo, s.classLabel, s.guardianName, s.guardianPhone])));
+// Phase 65: students CLASS-WISE — pehle naam ke hisaab se
+// mile-jule aate thay (shakir: "class wise nhi aa rhe"). Ab
+// list class ke hisaab se sort hoti hai (1-A, 1-B, 2-A… phir
+// naam) aur upar class wale chips/tabs hain — jis class ko
+// chunoge sirf usi ke bacche dikhenge.
+const classKey = (label) => {
+  const m = String(label || "").match(/(\d+)\s*-\s*(.+)/);
+  return m ? [parseInt(m[1], 10), m[2]] : [999, String(label || "")];
+};
+const studentsSorted = computed(() => [...students.value].sort((a, b) => {
+  const [ga, sa] = classKey(a.classLabel); const [gb, sb] = classKey(b.classLabel);
+  return ga - gb || String(sa).localeCompare(String(sb)) || a.fullName.localeCompare(b.fullName);
+}));
+const classFilter = ref("");
+const classOptions = computed(() => {
+  const map = new Map();
+  for (const s of studentsSorted.value) {
+    const l = s.classLabel || "—";
+    map.set(l, (map.get(l) || 0) + 1);
+  }
+  return [...map.entries()].map(([label, count]) => ({ label, count }));
+});
+const studentsFiltered = computed(() => studentsSorted.value.filter((s) =>
+  (!classFilter.value || (s.classLabel || "—") === classFilter.value) &&
+  match(qStudents.value, [s.fullName, s.admissionNo, s.classLabel, s.guardianName, s.guardianPhone])));
 const staffPager = usePager(staffFiltered, pageSize);
 const parentsPager = usePager(parentsFiltered, pageSize);
 const studentsPager = usePager(studentsFiltered, pageSize);
@@ -260,6 +284,10 @@ async function addMember() {
 
       <!-- Students -->
       <div v-else class="card">
+        <div class="flex flex-wrap gap-1.5 mb-3">
+          <button type="button" class="chip !px-3 !py-1.5 font-bold" :class="classFilter === '' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'" @click="classFilter = ''; studentsPager.page.value = 1">All classes ({{ students.length }})</button>
+          <button v-for="c in classOptions" :key="c.label" type="button" class="chip !px-3 !py-1.5 font-bold" :class="classFilter === c.label ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-600'" @click="classFilter = c.label; studentsPager.page.value = 1">{{ c.label }} ({{ c.count }})</button>
+        </div>
         <input v-model="qStudents" class="input mb-2" type="search" placeholder="Search student, admission no, class, parent…" />
         <p v-if="!studentsFiltered.length" class="text-sm text-slate-400 py-3">No students found.</p>
         <div v-for="s in studentsPager.pageItems.value" :key="s.id" class="flex flex-wrap items-center gap-2 py-2.5 border-b border-slate-50 last:border-0">
