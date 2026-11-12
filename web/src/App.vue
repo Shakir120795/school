@@ -78,7 +78,7 @@ onMounted(async () => {
   }
 });
 import { useRoute, useRouter } from "vue-router";
-import { lang, setLang, availableLangs } from "./i18n.js";
+import { lang, setLang, availableLangs, t } from "./i18n.js";
 import { session, currentUser, myRole, myMemberships, api, pruneDeadActiveAccount } from "./api.js";
 import { installState, promptInstall } from "./install.js";
 import Icon from "./components/Icon.vue";
@@ -137,6 +137,23 @@ const NAV = [
   { to: "/settings", label: "Settings", icon: "sliders", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
 ];
 const nav = computed(() => NAV.filter((n) => n.roles.includes(role.value)));
+// Phase 61: nav labels i18n se — Hindi chune par bottom bar,
+// sidebar aur ☰ menu teeno Hindi me. Key na mile to English
+// label hi rahe (purana vyavhaar).
+const NAVKEY = {
+  "/": "nav.dashboard", "/students": "nav.myStudents", "/people": "nav.people",
+  "/attendance": "nav.attendance", "/scanner": "nav.scanner", "/pickup": "nav.pickup",
+  "/rollcall": "nav.rollcall", "/homework": "nav.homework", "/leave": "nav.leave",
+  "/fees": "nav.fees", "/timetable": "nav.timetable", "/exams": "nav.exams",
+  "/data": "nav.data", "/console": "nav.console", "/support": "nav.support",
+  "/notices": "nav.notices", "/parent": "nav.myChildren", "/notifications": "nav.notifications",
+  "/team": "nav.team", "/settings": "nav.settings",
+};
+function navLabel(n) {
+  const k = n.key || NAVKEY[n.to];
+  if (k) { const v = t(k); if (v !== k) return v; }
+  return n.label;
+}
 // Role themes from the UI reference: Parent = blue, Teacher = green,
 // Admin/Principal = navy blue. Brand utilities read these CSS vars.
 const THEME_VARS = {
@@ -156,7 +173,7 @@ const mobileNav = computed(() => {
   // nhi kr rha, wahi home page khul rha h') — Settings ab upar
   // wale 3-line menu me hai. Bar wapas 5 ki: Home se Timetable.
   if (role.value === "PARENT") return [
-    { to: "/parent", label: "Home", icon: "home" },
+    { to: "/parent", label: "Home", icon: "home", key: "nav.home" },
     { to: "/homework", label: "Homework", icon: "book" },
     { to: "/leave", label: "Leave", icon: "mail" },
     { to: "/fees", label: "Fees", icon: "card" },
@@ -174,6 +191,18 @@ const mobileNav = computed(() => {
     { to: "/scanner", label: "Gate Scanner", icon: "scan" },
     { to: "/students", label: "My Students", icon: "cap" },
     { to: "/homework", label: "Homework", icon: "book" },
+  ];
+  // Phase 60 (audit UX): school-office ke roz ke kaam — Fees aur
+  // Support — ☰ me dabey thay, Pickup bar me tha. Bar ab:
+  // Dashboard, Students & Staff, Scanner (beech me), Fees,
+  // Support. Aaj ki attendance Dashboard par hi dikhti hai,
+  // register + Pickup ☰ me rahe.
+  if (["SCHOOL_ADMIN", "PRINCIPAL"].includes(role.value)) return [
+    { to: "/", label: "Dashboard", icon: "grid" },
+    { to: "/people", label: "Students & Staff", icon: "users" },
+    { to: "/scanner", label: "Gate Scanner", icon: "scan" },
+    { to: "/fees", label: "Fees", icon: "card" },
+    { to: "/support", label: "Support & PTM", icon: "chat" },
   ];
   const items = nav.value.slice(0, 5);
   const scanIdx = items.findIndex((n) => n.to === "/scanner");
@@ -253,7 +282,7 @@ function switchSchool(id) {
       <router-link v-for="n in nav" :key="n.to + n.label" :to="n.to"
         class="rounded-xl px-3 py-2.5 text-sm hover:bg-white/10"
         :class="route.path === n.to ? 'bg-white/15 font-semibold' : ''">
-        <Icon :name="n.icon" :size="16" class="inline-block align-[-3px] mr-2" />{{ n.label }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
+        <Icon :name="n.icon" :size="16" class="inline-block align-[-3px] mr-2" />{{ navLabel(n) }}<span v-if="n.badge && unreadCount" class="ml-2 bg-red-600 text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unreadCount }}</span>
       </router-link>
       <div class="mt-auto text-xs text-slate-300">
         <div class="mb-3">
@@ -264,7 +293,7 @@ function switchSchool(id) {
         </div>
         <div class="font-semibold text-white">{{ user?.fullName }}</div>
         <div>{{ role }}</div>
-        <button class="btn btn-ghost mt-3 w-full !py-2" @click="logout">Logout</button>
+        <button class="btn btn-ghost mt-3 w-full !py-2" @click="logout">{{ t("common.logout") }}</button>
       </div>
     </aside>
 
@@ -304,8 +333,8 @@ function switchSchool(id) {
            liye Teachers upar + legal pages neeche (Phase 39b:
            legal sirf parent side), sabse neeche Logout. -->
       <div v-if="menuOpen" class="absolute right-3 top-full mt-1 w-64 max-w-[86vw] max-h-[78vh] overflow-y-auto bg-white text-slate-800 rounded-2xl shadow-2xl border border-slate-100 py-2 z-40">
-        <button v-if="role === 'PARENT'" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> Teachers</button>
-        <button v-for="n in overflowNav" :key="n.to + n.label" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage(n.to)"><Icon :name="n.icon" :size="18" class="text-brand-600" /> {{ n.label }}<span v-if="n.badge && unreadCount" class="ml-auto bg-red-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">{{ unreadCount }}</span></button>
+        <button v-if="role === 'PARENT'" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goSection('teachers')"><Icon name="user" :size="18" class="text-brand-600" /> {{ t("parent.teachers") }}</button>
+        <button v-for="n in overflowNav" :key="n.to + n.label" type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-left hover:bg-slate-50" @click="goPage(n.to)"><Icon :name="n.icon" :size="18" class="text-brand-600" /> {{ navLabel(n) }}<span v-if="n.badge && unreadCount" class="ml-auto bg-red-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">{{ unreadCount }}</span></button>
         <!-- Phase 49: Settings parent menu se hata — uska ekmatra
              section (WhatsApp preference) hi khatm ho gaya tha. -->
         <template v-if="role === 'PARENT'">
@@ -315,7 +344,16 @@ function switchSchool(id) {
           <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-slate-50" @click="goPage('/safety')"><Icon name="heart" :size="18" class="text-slate-400" /> Safety &amp; Security</button>
         </template>
         <div class="my-2 border-t border-slate-100"></div>
-        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-left text-rose-600 hover:bg-rose-50" @click="logout"><Icon name="logout" :size="18" /> Logout</button>
+        <!-- Phase 61: bhasha badalna mobile menu me bhi — pehle
+             sirf desktop sidebar me tha, parent phone par Hindi
+             chun hi nahi sakta tha. -->
+        <div class="px-4 py-2 flex items-center gap-3">
+          <span class="text-sm text-slate-500">🌐 {{ t("common.language") }}</span>
+          <select :value="lang" class="input !py-1.5 !text-xs !w-auto ml-auto" @change="setLang($event.target.value)">
+            <option v-for="l in availableLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+          </select>
+        </div>
+        <button type="button" class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-bold text-left text-rose-600 hover:bg-rose-50" @click="logout"><Icon name="logout" :size="18" /> {{ t("common.logout") }}</button>
       </div>
       <div v-if="schoolMenuOpen && memberships.length > 1" class="grid gap-2 mt-3">
         <button v-for="m in memberships" :key="m.schoolId" type="button" @click="switchSchool(m.schoolId)"
@@ -375,7 +413,7 @@ function switchSchool(id) {
         <span v-if="n.to === '/scanner'"
           class="grid place-items-center w-12 h-12 -mt-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-lg shadow-emerald-600/30 border-4 border-white"><Icon :name="n.icon" :size="24" /></span>
         <span v-else class="grid place-items-center py-1 px-3 rounded-full" :class="(n.to.includes('?') ? route.fullPath === n.to : route.path === n.to && !route.query.open) ? 'bg-brand-50' : ''"><Icon :name="n.icon" :size="22" /></span>
-        {{ n.label.split(" ")[0] }}
+        {{ navLabel(n).split(" ")[0] }}
         <span v-if="n.badge && unreadCount" class="absolute top-0.5 right-1.5 bg-red-600 text-white text-[9px] font-bold rounded-full min-w-4 h-4 px-0.5 grid place-items-center">{{ unreadCount }}</span>
       </router-link>
     </nav>

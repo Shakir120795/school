@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from "vue";
-import { api, session } from "../api.js";
+import { api, session, friendlyError } from "../api.js";
+import { t } from "../i18n.js";
 
 // Leave (Phase 15). Parents apply for their children; class teachers
 // and managers approve/reject. Approval marks ON_LEAVE in attendance.
@@ -31,10 +32,10 @@ function quickDays(kind) {
   if (kind === "two") { form.value.fromDate = dayStr(0); form.value.toDate = dayStr(1); }
 }
 const REASON_CHIPS = [
-  { label: "🤒 Sick", category: "SICK", text: "Sick — not feeling well" },
-  { label: "🚑 Doctor visit", category: "SICK", text: "Doctor visit" },
-  { label: "🏠 Family work", category: "FAMILY", text: "Family work at home" },
-  { label: "🎉 Function / travel", category: "FUNCTION", text: "Family function / travel" },
+  { label: "🤒", key: "leave.sick", category: "SICK", text: "Sick — not feeling well" },
+  { label: "🚑", key: "leave.doctor", category: "SICK", text: "Doctor visit" },
+  { label: "🏠", key: "leave.family", category: "FAMILY", text: "Family work at home" },
+  { label: "🎉", key: "leave.function", category: "FUNCTION", text: "Family function / travel" },
 ];
 function pickReason(r) { form.value.category = r.category; form.value.reason = r.text; }
 
@@ -66,7 +67,7 @@ async function apply() {
   err.value = ""; msg.value = "";
   const r = await api(`/schools/${sid}/leave-applications`, { method: "POST", body: form.value });
   if (r.status === 201) { msg.value = "Leave application sent. The school will review it."; form.value.reason = ""; await load(); }
-  else err.value = r.json?.error || "Could not apply";
+  else err.value = friendlyError(r.json?.error) || "Could not apply";
 }
 async function decide(app, decision) {
   err.value = ""; msg.value = "";
@@ -78,56 +79,56 @@ async function decide(app, decision) {
       ? `Approved — ${r.json.appliedDays} day(s) marked ON LEAVE${r.json.skippedDays ? `, ${r.json.skippedDays} day(s) already had attendance and were left unchanged` : ""}. Parent notified.`
       : "Rejected. Parent notified.";
     await load();
-  } else err.value = r.json?.error || "Decision failed";
+  } else err.value = friendlyError(r.json?.error) || "Decision failed";
 }
 async function cancel(app) {
   const r = await api(`/schools/${sid}/leave-applications/${app.id}/cancel`, { method: "PATCH" });
   if (r.status === 200) { msg.value = "Application cancelled."; await load(); }
-  else err.value = r.json?.error || "Cancel failed";
+  else err.value = friendlyError(r.json?.error) || "Cancel failed";
 }
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-1">✉️ Leave</h1>
+    <h1 class="text-xl font-bold mb-1">✉️ {{ t("leave.title") }}</h1>
     <p class="text-sm text-slate-500 mb-4">{{ isParent ? "Apply for leave for your child — approved leave is marked ON LEAVE in attendance automatically." : "Review leave applications. Teachers see only their own classes." }}</p>
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
     <form v-if="isParent" class="card grid gap-3 mb-5" @submit.prevent="apply">
       <div>
-        <label class="label">Which day?</label>
+        <label class="label">{{ t("leave.whichDay") }}</label>
         <div class="flex flex-wrap gap-2">
-          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('today')">Today</button>
-          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('tomorrow')">Tomorrow</button>
-          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('two')">Today + tomorrow</button>
-          <span class="text-xs text-slate-400 self-center">— or pick dates below</span>
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('today')">{{ t("leave.today") }}</button>
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('tomorrow')">{{ t("leave.tomorrow") }}</button>
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('two')">{{ t("leave.todayTomorrow") }}</button>
+          <span class="text-xs text-slate-400 self-center">{{ t("leave.orPick") }}</span>
         </div>
       </div>
       <div class="grid md:grid-cols-2 gap-3">
-        <div><label class="label">Child</label>
+        <div><label class="label">{{ t("leave.child") }}</label>
           <select v-model="form.studentId" class="input" required>
             <option v-for="c in children" :key="c.id" :value="c.id">{{ c.fullName }}</option>
           </select>
         </div>
-        <div><label class="label">Category</label>
+        <div><label class="label">{{ t("leave.category") }}</label>
           <select v-model="form.category" class="input">
-            <option value="SICK">Sick</option>
-            <option value="FAMILY">Family work</option>
-            <option value="FUNCTION">Function / travel</option>
+            <option value="SICK">{{ t("leave.sick") }}</option>
+            <option value="FAMILY">{{ t("leave.family") }}</option>
+            <option value="FUNCTION">{{ t("leave.function") }}</option>
             <option value="OTHER">Other</option>
           </select>
         </div>
         <div><label class="label">From</label><input v-model="form.fromDate" type="date" class="input" required /></div>
         <div><label class="label">To</label><input v-model="form.toDate" type="date" class="input" required /></div>
       </div>
-      <div><label class="label">Reason</label>
+      <div><label class="label">{{ t("leave.reason") }}</label>
         <div class="flex flex-wrap gap-2 mb-2">
-          <button v-for="r in REASON_CHIPS" :key="r.label" type="button" class="btn btn-ghost !py-1.5 text-xs" @click="pickReason(r)">{{ r.label }}</button>
+          <button v-for="r in REASON_CHIPS" :key="r.label" type="button" class="btn btn-ghost !py-1.5 text-xs" @click="pickReason(r)">{{ r.label }} {{ t(r.key) }}</button>
         </div>
         <textarea v-model="form.reason" class="input" rows="2" required placeholder="e.g. Fever since yesterday, doctor advised rest"></textarea></div>
-      <button class="btn btn-primary">Apply for leave</button>
+      <button class="btn btn-primary">{{ t("leave.apply") }}</button>
     </form>
 
     <div class="grid gap-3">

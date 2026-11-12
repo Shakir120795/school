@@ -31,6 +31,32 @@ const myProfile = computed(() => teachers.value.find((tp) => tp.membershipId ===
 const myIncharge = computed(() => myProfile.value?.inchargeAssignments || []);
 const myTeaching = computed(() => myProfile.value?.classAssignments || []);
 
+// Phase 61 (audit UX): teacher ka "aaj mere liye" — kitni leave
+// applications faisle ke intezar me hain, kitne tickets jawab
+// maang rahe hain, kitne baccho ka homework baki hai. Pehle ye
+// teen alag pages kholkar ginna padta tha.
+const teacherToday = ref(null);
+async function loadTeacherToday() {
+  if (!isTeacher) return;
+  try {
+    const [lv, tk, hw] = await Promise.all([
+      api(`/schools/${sid}/leave-applications`).catch(() => null),
+      api(`/schools/${sid}/tickets`).catch(() => null),
+      api(`/schools/${sid}/homework`).catch(() => null),
+    ]);
+    const leaves = (lv?.json?.applications || []).filter((a) => a.status === "PENDING").length;
+    const tickets = (tk?.json?.tickets || []).filter((x) => x.status === "OPEN" || x.status === "IN_PROGRESS").length;
+    let hwStudents = 0, hwCount = 0;
+    for (const h of hw?.json?.homework || []) {
+      const total = h.targetCount || h.classSize || 0;
+      const pending = Math.max(0, total - (h.completedCount || 0));
+      if (pending > 0) { hwStudents += pending; hwCount += 1; }
+    }
+    teacherToday.value = { leaves, tickets, hwStudents, hwCount };
+  } catch { /* strip best-effort hai — dashboard nahi rukna chahiye */ }
+}
+onMounted(loadTeacherToday);
+
 // Phase 44b: dashboard header band ki pehchan — school ke initials
 // aur rang tile (App.vue wale hi helpers).
 const TILE_COLORS = ["#0b8457", "#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#b91c1c", "#0f766e"];
@@ -176,7 +202,7 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
           <span v-else-if="school" class="grid place-items-center w-11 h-11 rounded-xl text-white font-bold shrink-0" :style="{ background: tileColor(school.name) }">{{ schoolInitials }}</span>
           <div class="min-w-0">
             <h1 class="text-2xl font-extrabold tracking-tight truncate">{{ school?.name || "Dashboard" }}</h1>
-            <p class="text-sm text-slate-500">{{ A?.date || "" }} · Welcome back, {{ user?.fullName }} ({{ role }})</p>
+            <p class="text-sm text-slate-500">{{ A?.date || "" }} · Welcome back, {{ user?.fullName }}</p>
           </div>
         </div>
         <div class="flex gap-2">
@@ -199,6 +225,22 @@ onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); 
         <span v-if="!myTeaching.length" class="text-xs text-slate-400">No subjects assigned to you yet.</span>
       </div>
       <p class="text-xs text-slate-400 mt-2">When you assign homework, only these classes — and your subjects in them — are shown.</p>
+    </div>
+
+    <!-- Phase 61: teacher ka "Today for you" — teen tappable gintee -->
+    <div v-if="isTeacher && teacherToday" class="grid grid-cols-3 gap-3 mb-4">
+      <button type="button" class="card !py-3 text-left hover:border-brand-300 transition" @click="router.push('/leave')">
+        <div class="text-xl font-extrabold" :class="teacherToday.leaves ? 'text-amber-600' : 'text-slate-700'">{{ teacherToday.leaves }}</div>
+        <div class="text-[11px] font-semibold text-slate-500">✉️ LEAVE WAITING</div>
+      </button>
+      <button type="button" class="card !py-3 text-left hover:border-brand-300 transition" @click="router.push('/support')">
+        <div class="text-xl font-extrabold" :class="teacherToday.tickets ? 'text-amber-600' : 'text-slate-700'">{{ teacherToday.tickets }}</div>
+        <div class="text-[11px] font-semibold text-slate-500">🎫 TICKETS OPEN</div>
+      </button>
+      <button type="button" class="card !py-3 text-left hover:border-brand-300 transition" @click="router.push('/homework')">
+        <div class="text-xl font-extrabold" :class="teacherToday.hwStudents ? 'text-amber-600' : 'text-slate-700'">{{ teacherToday.hwStudents }}</div>
+        <div class="text-[11px] font-semibold text-slate-500">📚 HOMEWORK PENDING ({{ teacherToday.hwCount }})</div>
+      </button>
     </div>
 
     <!-- Phase 38: dashboard search — student (parent ke saath) aur teacher, click karke seedha detail -->

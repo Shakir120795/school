@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { api, session } from "../api.js";
+import { api, session, fmtDate, friendlyError } from "../api.js";
+import { t } from "../i18n.js";
 
 // Homework (Phase 14). Teachers assign to their classes and track
 // completions; parents see homework per child and mark it done.
@@ -34,8 +35,8 @@ const todayStr = new Date().toISOString().slice(0, 10);
 function dueBadge(h) {
   const due = (h.dueDate || "").slice(0, 10);
   if (due < todayStr) return { text: `Overdue · ${due}`, cls: "bg-rose-50 text-rose-600" };
-  if (due === todayStr) return { text: "Due today", cls: "bg-amber-50 text-amber-600" };
-  return { text: `Due ${due}`, cls: "bg-slate-100 text-slate-500" };
+  if (due === todayStr) return { text: t("homework.dueToday"), cls: "bg-amber-50 text-amber-600" };
+  return { text: `${t("common.due")} ${fmtDate(h.dueDate)}`, cls: "bg-slate-100 text-slate-500" };
 }
 
 async function load() {
@@ -95,7 +96,7 @@ async function create() {
     form.value.title = ""; form.value.description = ""; form.value.attachmentUrl = "";
     selectedStudents.value = [];
     await load();
-  } else err.value = r.json?.error || "Could not assign homework";
+  } else err.value = friendlyError(r.json?.error) || "Could not assign homework";
 }
 async function toggleDetail(h) {
   if (expanded.value === h.id) { expanded.value = null; completionDetail.value = null; return; }
@@ -107,20 +108,20 @@ async function removeHw(h) {
   if (!confirm(`Delete homework "${h.title}"?`)) return;
   const r = await api(`/schools/${sid}/homework/${h.id}`, { method: "DELETE" });
   if (r.status === 200) { msg.value = "Homework deleted."; await load(); }
-  else err.value = r.json?.error || "Delete failed";
+  else err.value = friendlyError(r.json?.error) || "Delete failed";
 }
 async function toggleDone(h, child) {
   const r = await api(`/schools/${sid}/homework/${h.id}/complete`, { method: "POST", body: { studentId: child.studentId } });
   if (r.status === 200) {
     child.done = r.json.done;
-  } else err.value = r.json?.error || "Could not update";
+  } else err.value = friendlyError(r.json?.error) || "Could not update";
 }
 onMounted(async () => { await load(); if (isStaff) await loadMeta(); });
 </script>
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-1">📚 Homework</h1>
+    <h1 class="text-xl font-bold mb-1">📚 {{ t("homework.title") }}</h1>
     <p class="text-sm text-slate-500 mb-4">{{ isStaff ? "Assign homework to your class — parents are notified instantly in the app." : "Homework for your children. Mark it done when finished." }}</p>
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>

@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import QRCode from "qrcode";
-import { api, session } from "../api.js";
+import { api, session, friendlyError } from "../api.js";
 import { usePager, matchStatus } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 import StudentCard from "../components/StudentCard.vue";
@@ -29,6 +29,48 @@ const emptyStudent = () => ({
   gender: "", dateOfBirth: "", fatherName: "", motherName: "", address: "",
 });
 const newStudent = ref(emptyStudent());
+// Phase 60: list pehle, form baad me — Add student form toggle ke peeche.
+const showAdd = ref(false);
+function onStudentPhoto(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const scale = Math.min(1, 256 / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.width * scale);
+    canvas.height = Math.round(img.height * scale);
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    newStudent.value.photoUrl = canvas.toDataURL("image/jpeg", 0.85);
+    URL.revokeObjectURL(img.src);
+  };
+  img.src = URL.createObjectURL(file);
+}
+// Phase 60: Quick admission — student + parent EK submit me
+// (pehle 3 alag forms bharne padte thay).
+const quick = ref({ admissionNo: "", fullName: "", classroomId: "", parentName: "", parentPhone: "" });
+const quickBusy = ref(false);
+async function quickAdmission() {
+  quickBusy.value = true;
+  try {
+    const s = await api(`/schools/${sid}/students`, { method: "POST", body: { admissionNo: quick.value.admissionNo, fullName: quick.value.fullName, classroomId: quick.value.classroomId || undefined, academicYearId: years.value[0]?.id } });
+    if (s.status !== 201) { note(s); return; }
+    const studentId = s.json.student.id;
+    if (quick.value.parentName.trim()) {
+      const g = await api(`/schools/${sid}/guardians`, { method: "POST", body: { fullName: quick.value.parentName, phone: quick.value.parentPhone || undefined } });
+      if (g.status === 201) {
+        await api(`/schools/${sid}/students/${studentId}/guardians`, { method: "POST", body: { guardianId: g.json.guardian.id, isPrimary: true } });
+        msg.value = `Admission done — ${quick.value.fullName} added and parent ${quick.value.parentName} linked.`;
+      } else {
+        msg.value = `Student added, but the parent could not be saved (${g.json?.error || g.status}). Link the parent below.`;
+      }
+    } else {
+      msg.value = "Student added.";
+    }
+    quick.value = { admissionNo: "", fullName: "", classroomId: "", parentName: "", parentPhone: "" };
+    load();
+  } finally { quickBusy.value = false; }
+}
 // Edit student (Phase 27): the same detail fields as Add, PATCHed
 // via /schools/:id/students/:studentId. Phase 29 WS6: classroomId
 // changes are audited class transfers and admissionNo is now
@@ -67,7 +109,7 @@ async function saveEdit() {
       load();
     } else {
       // 409 ADMISSION_NO_TAKEN lands here — shown inline in the form.
-      editErr.value = r.json?.error || `Error ${r.status}`;
+      editErr.value = friendlyError(r.json?.error) || `Error ${r.status}`;
     }
   } finally {
     editSaving.value = false;
@@ -120,7 +162,7 @@ onMounted(async () => {
 });
 
 function note(r, okText) {
-  msg.value = r.status < 300 ? okText : `Error: ${r.json.error || r.status}`;
+  msg.value = r.status < 300 ? okText : (friendlyError(r.json?.error) || `Error ${r.status}`);
   if (r.status < 300) load();
 }
 
@@ -261,11 +303,20 @@ const filteredTeachers = computed(() => {
     <p v-if="tab === 'students'" class="text-sm text-slate-500 mb-4 -mt-2">Every student card shows the child together with their parents — father, mother, guardian name and mobile are on the same card. Search also matches a parent's name or mobile number.</p>
 
     <div v-if="tab === 'students'">
-      <form class="card grid md:grid-cols-4 gap-3 mb-4" @submit.prevent="addStudent">
+      <div class="flex flex-wrap gap-2 items-center mb-4">
+        <button type="button" class="btn btn-primary" @click="showAdd = !showAdd">{{ showAdd ? "✕ Close form" : "＋ Add student" }}</button>
+        <span class="text-xs text-slate-400">Naya admission? Neeche Parents section me <b>Quick admission</b> hai — student + parent ek hi baar me.</span>
+      </div>
+      <form v-if="showAdd" class="card grid md:grid-cols-4 gap-3 mb-4" @submit.prevent="addStudent">
         <div><label class="label">Admission No</label><input v-model="newStudent.admissionNo" required class="input" /></div>
         <div><label class="label">Full name</label><input v-model="newStudent.fullName" required class="input" /></div>
         <div><label class="label">Roll No (optional)</label><input v-model="newStudent.rollNo" class="input" /></div>
-        <div><label class="label">Photo URL (optional)</label><input v-model="newStudent.photoUrl" class="input" placeholder="https://…" /></div>
+        <div><label class="label">Photo (optional)</label>
+          <div class="flex items-center gap-2">
+            <img v-if="newStudent.photoUrl" :src="newStudent.photoUrl" class="w-9 h-9 rounded-full object-cover border" alt="" />
+            <label class="btn btn-ghost !py-2 cursor-pointer">{{ newStudent.photoUrl ? "Change photo" : "Add photo" }}<input type="file" accept="image/*" class="hidden" @change="onStudentPhoto" /></label>
+            <button v-if="newStudent.photoUrl" type="button" class="text-xs text-rose-600 underline" @click="newStudent.photoUrl = ''">Remove</button>
+          </div></div>
         <div><label class="label">Class</label>
           <select v-model="newStudent.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
         <div><label class="label">Gender (optional)</label>
@@ -298,26 +349,6 @@ const filteredTeachers = computed(() => {
         <p v-if="editErr" class="md:col-span-4 text-sm text-red-700">Error: {{ editErr }}</p>
       </form>
       <div class="card mb-4 flex flex-wrap gap-2 items-center">
-        <span class="font-semibold text-sm">Bulk ID cards:</span>
-        <select v-model="printSelection" multiple class="input !w-64" size="4">
-          <option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option>
-        </select>
-        <button type="button" class="btn btn-primary" @click="issueAndPrint">Issue & prepare print sheet</button>
-        <button v-if="printCards.length" type="button" class="btn btn-ghost" @click="printSheet">Print sheet</button>
-      </div>
-      <div v-if="printCards.length" id="print-sheet" class="card mb-4">
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div v-for="c in printCards" :key="c.adm" class="id-card border-2 border-brand-600 rounded-xl p-3 text-center">
-            <div class="font-bold text-sm">{{ schoolName }}</div>
-            <img v-if="c.photo" :src="c.photo" class="w-16 h-16 rounded-full object-cover mx-auto mb-1 border" alt="Student photo" />
-            <img :src="c.qr" class="w-28 h-28 mx-auto" alt="QR" />
-            <div class="font-semibold">{{ c.name }}</div>
-            <div class="text-xs text-slate-500">Adm {{ c.adm }}<span v-if="c.roll"> · Roll {{ c.roll }}</span> · Class {{ c.cls }}</div>
-
-          </div>
-        </div>
-      </div>
-      <div class="card mb-4 flex flex-wrap gap-2 items-center">
         <input v-model="stuQuery" class="input flex-1 min-w-[200px]" placeholder="Search student, admission no, guardian name / phone…" />
         <select v-model="stuClass" class="input !w-auto">
           <option value="">All classes</option>
@@ -343,8 +374,37 @@ const filteredTeachers = computed(() => {
         <Pager :page="stuPager.page.value" :total-pages="stuPager.totalPages.value" :from="stuPager.from.value" :to="stuPager.to.value" :total="stuPager.total.value" @update:page="stuPager.page.value = $event" />
       </div>
 
+      <div class="card mb-4 flex flex-wrap gap-2 items-center">
+        <span class="font-semibold text-sm">Bulk ID cards:</span>
+        <select v-model="printSelection" multiple class="input !w-64" size="4">
+          <option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option>
+        </select>
+        <button type="button" class="btn btn-primary" @click="issueAndPrint">Issue & prepare print sheet</button>
+        <button v-if="printCards.length" type="button" class="btn btn-ghost" @click="printSheet">Print sheet</button>
+      </div>
+      <div v-if="printCards.length" id="print-sheet" class="card mb-4">
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div v-for="c in printCards" :key="c.adm" class="id-card border-2 border-brand-600 rounded-xl p-3 text-center">
+            <div class="font-bold text-sm">{{ schoolName }}</div>
+            <img v-if="c.photo" :src="c.photo" class="w-16 h-16 rounded-full object-cover mx-auto mb-1 border" alt="Student photo" />
+            <img :src="c.qr" class="w-28 h-28 mx-auto" alt="QR" />
+            <div class="font-semibold">{{ c.name }}</div>
+            <div class="text-xs text-slate-500">Adm {{ c.adm }}<span v-if="c.roll"> · Roll {{ c.roll }}</span> · Class {{ c.cls }}</div>
+
+          </div>
+        </div>
+      </div>
       <h2 class="font-bold mt-6 mb-1">👨‍👩‍👧 Parents — add or link with a student</h2>
       <p class="text-sm text-slate-500 mb-3">Parents are not a separate list — a parent is always shown with their child above. Add a new parent here, then link them to their student; the parent's name and mobile then appear on that student's card.</p>
+      <form class="card grid md:grid-cols-3 gap-3 mb-4 !border-brand-300" @submit.prevent="quickAdmission">
+        <div class="md:col-span-3 font-semibold">⚡ Quick admission — student + parent in one go</div>
+        <div><label class="label">Admission No</label><input v-model="quick.admissionNo" required class="input" /></div>
+        <div><label class="label">Student name</label><input v-model="quick.fullName" required class="input" /></div>
+        <div><label class="label">Class</label><select v-model="quick.classroomId" class="input"><option value="">—</option><option v-for="c in classrooms" :key="c.id" :value="c.id">{{ c.name }}-{{ c.section }}</option></select></div>
+        <div><label class="label">Parent name</label><input v-model="quick.parentName" class="input" /></div>
+        <div><label class="label">Parent mobile</label><input v-model="quick.parentPhone" class="input" /></div>
+        <div class="flex items-end"><button class="btn btn-primary w-full" :disabled="quickBusy">{{ quickBusy ? "Saving…" : "Admit student" }}</button></div>
+      </form>
       <div class="grid md:grid-cols-2 gap-4">
         <form class="card grid gap-3" @submit.prevent="addGuardian">
           <div class="font-semibold">Add parent (guardian)</div>

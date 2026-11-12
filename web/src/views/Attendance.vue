@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { api, session, myRole, currentUser } from "../api.js";
+import { api, session, myRole, currentUser, fmtDate, friendlyError } from "../api.js";
 import { usePager } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 
@@ -79,12 +79,12 @@ async function requestCorrection() {
       proposedChanges: { status: corrForm.value.status },
     },
   });
-  msg.value = r.status === 201 ? "Correction requested. A principal/admin must approve it." : `Error: ${r.json.error}`;
+  msg.value = r.status === 201 ? "Correction requested. A principal/admin must approve it." : (friendlyError(r.json.error) || `Error ${r.status}`);
   corrForm.value = { entityId: "", reason: "", status: "" };
 }
 async function decide(id, decision) {
   const r = await api(`/schools/${sid}/attendance/corrections/${id}/decide`, { method: "POST", body: { decision } });
-  msg.value = r.status === 200 ? `Request ${decision.toLowerCase()}.` : `Error: ${r.json.error}`;
+  msg.value = r.status === 200 ? `Request ${decision.toLowerCase()}.` : (friendlyError(r.json.error) || `Error ${r.status}`);
   load();
 }
 function fmt(t) {
@@ -189,7 +189,7 @@ function statusBadge(s) {
       <div v-for="c in corrections" :key="c.id" class="py-2.5 border-b border-slate-100 last:border-0">
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <span class="font-semibold">{{ c.personName || "Record" }}</span>
-          <span class="text-slate-400">{{ c.localDate ? String(c.localDate).slice(0, 10) : "" }}</span>
+          <span class="text-slate-400">{{ c.localDate ? fmtDate(c.localDate) : "" }}</span>
           <span class="badge" :class="statusBadge(c.currentStatus)">{{ statusLabel(c.currentStatus || "") }}</span>
           <span class="text-slate-400">→</span>
           <span class="badge" :class="statusBadge(c.proposedChanges?.status)">{{ statusLabel(c.proposedChanges?.status || "") }}</span>

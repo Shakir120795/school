@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { api, session } from "../api.js";
+import { api, session, fmtDate } from "../api.js";
 import { usePager } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 
@@ -147,7 +147,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
         <div v-for="e in exams" :key="e.id" class="card !py-3 flex flex-wrap items-center gap-2 cursor-pointer" :class="{ 'ring-2 ring-brand-500': selected?.id === e.id }" @click="openExam(e)">
           <div>
             <div class="font-semibold text-sm">{{ e.name }} <span class="text-slate-400 font-normal">· {{ e.subject?.name }} · Class {{ e.classroom?.name }}{{ e.classroom?.section ? "-" + e.classroom.section : "" }}</span></div>
-            <div class="text-xs text-slate-400">{{ String(e.examDate).slice(0, 10) }} · Max {{ e.maxMarks }} · Marks entered: {{ e.marksEntered }}</div>
+            <div class="text-xs text-slate-400">{{ fmtDate(e.examDate) }} · Max {{ e.maxMarks }} · Marks entered: {{ e.marksEntered }}</div>
           </div>
           <span class="ml-auto text-xs font-bold px-2 py-1 rounded-full" :class="e.resultsPublished ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'">{{ e.resultsPublished ? "PUBLISHED" : "DRAFT" }}</span>
           <button class="btn btn-ghost !py-1.5" @click.stop="togglePublish(e)">{{ e.resultsPublished ? "Unpublish" : "Publish results" }}</button>
@@ -199,7 +199,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           <div v-for="r in report.rows" :key="r.examId" class="flex items-center gap-2 text-sm border-b border-slate-50 py-2">
             <div>
               <div class="font-semibold">{{ r.subjectName }}</div>
-              <div class="text-xs text-slate-400">{{ r.examName }} · {{ String(r.examDate).slice(0, 10) }}<span v-if="r.remark"> · {{ r.remark }}</span></div>
+              <div class="text-xs text-slate-400">{{ r.examName }} · {{ fmtDate(r.examDate) }}<span v-if="r.remark"> · {{ r.remark }}</span></div>
             </div>
             <span class="ml-auto font-bold">{{ r.marksObtained }} / {{ r.maxMarks }}</span>
             <span class="text-slate-400 text-xs w-14 text-right">{{ r.percentage }}%</span>

@@ -390,6 +390,14 @@ onMounted(async () => {
   <div>
     <h1 class="text-xl font-bold mb-1">👑 Super Admin Console</h1>
     <p class="text-sm text-slate-500 mb-4">Every school on the platform. You are above all schools — school staff work inside their own school only.</p>
+    <!-- Phase 60 (audit UX): Tools ki katar upar hi — pehle Login
+         Test / DB Update tak pahuchne ke liye puri schools list
+         scroll karni padti thi. -->
+    <div class="flex flex-wrap gap-2 mb-4">
+      <a href="#tool-login" class="btn btn-ghost !w-auto">✅ Login Test</a>
+      <a href="#tool-db" class="btn btn-ghost !w-auto">🛠 Database Update</a>
+      <a href="#tool-add" class="btn btn-ghost !w-auto">＋ Add a new school</a>
+    </div>
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
@@ -560,7 +568,7 @@ onMounted(async () => {
       <p v-if="!schools.length" class="card text-sm text-slate-400">No schools yet — create the first one below.</p>
     </div>
 
-    <div class="card mb-4">
+    <div class="card mb-4" id="tool-db">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <h2 class="font-bold">🛠 Database Update</h2>
         <span class="text-xs text-slate-400">{{ t("console.dbHint") }}</span>
@@ -574,7 +582,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="card mb-4">
+    <div class="card mb-4" id="tool-login">
       <div class="flex flex-wrap items-center gap-2 mb-2">
         <h2 class="font-bold">✅ Login Test</h2>
         <span class="text-xs text-slate-400">{{ t("console.testHint") }}</span>
@@ -630,11 +638,11 @@ onMounted(async () => {
       </template>
     </div>
 
-    <form class="card grid gap-3" @submit.prevent="createSchool">
+    <form class="card grid gap-3" id="tool-add" @submit.prevent="createSchool">
       <h2 class="font-bold">Add a new school</h2>
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="label">School name</label><input v-model="form.name" class="input" required placeholder="e.g. Green Valley Public School" /></div>
-        <div><label class="label">Slug (URL id, optional)</label><input v-model="form.slug" class="input" placeholder="green-valley" /></div>
+        <div><label class="label">School code (URL id, optional)</label><input v-model="form.slug" class="input" placeholder="green-valley" /></div>
         <div><label class="label">School admin name</label><input v-model="form.adminName" class="input" required placeholder="e.g. Rakesh Gupta" /></div>
         <div><label class="label">School admin email (their login)</label><input v-model="form.adminEmail" type="email" class="input" required placeholder="admin@greenvalley.edu" /></div>
         <div class="md:col-span-2"><label class="label">School admin password (share with the school)</label><input v-model="form.adminPassword" class="input" required minlength="8" placeholder="At least 8 characters" /></div>

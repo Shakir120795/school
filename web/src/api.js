@@ -11,6 +11,8 @@
 // THIS tab to the new account; accounts open in other tabs are
 // untouched. This supersedes Phase 40's single-session model,
 // which in turn had superseded Phase 30's with-switcher model.
+import { lang } from "./i18n.js";
+
 const BASE = import.meta.env.VITE_API_BASE || "";
 
 const ACCOUNTS_KEY = "ss_accounts_v3";
@@ -256,6 +258,46 @@ export async function loginWithOtp(phone, code) {
   const r = await raw("/auth/parent-otp/verify", { method: "POST", body: { phone, code }, school: false });
   if (r.status === 200) session.establish(r.json);
   return r;
+}
+
+// Phase 61 (audit UX): server ke raw error CODE (ADMISSION_NO_TAKEN
+// jaise) user ko kabhi na dikhen — jahan code ka saaf matlab hai
+// wahan aam bhasha, warna khali string (caller apna fallback de).
+const FRIENDLY_ERRORS = {
+  ADMISSION_NO_TAKEN: "That admission number is already used by another student — please try a different one.",
+  INVALID_CREDENTIALS: "Wrong login ID or password.",
+  STUDENT_NOT_IN_CLASS: "That student is not in this class.",
+  NO_CLASS_TEACHER: "This class has no class teacher set yet — please send it to the School Office instead.",
+  TIME_TAKEN: "That time is already booked — please pick another time.",
+  ALREADY_BOOKED_FOR_THIS_CHILD: "This child already has a booking for this meeting.",
+  PASSWORD_TOO_SHORT: "Password is too short — use at least 8 characters.",
+  INVALID_ROLE: "That role is not allowed here.",
+  RATE_LIMITED: "Too many tries — please wait a minute and try again.",
+  MISSING_FIELDS: "Some required information is missing.",
+  NOT_FOUND: "That record could not be found.",
+  OTP_NOT_AVAILABLE: "Mobile OTP login is not available right now — please use your login ID and password.",
+  STUDENT_REQUIRED: "Please choose your child first.",
+  INVALID_CHANGES: "That change is not allowed.",
+  INVALID_ENTITY_TYPE: "That record type cannot be corrected here.",
+  ENTITY_NOT_FOUND: "That attendance record could not be found.",
+  NOT_INCHARGE: "You are not the class incharge for this class.",
+  CLASS_NOT_ASSIGNED: "This class is not assigned to you.",
+  REMOVAL_REASON_REQUIRED: "Please choose a reason for removing this member.",
+  OVERPAYMENT: "That amount is more than the balance due.",
+};
+export function friendlyError(code) {
+  if (!code || typeof code !== "string") return "";
+  return FRIENDLY_ERRORS[code] || "";
+}
+
+// Phase 61: tareekh har jagah ek jaise, padhne layak format me
+// (2026-11-12 ki jagah "12 Nov 2026"; Hindi chuna ho to hi-IN).
+export function fmtDate(d) {
+  if (!d) return "—";
+  const s = String(d);
+  const dt = new Date(s.length <= 10 ? `${s}T00:00:00` : s);
+  if (Number.isNaN(dt.getTime())) return s.slice(0, 10);
+  return dt.toLocaleDateString(lang.value === "hi" ? "hi-IN" : "en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
 export function currentUser() {

@@ -16,7 +16,7 @@ const loading = ref(true);
 const err = ref("");
 
 const totals = computed(() => {
-  const t = { schools: schools.value.length, active: 0, suspended: 0, students: 0, teachers: 0, parents: 0, classes: 0 };
+  const t = { schools: schools.value.length, active: 0, suspended: 0, students: 0, teachers: 0, parents: 0, classes: 0, chargePaise: 0, receivedPaise: 0, balancePaise: 0 };
   for (const s of schools.value) {
     if (s.status === "ACTIVE") t.active++;
     else if (s.status === "SUSPENDED") t.suspended++;
@@ -24,9 +24,15 @@ const totals = computed(() => {
     t.teachers += s.teachers || 0;
     t.parents += s.parents || 0;
     t.classes += s.classes || 0;
+    // Phase 60 (audit UX): platform ka kul paisa — pehle har
+    // school ke card se jodna padta tha.
+    t.chargePaise += s.totalChargePaise || 0;
+    t.receivedPaise += s.receivedPaise || 0;
+    t.balancePaise += s.balancePaise || 0;
   }
   return t;
 });
+const inrShort = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
 
 async function load() {
   loading.value = true;
@@ -155,7 +161,7 @@ function openStudent(s) {
     <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
       <div>
         <h1 class="text-2xl font-extrabold tracking-tight">👑 Platform Dashboard</h1>
-        <p class="text-sm text-slate-500">Platform overview · Welcome back, {{ user?.fullName }} (PLATFORM_ADMIN)</p>
+        <p class="text-sm text-slate-500">Platform overview · Welcome back, {{ user?.fullName }}</p>
       </div>
       <button type="button" class="btn btn-primary" @click="router.push('/console')">Open Super Admin Console →</button>
     </div>
@@ -201,6 +207,23 @@ function openStudent(s) {
           <div class="text-3xl font-extrabold">🏫 {{ totals.classes }}</div>
           <div class="text-xs text-slate-500 font-medium">Total Classes</div>
         </div>
+      </div>
+
+      <!-- Phase 60: platform money strip — kul charge / mila /
+           bakaya ek nazar me; Bakaya par tap = Console (hisab). -->
+      <div class="grid grid-cols-3 gap-3 mb-5">
+        <div class="card">
+          <div class="text-xl md:text-2xl font-extrabold">{{ inrShort(totals.chargePaise) }}</div>
+          <div class="text-xs text-slate-500 font-medium">💰 Total charge (all schools)</div>
+        </div>
+        <div class="card">
+          <div class="text-xl md:text-2xl font-extrabold text-emerald-600">{{ inrShort(totals.receivedPaise) }}</div>
+          <div class="text-xs text-slate-500 font-medium">✅ Received</div>
+        </div>
+        <button type="button" class="card text-left hover:border-brand-300 transition" @click="router.push('/console')">
+          <div class="text-xl md:text-2xl font-extrabold text-rose-600">{{ inrShort(totals.balancePaise) }}</div>
+          <div class="text-xs text-slate-500 font-medium">⏳ Balance due → Console</div>
+        </button>
       </div>
 
       <!-- Search results (shown while a query is typed) -->

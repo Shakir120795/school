@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session } from "../api.js";
+import { login, loginWithOtp, api, myRole, myMemberships, currentUser, session, friendlyError } from "../api.js";
+import { t, lang, setLang, availableLangs } from "../i18n.js";
 import { installState, promptInstall } from "../install.js";
 import { flavorAllowsLogin } from "../flavor.js";
 
@@ -143,7 +144,7 @@ async function submit() {
   const r = await login(email.value.trim(), password.value);
   busy.value = false;
   if (r.status !== 200) {
-    error.value = r.json.error === "INVALID_CREDENTIALS" ? "Wrong login ID or password." : `Login failed (${r.json.error || r.status})`;
+    error.value = friendlyError(r.json.error) || `Login failed (${r.status})`;
     return;
   }
   // Role-locked pages (Phase 23): the credentials are valid but the
@@ -205,6 +206,7 @@ async function submit() {
           <input v-model="password" type="password" required class="input mb-4" placeholder="••••••••" />
           <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
           <button class="btn btn-primary w-full !py-3 !text-base" :disabled="busy">{{ busy ? "Signing in…" : "Sign in" }}</button>
+          <p class="text-xs text-slate-400 mt-3 text-center">{{ t("login.forgot") }}</p>
         </form>
 
         <form v-else @submit.prevent="otpSent ? verifyOtp() : sendOtp()">
@@ -234,6 +236,7 @@ async function submit() {
         <input v-model="password" type="password" required class="input mb-4" placeholder="••••••••" />
         <p v-if="error" class="text-sm text-red-600 mb-3">{{ error }}</p>
         <button class="btn btn-primary w-full !py-3 !text-base" :disabled="busy">{{ busy ? "Signing in…" : "Sign in" }}</button>
+        <p class="text-xs text-slate-400 mt-3 text-center">{{ t("login.forgot") }}</p>
       </form>
 
       <!-- Phase 46: dusre logins ka saaf section — jo page khula
@@ -254,6 +257,14 @@ async function submit() {
             </router-link>
           </template>
         </div>
+      </div>
+      <!-- Phase 61: bhasha login page par hi — parent pehle din
+           se apni bhasha chun sake. -->
+      <div class="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center gap-2 text-sm text-slate-500">
+        <span>🌐 {{ t("common.language") }}</span>
+        <select :value="lang" class="input !py-1.5 !text-xs !w-auto" @change="setLang($event.target.value)">
+          <option v-for="l in availableLangs" :key="l.code" :value="l.code">{{ l.label }}</option>
+        </select>
       </div>
     </div>
     <button v-if="installState === 'available' || installState === 'menu'" type="button" class="btn mt-5 !w-auto px-5 !py-2.5 bg-white/10 text-white hover:bg-white/20" @click="doInstall">📲 Install App</button>

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { api, session } from "../api.js";
+import { api, session, friendlyError } from "../api.js";
+import { t } from "../i18n.js";
 
 // Support tickets + PTM (Phase 20).
 const role = session.membership?.role;
@@ -53,7 +54,7 @@ async function createTicket() {
     await loadTickets(); await openTicket(r.json.ticket);
   }
   else if (r.json?.error === "NO_CLASS_TEACHER") err.value = "This class has no class teacher set yet — please send this ticket to the School Office instead.";
-  else err.value = r.json?.error || "Could not raise ticket";
+  else err.value = friendlyError(r.json?.error) || "Could not raise ticket";
 }
 async function openTicket(t) {
   open.value = t;
@@ -64,12 +65,12 @@ async function sendReply() {
   if (!reply.value.trim()) return;
   const r = await api(`/schools/${sid}/tickets/${open.value.id}/messages`, { method: "POST", body: { body: reply.value } });
   if (r.status === 201) { reply.value = ""; await openTicket(open.value); await loadTickets(); }
-  else err.value = r.json?.error || "Reply failed";
+  else err.value = friendlyError(r.json?.error) || "Reply failed";
 }
 async function setStatus(status) {
   const r = await api(`/schools/${sid}/tickets/${open.value.id}/status`, { method: "PATCH", body: { status } });
   if (r.status === 200) { open.value = r.json.ticket; await loadTickets(); }
-  else err.value = r.json?.error || "Status change failed";
+  else err.value = friendlyError(r.json?.error) || "Status change failed";
 }
 
 async function loadPtm() {
@@ -86,7 +87,7 @@ async function createPtm() {
   const body = { ...ptmForm.value, classroomId: ptmForm.value.classroomId || undefined, slotMinutes: Number(ptmForm.value.slotMinutes) };
   const r = await api(`/schools/${sid}/ptm`, { method: "POST", body });
   if (r.status === 201) { msg.value = "PTM created — parents can now book their time."; ptmForm.value.title = ""; await loadPtm(); }
-  else err.value = r.json?.error || "Could not create PTM";
+  else err.value = friendlyError(r.json?.error) || "Could not create PTM";
 }
 async function book(slot) {
   err.value = ""; msg.value = "";
@@ -95,7 +96,7 @@ async function book(slot) {
   if (!studentId || !startTime) { err.value = "Pick a child and a free time."; return; }
   const r = await api(`/schools/${sid}/ptm/${slot.id}/book`, { method: "POST", body: { studentId, startTime } });
   if (r.status === 201) { msg.value = `Booked for ${startTime} on ${String(slot.date).slice(0, 10)}.`; await loadPtm(); }
-  else err.value = r.json?.error || "Booking failed";
+  else err.value = friendlyError(r.json?.error) || "Booking failed";
 }
 async function cancelBooking(bookingId) {
   const r = await api(`/schools/${sid}/ptm/bookings/${bookingId}`, { method: "DELETE" });
@@ -124,7 +125,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-1">🎫 Support & PTM</h1>
+    <h1 class="text-xl font-bold mb-1">🎫 {{ t("support.title") }}</h1>
     <p class="text-sm text-slate-500 mb-4">{{ isParent ? "Ask the school anything, and book your parent-teacher meeting time here." : "Answer parent queries and manage PTM bookings." }}</p>
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>

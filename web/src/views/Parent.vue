@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { api, session, currentUser } from "../api.js";
+import { api, session, currentUser, fmtDate } from "../api.js";
+import { t } from "../i18n.js";
 import Icon from "../components/Icon.vue";
 import FunLearn from "../components/FunLearn.vue";
 
@@ -140,15 +141,18 @@ const STATUS_VIEW = {
   ABSENT: { emoji: "❌", word: "Absent", cls: "bg-rose-100 text-rose-800 border-rose-200" },
   ON_LEAVE: { emoji: "🏠", word: "On leave", cls: "bg-sky-100 text-sky-800 border-sky-200" },
 };
+// Phase 61: status shabd i18n se (LATE ka "Came late" alag key).
+const STATUS_WORD_KEY = { PRESENT: "att.present", LATE: "parent.cameLate", ABSENT: "att.absent", ON_LEAVE: "att.leave" };
 function statusBanner(child) {
   const a = todayStatus(child);
-  if (!a) return { emoji: "⏳", text: "No school news yet", cls: "bg-slate-100 text-slate-600 border-slate-200" };
+  if (!a) return { emoji: "⏳", text: t("parent.noNews"), cls: "bg-slate-100 text-slate-600 border-slate-200" };
   const v = STATUS_VIEW[a.status] || { emoji: "📋", word: a.status, cls: "bg-slate-100 text-slate-700 border-slate-200" };
+  const word = STATUS_WORD_KEY[a.status] ? t(STATUS_WORD_KEY[a.status]) : v.word;
   const d = new Date(a.localDate);
   const now = new Date();
   const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  const when = sameDay ? "today" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  return { emoji: v.emoji, text: `${v.word} · ${when}`, cls: v.cls };
+  const when = sameDay ? t("leave.today") : fmtDate(a.localDate);
+  return { emoji: v.emoji, text: `${word} · ${when}`, cls: v.cls };
 }
 
 async function load() {
@@ -344,20 +348,20 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
     <div v-if="children.length" class="grid grid-cols-2 gap-3 mb-4">
       <router-link to="/fees" class="card !py-3 flex items-center gap-3">
         <span class="text-2xl">💰</span>
-        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">Fees due</span>
-        <span class="block font-extrabold truncate" :class="feesDuePaise ? 'text-rose-600' : 'text-emerald-600'">{{ feesDuePaise ? `₹${(feesDuePaise / 100).toLocaleString("en-IN")}` : "All clear" }}</span></span>
+        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">{{ t("parent.feesDue") }}</span>
+        <span class="block font-extrabold truncate" :class="feesDuePaise ? 'text-rose-600' : 'text-emerald-600'">{{ feesDuePaise ? `₹${(feesDuePaise / 100).toLocaleString("en-IN")}` : t("parent.allClear") }}</span></span>
       </router-link>
       <router-link to="/homework" class="card !py-3 flex items-center gap-3">
         <span class="text-2xl">📚</span>
-        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">Homework pending</span>
-        <span class="block font-extrabold truncate" :class="hwPending ? 'text-amber-600' : 'text-emerald-600'">{{ hwPending ? `${hwPending} to finish` : "All done" }}</span></span>
+        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">{{ t("parent.homeworkPending") }}</span>
+        <span class="block font-extrabold truncate" :class="hwPending ? 'text-amber-600' : 'text-emerald-600'">{{ hwPending ? `${hwPending} ${t("parent.toFinish")}` : t("parent.allDone") }}</span></span>
       </router-link>
     </div>
 
     <div class="grid md:grid-cols-2 gap-4 items-start">
       <div class="card">
         <div class="flex items-center justify-between mb-2">
-          <h3 class="font-bold">🔔 Latest from school</h3>
+          <h3 class="font-bold">🔔 {{ t("parent.latest") }}</h3>
           <router-link to="/notifications" class="text-sm text-brand-700 font-semibold">Open inbox →</router-link>
         </div>
         <div v-if="!loading && !inbox.length" class="text-sm text-slate-500">No notifications yet.</div>
@@ -369,7 +373,7 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
 
       <div class="space-y-4">
         <div class="card" id="teachers">
-          <h3 class="font-bold mb-2">🧑‍🏫 Teachers</h3>
+          <h3 class="font-bold mb-2">🧑‍🏫 {{ t("parent.teachers") }}</h3>
           <div v-if="!loading && !teachers.length" class="text-sm text-slate-500">No teacher contacts published yet.</div>
           <div v-for="t in teachers" :key="t.id" class="flex items-center gap-3 py-2 border-b border-slate-100 last:border-0">
             <div class="avatar w-9 h-9 text-xs" style="background:#2563eb">{{ initials(t.displayName) }}</div>

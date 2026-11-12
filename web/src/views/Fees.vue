@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { api, session } from "../api.js";
+import { api, session, fmtDate, friendlyError } from "../api.js";
+import { t } from "../i18n.js";
 
 // Fees (Phase 16). Office: set up heads + class structures, generate a
 // period's invoices, record payments (receipt numbers are automatic),
@@ -27,6 +28,15 @@ const payForms = ref({});
 const expanded = ref(null);
 const detail = ref(null);
 const classFilter = ref("");
+// Phase 60 (audit UX): invoice list me student search — pehle
+// sirf class filter tha, ek bacche ka payment lene ke liye puri
+// list khangalni padti thi.
+const invQuery = ref("");
+const visibleInvoices = computed(() => {
+  const q = invQuery.value.trim().toLowerCase();
+  if (!q) return invoices.value;
+  return invoices.value.filter((i) => `${i.student?.fullName || ""} ${i.student?.admissionNo || ""}`.toLowerCase().includes(q));
+});
 const STATUS_CLS = { UNPAID: "bg-rose-50 text-rose-600", PARTIAL: "bg-amber-50 text-amber-600", PAID: "bg-emerald-50 text-emerald-600", WAIVED: "bg-slate-100 text-slate-500" };
 const inr = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
 
@@ -62,16 +72,16 @@ async function generate() {
   err.value = ""; msg.value = "";
   const r = await api(`/schools/${sid}/fees/generate`, { method: "POST", body: gen.value });
   if (r.status === 201) { msg.value = `Generated ${r.json.created} invoice(s) (${inr(r.json.totalPaise)} each)${r.json.skipped ? `, ${r.json.skipped} already existed` : ""}.`; await loadStaff(); }
-  else err.value = r.json?.error || "Generation failed";
+  else err.value = friendlyError(r.json?.error) || "Generation failed";
 }
 async function addHead() {
   if (!newHead.value.trim()) return;
   const r = await api(`/schools/${sid}/fee-heads`, { method: "POST", body: { name: newHead.value.trim() } });
-  if (r.status === 201) { newHead.value = ""; await loadStaff(); } else err.value = r.json?.error || "Could not add head";
+  if (r.status === 201) { newHead.value = ""; await loadStaff(); } else err.value = friendlyError(r.json?.error) || "Could not add head";
 }
 async function addStruct() {
   const r = await api(`/schools/${sid}/fee-structures`, { method: "POST", body: { ...newStruct.value, amountRupees: Number(newStruct.value.amountRupees) } });
-  if (r.status === 201) { msg.value = "Fee structure saved."; await loadStaff(); } else err.value = r.json?.error || "Could not save structure";
+  if (r.status === 201) { msg.value = "Fee structure saved."; await loadStaff(); } else err.value = friendlyError(r.json?.error) || "Could not save structure";
 }
 async function pay(inv) {
   const f = payForms.value[inv.id];
@@ -79,12 +89,12 @@ async function pay(inv) {
   err.value = ""; msg.value = "";
   const r = await api(`/schools/${sid}/fees/invoices/${inv.id}/payments`, { method: "POST", body: { amountRupees: Number(f.amountRupees), method: f.method || "CASH", reference: f.reference || undefined } });
   if (r.status === 201) { msg.value = `Payment recorded — receipt ${r.json.payment.receiptNo}. Parent notified.`; payForms.value[inv.id] = {}; await loadStaff(); }
-  else err.value = r.json?.error || "Payment failed";
+  else err.value = friendlyError(r.json?.error) || "Payment failed";
 }
 async function waive(inv) {
   if (!confirm(`Waive invoice "${inv.title}" for ${inv.student.fullName}? Payments already recorded stay in the ledger.`)) return;
   const r = await api(`/schools/${sid}/fees/invoices/${inv.id}/waive`, { method: "PATCH" });
-  if (r.status === 200) { msg.value = "Invoice waived."; await loadStaff(); } else err.value = r.json?.error || "Waive failed";
+  if (r.status === 200) { msg.value = "Invoice waived."; await loadStaff(); } else err.value = friendlyError(r.json?.error) || "Waive failed";
 }
 // Phase 29 WS7: one-click defaulter reminders (managers only).
 // Preview first so the confirm dialog carries exact counts/amounts.
@@ -114,7 +124,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
 
 <template>
   <div>
-    <h1 class="text-xl font-bold mb-1">💳 Fees</h1>
+    <h1 class="text-xl font-bold mb-1">💳 {{ t("fees.title") }}</h1>
     <p class="text-sm text-slate-500 mb-4">{{ isParent ? "Your children's fee invoices, balances and payment receipts." : "Fee setup, invoice generation, collections and receipts. Online payment collection comes later — this ledger is the record." }}</p>
     <p v-if="msg" class="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2 mb-3">{{ msg }}</p>
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
@@ -134,7 +144,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           <select v-model="gen.classroomId" class="input" required>
             <option v-for="c in classes" :key="c.id" :value="c.id">Class {{ c.name }}{{ c.section ? "-" + c.section : "" }}</option>
           </select>
-          <input v-model="gen.periodLabel" class="input" placeholder="Period — e.g. 2026-11" required />
+          <input v-model="gen.periodLabel" type="month" class="input" required title="Period (month)" />
           <input v-model="gen.dueDate" type="date" class="input" required />
           <select v-model="gen.frequency" class="input">
             <option>MONTHLY</option><option>QUARTERLY</option><option>ANNUAL</option><option>ONE_TIME</option>
@@ -148,17 +158,18 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
         <div class="flex flex-wrap items-center gap-2 mb-2">
           <h2 class="font-bold">Invoices</h2>
           <button v-if="isManager" class="btn btn-primary !py-1.5" :disabled="remindBusy" @click="remindDefaulters">{{ remindBusy ? "Working…" : "🔔 Remind all defaulters" }}</button>
-          <select v-model="classFilter" class="input !w-auto ml-auto" @change="loadStaff">
+          <input v-model="invQuery" class="input !w-52 ml-auto" placeholder="Search student / admission no…" />
+          <select v-model="classFilter" class="input !w-auto" @change="loadStaff">
             <option value="">All classes</option>
             <option v-for="c in classes" :key="c.id" :value="c.id">Class {{ c.name }}{{ c.section ? "-" + c.section : "" }}</option>
           </select>
         </div>
         <div class="grid gap-2">
-          <div v-for="inv in invoices" :key="inv.id" class="border border-slate-100 rounded-xl px-3 py-2">
+          <div v-for="inv in visibleInvoices" :key="inv.id" class="border border-slate-100 rounded-xl px-3 py-2">
             <div class="flex flex-wrap items-center gap-2">
               <div class="min-w-0">
                 <div class="font-semibold text-sm">{{ inv.student.fullName }} <span class="text-slate-400 font-normal">· {{ inv.student.admissionNo }} · Class {{ inv.student.classroom?.name }}{{ inv.student.classroom?.section ? "-" + inv.student.classroom.section : "" }}</span></div>
-                <div class="text-xs text-slate-500">{{ inv.periodLabel }} · Total {{ inr(inv.totalPaise) }} · Paid {{ inr(inv.paidPaise) }} · <b>Balance {{ inr(inv.balancePaise) }}</b> · Due {{ String(inv.dueDate).slice(0, 10) }}</div>
+                <div class="text-xs text-slate-500">{{ inv.periodLabel }} · Total {{ inr(inv.totalPaise) }} · Paid {{ inr(inv.paidPaise) }} · <b>Balance {{ inr(inv.balancePaise) }}</b> · {{ t("common.due") }} {{ fmtDate(inv.dueDate) }}</div>
               </div>
               <span class="ml-auto text-xs font-bold px-2 py-1 rounded-full" :class="STATUS_CLS[inv.status]">{{ inv.status }}</span>
               <button class="btn btn-ghost !py-1 !px-2 text-xs" @click="toggleDetail(inv)">{{ expanded === inv.id ? "Hide" : "Details" }}</button>
@@ -181,6 +192,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           </div>
           <p v-if="loading" class="text-sm text-slate-400 animate-pulse">Loading invoices…</p>
           <p v-else-if="!invoices.length" class="text-sm text-slate-400">No invoices yet — generate a period above.</p>
+          <p v-else-if="!visibleInvoices.length" class="text-sm text-slate-400">No invoices match your search.</p>
         </div>
       </section>
 
@@ -220,7 +232,7 @@ onMounted(async () => { if (isParent) await loadParent(); else await loadStaff()
           <div class="flex flex-wrap items-start gap-2">
             <div>
               <div class="font-semibold">{{ inv.title }} <span class="text-slate-400 font-normal text-sm">· {{ inv.student.fullName }}</span></div>
-              <div class="text-sm text-slate-500">Total {{ inr(inv.totalPaise) }} · Paid {{ inr(inv.paidPaise) }} · <b>Balance {{ inr(inv.balancePaise) }}</b> · Due {{ String(inv.dueDate).slice(0, 10) }}</div>
+              <div class="text-sm text-slate-500">Total {{ inr(inv.totalPaise) }} · Paid {{ inr(inv.paidPaise) }} · <b>Balance {{ inr(inv.balancePaise) }}</b> · {{ t("common.due") }} {{ fmtDate(inv.dueDate) }}</div>
             </div>
             <span class="ml-auto text-xs font-bold px-2 py-1 rounded-full" :class="STATUS_CLS[inv.status]">{{ inv.status }}</span>
           </div>
