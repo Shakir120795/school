@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
-import { api, session, myRole } from "../api.js";
+import { api, session, myRole, currentUser } from "../api.js";
 import { usePager } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 
@@ -50,6 +50,10 @@ async function load() {
     ]);
     rows.value = a.json.attendance || [];
     staffRows.value = b.json.attendance || [];
+    // Phase 59: correction requests ki list (admin = saari,
+    // teacher = sirf apni) — Approve/Reject yahi se hota hai.
+    const co = await api(`/schools/${sid}/attendance/corrections`).catch(() => null);
+    corrections.value = co?.json?.corrections || [];
     if (!classes.value.length) {
       const c = await api(`/schools/${sid}/classrooms`);
       classes.value = c.json.classrooms || [];
@@ -173,8 +177,32 @@ function statusBadge(s) {
       </select>
       <input v-model="corrForm.reason" required class="input" placeholder="Reason (required, audited)" />
       <button class="btn btn-primary">Submit request</button>
-      <p class="md:col-span-4 text-xs text-slate-400">Approvals happen from the API/admin flow; you cannot approve your own request.</p>
+      <p class="md:col-span-4 text-xs text-slate-400">A school admin or principal approves requests in the list below. You cannot approve your own request.</p>
     </form>
+
+    <!-- Phase 59: correction requests + Approve/Reject (pehle ye
+         screen hi nahi thi — decide() code me tha, button nahi) -->
+    <div v-if="corrections.length" class="card mt-4">
+      <div class="font-semibold mb-2">Correction requests
+        <span v-if="corrections.filter((c) => c.status === 'PENDING').length" class="chip bg-amber-100 text-amber-700 ml-1">{{ corrections.filter((c) => c.status === 'PENDING').length }} waiting</span>
+      </div>
+      <div v-for="c in corrections" :key="c.id" class="py-2.5 border-b border-slate-100 last:border-0">
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <span class="font-semibold">{{ c.personName || "Record" }}</span>
+          <span class="text-slate-400">{{ c.localDate ? String(c.localDate).slice(0, 10) : "" }}</span>
+          <span class="badge" :class="statusBadge(c.currentStatus)">{{ statusLabel(c.currentStatus || "") }}</span>
+          <span class="text-slate-400">→</span>
+          <span class="badge" :class="statusBadge(c.proposedChanges?.status)">{{ statusLabel(c.proposedChanges?.status || "") }}</span>
+          <span class="ml-auto text-xs font-bold px-2 py-1 rounded-full" :class="c.status === 'PENDING' ? 'bg-amber-50 text-amber-600' : c.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'">{{ c.status }}</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1">{{ c.reason }} <span class="text-slate-400">· asked by {{ c.requestedByName || "staff" }}</span></div>
+        <div v-if="canDecide && c.status === 'PENDING' && c.requestedByUserId !== currentUser()?.id" class="flex gap-2 mt-2">
+          <button class="btn btn-primary !py-1.5 flex-1" @click="decide(c.id, 'APPROVED')">Approve</button>
+          <button class="btn btn-ghost !py-1.5 flex-1 text-red-600" @click="decide(c.id, 'REJECTED')">Reject</button>
+        </div>
+        <div v-else-if="c.status === 'PENDING'" class="text-xs text-slate-400 mt-1.5">Waiting for an admin/principal to decide.</div>
+      </div>
+    </div>
 
     <div v-if="canDecide && audits.length" class="card mt-4">
       <div class="font-semibold mb-2">Recent correction audit</div>

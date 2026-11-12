@@ -162,6 +162,19 @@ const mobileNav = computed(() => {
     { to: "/fees", label: "Fees", icon: "card" },
     { to: "/timetable", label: "Timetable", icon: "calendar" },
   ];
+  // Phase 59 (audit UX): teacher ka ROZ ka kaam Roll-Call hai —
+  // wo ☰ menu me chhupa tha aur bar me sirf dekhne-wali
+  // "Attendance" (register) thi. Bar ab: Dashboard, Roll-Call,
+  // Scanner (beech me), My Students, Homework. Register, Pickup,
+  // Leave, Timetable wagera ☰ menu me rahe (overflowNav khud
+  // nikal leta hai).
+  if (role.value === "TEACHER") return [
+    { to: "/", label: "Dashboard", icon: "grid" },
+    { to: "/rollcall", label: "Roll-Call", icon: "clipboard" },
+    { to: "/scanner", label: "Gate Scanner", icon: "scan" },
+    { to: "/students", label: "My Students", icon: "cap" },
+    { to: "/homework", label: "Homework", icon: "book" },
+  ];
   const items = nav.value.slice(0, 5);
   const scanIdx = items.findIndex((n) => n.to === "/scanner");
   if (scanIdx > -1 && items.length === 5) {

@@ -16,6 +16,28 @@ const children = ref([]);
 const form = ref({ studentId: "", fromDate: "", toDate: "", category: "SICK", reason: "" });
 const notes = ref({});
 
+// Phase 59 (audit UX): parent ko date-picker se dimag na lagana
+// pade — ek tap par din, ek tap par wajah. Chips sirf form
+// bharte hain; din/Date neeche wale khane me dikh jata hai.
+function dayStr(plus = 0) {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  now.setDate(now.getDate() + plus);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+}
+function quickDays(kind) {
+  if (kind === "today") { form.value.fromDate = dayStr(0); form.value.toDate = dayStr(0); }
+  if (kind === "tomorrow") { form.value.fromDate = dayStr(1); form.value.toDate = dayStr(1); }
+  if (kind === "two") { form.value.fromDate = dayStr(0); form.value.toDate = dayStr(1); }
+}
+const REASON_CHIPS = [
+  { label: "🤒 Sick", category: "SICK", text: "Sick — not feeling well" },
+  { label: "🚑 Doctor visit", category: "SICK", text: "Doctor visit" },
+  { label: "🏠 Family work", category: "FAMILY", text: "Family work at home" },
+  { label: "🎉 Function / travel", category: "FUNCTION", text: "Family function / travel" },
+];
+function pickReason(r) { form.value.category = r.category; form.value.reason = r.text; }
+
 const STATUS_CLS = {
   PENDING: "bg-amber-50 text-amber-600",
   APPROVED: "bg-emerald-50 text-emerald-600",
@@ -74,6 +96,15 @@ onMounted(load);
     <p v-if="err" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ err }}</p>
 
     <form v-if="isParent" class="card grid gap-3 mb-5" @submit.prevent="apply">
+      <div>
+        <label class="label">Which day?</label>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('today')">Today</button>
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('tomorrow')">Tomorrow</button>
+          <button type="button" class="btn btn-ghost !py-2" @click="quickDays('two')">Today + tomorrow</button>
+          <span class="text-xs text-slate-400 self-center">— or pick dates below</span>
+        </div>
+      </div>
       <div class="grid md:grid-cols-2 gap-3">
         <div><label class="label">Child</label>
           <select v-model="form.studentId" class="input" required>
@@ -91,7 +122,11 @@ onMounted(load);
         <div><label class="label">From</label><input v-model="form.fromDate" type="date" class="input" required /></div>
         <div><label class="label">To</label><input v-model="form.toDate" type="date" class="input" required /></div>
       </div>
-      <div><label class="label">Reason</label><textarea v-model="form.reason" class="input" rows="2" required placeholder="e.g. Fever since yesterday, doctor advised rest"></textarea></div>
+      <div><label class="label">Reason</label>
+        <div class="flex flex-wrap gap-2 mb-2">
+          <button v-for="r in REASON_CHIPS" :key="r.label" type="button" class="btn btn-ghost !py-1.5 text-xs" @click="pickReason(r)">{{ r.label }}</button>
+        </div>
+        <textarea v-model="form.reason" class="input" rows="2" required placeholder="e.g. Fever since yesterday, doctor advised rest"></textarea></div>
       <button class="btn btn-primary">Apply for leave</button>
     </form>
 

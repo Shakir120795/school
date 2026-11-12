@@ -32,6 +32,10 @@ const unread = ref(0);
 // Phase 48: parent apne bacche ki info khud bhare/badle —
 // classrooms (class dropdown ke liye) + edit form ki state.
 const classrooms = ref([]);
+// Phase 59 (audit UX): home par hi kul fees bakaya aur bacha
+// hua homework — parent ko har invoice alag jodna na pade.
+const feesDuePaise = ref(0);
+const hwPending = ref(0);
 const editingId = ref(null);
 const form = ref({});
 const saving = ref(false);
@@ -150,13 +154,17 @@ function statusBanner(child) {
 async function load() {
   loading.value = true;
   try {
-    const [c, t, n, s, rooms] = await Promise.all([
+    const [c, t, n, s, rooms, f, h] = await Promise.all([
       api(`/schools/${sid}/my-children`),
       api(`/schools/${sid}/teachers`),
       api(`/schools/${sid}/my-notifications`),
       api(`/schools/${sid}`).catch(() => null),
       api(`/schools/${sid}/classrooms`).catch(() => null),
+      api(`/schools/${sid}/fees/my-invoices`).catch(() => null),
+      api(`/schools/${sid}/homework`).catch(() => null),
     ]);
+    feesDuePaise.value = (f?.json?.invoices || []).reduce((a, i) => a + Math.max(0, i.balancePaise || 0), 0);
+    hwPending.value = (h?.json?.homework || []).filter((x) => (x.forChildren || []).some((k) => !k.done)).length;
     school.value = s?.json?.school || null;
     classrooms.value = rooms?.json?.classrooms || [];
     children.value = c.json.children || [];
@@ -330,10 +338,20 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
          bell par aate hain, Notice aur Alert ek hi baat hai, aur
          Pickup/Teachers/Settings ab upar wale 3-line menu me hain). -->
 
-    <!-- Phase 49: har bacche ka Fun & Learn card — thought,
-         riddle aur uski class ka maths sawal, roz naya. -->
-    <div v-if="children.length" class="grid md:grid-cols-2 gap-4 items-start mb-4">
-      <FunLearn v-for="child in children" :key="'fun-' + child.id" :name="firstName(child.fullName)" :grade="gradeOf(child)" />
+    <!-- Phase 59: paisa/homework ka hisaab baccho ke cards ke
+         turant neeche — Fun & Learn iske neeche gaya (pehle wo
+         inbox se bhi upar tha). -->
+    <div v-if="children.length" class="grid grid-cols-2 gap-3 mb-4">
+      <router-link to="/fees" class="card !py-3 flex items-center gap-3">
+        <span class="text-2xl">💰</span>
+        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">Fees due</span>
+        <span class="block font-extrabold truncate" :class="feesDuePaise ? 'text-rose-600' : 'text-emerald-600'">{{ feesDuePaise ? `₹${(feesDuePaise / 100).toLocaleString("en-IN")}` : "All clear" }}</span></span>
+      </router-link>
+      <router-link to="/homework" class="card !py-3 flex items-center gap-3">
+        <span class="text-2xl">📚</span>
+        <span class="min-w-0"><span class="block text-xs font-semibold text-slate-500">Homework pending</span>
+        <span class="block font-extrabold truncate" :class="hwPending ? 'text-amber-600' : 'text-emerald-600'">{{ hwPending ? `${hwPending} to finish` : "All done" }}</span></span>
+      </router-link>
     </div>
 
     <div class="grid md:grid-cols-2 gap-4 items-start">
@@ -364,6 +382,13 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
         </div>
 
       </div>
+    </div>
+
+    <!-- Phase 49 + 59: Fun & Learn ab inbox/teachers ke NEECHE
+         (pehle baccho ke cards ke turant baad aata tha aur
+         paisa/homework wali jaankari ko dhakel deta tha). -->
+    <div v-if="children.length" class="grid md:grid-cols-2 gap-4 items-start mb-4 mt-4">
+      <FunLearn v-for="child in children" :key="'fun-' + child.id" :name="firstName(child.fullName)" :grade="gradeOf(child)" />
     </div>
 
     <!-- Phase 48c: page ke sabse neeche — school ka naam, legal

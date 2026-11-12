@@ -285,6 +285,45 @@ router.post(
   })
 );
 
+// Phase 59 (UX): pending/decided correction requests ki LIST —
+// pehle sirf POST tha, isiliye web par Approve/Reject ka koi
+// screen hi nahi ban paya aur admin ek dead-end par atak jata tha.
+// Admin ko school ke saare, teacher ko sirf apne requests.
+router.get(
+  "/schools/:schoolId/attendance/corrections",
+  requireAuth,
+  requireSchool(STAFF_READ),
+  asyncRoute(async (req, res) => {
+    const isAdmin = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(req.membership.role);
+    const requests = await prisma.attendanceCorrectionRequest.findMany({
+      where: { schoolId: req.params.schoolId, ...(isAdmin ? {} : { requestedByUserId: req.user.id }) },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+    const sIds = [...new Set(requests.filter((r) => r.entityType === "StudentAttendance").map((r) => r.entityId))];
+    const tIds = [...new Set(requests.filter((r) => r.entityType === "StaffAttendance").map((r) => r.entityId))];
+    const [sRows, tRows, users] = await Promise.all([
+      sIds.length ? prisma.studentAttendance.findMany({ where: { id: { in: sIds } }, include: { student: { select: { fullName: true } } } }) : [],
+      tIds.length ? prisma.staffAttendance.findMany({ where: { id: { in: tIds } }, include: { teacherProfile: { select: { displayName: true } } } }) : [],
+      requests.length ? prisma.user.findMany({ where: { id: { in: [...new Set(requests.map((r) => r.requestedByUserId))] } }, select: { id: true, fullName: true } }) : [],
+    ]);
+    const sMap = new Map(sRows.map((r) => [r.id, r]));
+    const tMap = new Map(tRows.map((r) => [r.id, r]));
+    const uMap = new Map(users.map((u) => [u.id, u.fullName]));
+    const out = requests.map((r) => {
+      const row = r.entityType === "StudentAttendance" ? sMap.get(r.entityId) : tMap.get(r.entityId);
+      return {
+        ...r,
+        personName: row ? (r.entityType === "StudentAttendance" ? row.student?.fullName : row.teacherProfile?.displayName) || null : null,
+        currentStatus: row?.status || null,
+        localDate: row?.localDate || null,
+        requestedByName: uMap.get(r.requestedByUserId) || null,
+      };
+    });
+    return res.json({ corrections: out });
+  })
+);
+
 router.post(
   "/schools/:schoolId/attendance/corrections/:requestId/decide",
   requireAuth,
