@@ -233,9 +233,16 @@ export async function pruneDeadActiveAccount() {
   // teacher ki pehchan (My classes card, subject scope) fail
   // hoti rahegi.
   const fresh = ms.filter((m) => m.status === "ACTIVE").map((m) => ({ id: m.id, schoolId: m.schoolId, role: m.role }));
-  if (fresh.length && JSON.stringify(fresh) !== JSON.stringify(session.memberships)) {
-    persistActive({ memberships: fresh });
-  }
+  // Phase 63: memberships ke saath schoolId ki bhi marammat —
+  // stored schoolId agar taaza memberships me hai hi nahi
+  // (stale book), to pehli ACTIVE membership ka school set kar
+  // do, warna role null padkar poora nav/menu khali dikhta tha.
+  // fresh khali ho (jaise platform admin/owner, jinki koi
+  // membership nahi hoti) to schoolId ko haath mat lagao.
+  const patch = {};
+  if (fresh.length && JSON.stringify(fresh) !== JSON.stringify(session.memberships)) patch.memberships = fresh;
+  if (fresh.length && !fresh.some((m) => m.schoolId === session.schoolId)) patch.schoolId = fresh[0].schoolId;
+  if (Object.keys(patch).length) persistActive(patch);
 }
 
 export async function api(path, opts = {}) {
@@ -307,6 +314,14 @@ export function myMemberships() {
   return session.memberships;
 }
 export function myRole() {
-  const m = session.memberships.find((x) => x.schoolId === session.schoolId);
+  const ms = session.memberships;
+  // Phase 63: stored schoolId agar kisi membership se match na
+  // kare (purana saved login / stale account book) to pehli
+  // membership ka role lo — pehle role null ho jata tha aur
+  // sidebar + ☰ menu PURE khali ho jate thay (sirf Language +
+  // Logout dikhta tha). Ye account switch NAHI hai: sirf usi
+  // user ki apni membership hai; schoolId ki asal marammat
+  // pruneDeadActiveAccount shell load par kar deta hai.
+  const m = ms.find((x) => x.schoolId === session.schoolId) || ms[0];
   return m?.role || (currentUser()?.isPlatformAdmin ? "PLATFORM_ADMIN" : null);
 }
