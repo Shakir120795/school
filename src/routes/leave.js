@@ -143,12 +143,16 @@ router.patch(
       data: { status: decision, decidedByMembershipId: req.membership.id, decisionNote: note },
     });
     const range = `${app.fromDate.toISOString().slice(0, 10)} → ${app.toDate.toISOString().slice(0, 10)}`;
+    // Phase 58 (audit L3): req.user.fullName kabhi set nahi hota —
+    // parent ko "approved by undefined" jata tha.
+    const decider = await prisma.user.findUnique({ where: { id: req.user.id }, select: { fullName: true } });
+    const deciderName = decider?.fullName || "the school";
     await alertGuardians(
       schoolId, app.studentId,
       decision === "APPROVED" ? `✅ Leave approved for ${app.student.fullName}` : `❌ Leave not approved for ${app.student.fullName}`,
       decision === "APPROVED"
-        ? `Leave for ${app.student.fullName} (${range}) has been approved by ${req.user.fullName}. Those days are marked ON LEAVE in attendance.`
-        : `The leave application for ${app.student.fullName} (${range}) was not approved by ${req.user.fullName}.${note ? ` Note: ${note}` : ""}`
+        ? `Leave for ${app.student.fullName} (${range}) has been approved by ${deciderName}. Those days are marked ON LEAVE in attendance.`
+        : `The leave application for ${app.student.fullName} (${range}) was not approved by ${deciderName}.${note ? ` Note: ${note}` : ""}`
     );
     return res.json({ application: updated, appliedDays, skippedDays });
   })

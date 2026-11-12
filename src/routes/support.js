@@ -337,9 +337,19 @@ router.post("/schools/:schoolId/ptm/:slotId/book", requireAuth, requireSchool(["
   if (mine) return res.status(409).json({ error: "ALREADY_BOOKED_FOR_THIS_CHILD" });
   const taken = await prisma.ptmBooking.findFirst({ where: { schoolId, slotId, startTime, status: "BOOKED" } });
   if (taken) return res.status(409).json({ error: "TIME_TAKEN" });
-  const booking = await prisma.ptmBooking.create({
-    data: { schoolId, slotId, studentId, bookedByUserId: req.user.id, startTime },
-  });
+  // Phase 58 (audit M5): upar wala check aur ye create alag-alag
+  // requests me race kar sakte the — DB par partial unique index
+  // (slotId+startTime, sirf BOOKED) asal rok hai; uski takkar
+  // yaha saaf 409 ban jati hai.
+  let booking;
+  try {
+    booking = await prisma.ptmBooking.create({
+      data: { schoolId, slotId, studentId, bookedByUserId: req.user.id, startTime },
+    });
+  } catch (e) {
+    if (e?.code === "P2002") return res.status(409).json({ error: "TIME_TAKEN" });
+    throw e;
+  }
   await alertGuardians(schoolId, studentId,
     `👨‍👩‍👧 PTM booked: ${slot.title}`,
     `Your meeting for ${student.fullName} is booked on ${slot.date.toISOString().slice(0, 10)} at ${startTime}.`);

@@ -85,7 +85,11 @@ router.post(
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["email", "password"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
-    const user = await prisma.user.findUnique({ where: { email: req.body.email } });
+    // Phase 58 (audit M6): email hamesha lowercase — creation bhi
+    // lowercase store karta hai, warna bade-aksar wala account
+    // chhote-aksar se login hi nahi kar pata tha / duplicate banta tha.
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.isActive || !(await verifyPassword(req.body.password, user.passwordHash || ""))) {
       return res.status(401).json({ error: "INVALID_CREDENTIALS" });
     }

@@ -260,7 +260,10 @@ router.post(
     if (approval && outcome === "RELEASED" && approval.status === "APPROVED") {
       await prisma.pickupApproval.update({ where: { id: approval.id }, data: { status: "USED" } });
     }
-    const staffName = req.user.fullName;
+    // Phase 58 (audit L3): req.user me fullName hota hi nahi —
+    // alert me "undefined" jata tha. Asli naam DB se lo.
+    const me = await prisma.user.findUnique({ where: { id: req.user.id }, select: { fullName: true } });
+    const staffName = me?.fullName || "School staff";
     if (outcome === "RELEASED") {
       await alertGuardians(
         schoolId, studentId,

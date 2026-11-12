@@ -34,13 +34,15 @@ router.post(
     if (!req.user.isPlatformAdmin) return res.status(403).json({ error: "PLATFORM_ADMIN_ONLY" });
     const missing = requireFields(req.body, ["name", "slug", "adminEmail", "adminPassword", "adminName"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    // Phase 58 (audit M4+M6): admin password kam se kam 8 aksar + email lowercase.
+    if (String(req.body.adminPassword).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
     const result = await prisma.$transaction(async (tx) => {
       const school = await tx.school.create({
         data: { name: req.body.name, slug: req.body.slug, timezone: req.body.timezone || "Asia/Kolkata" },
       });
       const adminUser = await tx.user.create({
         data: {
-          email: req.body.adminEmail,
+          email: String(req.body.adminEmail).trim().toLowerCase(),
           fullName: req.body.adminName,
           passwordHash: await hashPassword(req.body.adminPassword),
         },
@@ -89,7 +91,18 @@ router.get(
   "/:schoolId",
   requireAuth,
   requireSchool([]),
-  asyncRoute(async (req, res) => res.json({ school: req.school }))
+  asyncRoute(async (req, res) => {
+    // Phase 58 (audit M1): owner ka per-student rate sirf
+    // school-office aur platform ko dikhe — parent/teacher/staff
+    // ke liye school object se hata kar bhejo (ye endpoint har
+    // member khol sakta hai, rate owner ka confidential charge hai).
+    const role = req.membership?.role;
+    if (!req.user.isPlatformAdmin && !["SCHOOL_ADMIN", "PRINCIPAL"].includes(role)) {
+      const { perStudentRatePaise, ...safeSchool } = req.school;
+      return res.json({ school: safeSchool });
+    }
+    return res.json({ school: req.school });
+  })
 );
 
 router.patch(
@@ -169,13 +182,20 @@ router.post(
   asyncRoute(async (req, res) => {
     const missing = requireFields(req.body, ["email", "fullName", "role"]);
     if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    // Phase 58 (audit M4+M6): role whitelist (platform wale
+    // endpoint jaisi) + naye user ke liye kam se kam 8-aksar
+    // password + email lowercase.
+    const MEMBER_ROLES = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"];
+    if (!MEMBER_ROLES.includes(req.body.role)) return res.status(400).json({ error: "INVALID_ROLE" });
     const schoolId = req.params.schoolId;
-    let user = await prisma.user.findUnique({ where: { email: req.body.email } });
+    const email = String(req.body.email || "").trim().toLowerCase();
+    let user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       if (!req.body.password) return res.status(400).json({ error: "PASSWORD_REQUIRED_FOR_NEW_USER" });
+      if (String(req.body.password).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
       user = await prisma.user.create({
         data: {
-          email: req.body.email,
+          email,
           phone: req.body.phone,
           fullName: req.body.fullName,
           passwordHash: await hashPassword(req.body.password),

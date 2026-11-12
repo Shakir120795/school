@@ -183,7 +183,7 @@ const impCsv = ref("");
 const impBusy = ref(false);
 const impResult = ref(null);
 const impErr = ref("");
-const TEACHER_TEMPLATE = "name,email,phone,password\nPriya Nair,priya.nair@example.com,9811100033,\nKabir Shah,kabir.shah@example.com,,Welcome@123\n";
+const TEACHER_TEMPLATE = "name,email,phone,password\nPriya Nair,priya.nair@example.com,9811100033,\nKabir Shah,kabir.shah@example.com,,\n";
 function impDownloadTemplate() {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([TEACHER_TEMPLATE], { type: "text/csv" }));
@@ -304,7 +304,7 @@ onMounted(loadActivity);
     <h2 class="font-bold mb-1">Import teachers (CSV)</h2>
     <p class="text-sm text-slate-500 mb-3">
       Columns: <b>name, email</b> (required), phone, password. Format: name,email,phone,password — one teacher per row.
-      The password column is optional: leave it blank and the login is created with the default password <b>Welcome@123</b> (ask the teacher to change it later via password reset).
+      The password column is optional: leave it blank and a <b>random password is generated for each teacher</b> — it is shown once in the import result below, so copy it and share it with the teacher right away.
       An email that already belongs to this school, or is repeated in the file, is skipped and reported — the rest still import.
     </p>
     <p v-if="impErr" class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">{{ impErr }}</p>
@@ -325,7 +325,7 @@ onMounted(loadActivity);
       </div>
       <div class="grid gap-1">
         <div v-for="(r, i) in impResult.results" :key="i" class="text-xs rounded-lg px-2 py-1.5 border" :class="r.ok ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'">
-          Row {{ r.row }}<span v-if="r.email"> ({{ r.email }})</span> — {{ r.ok ? "Created" : r.error }}
+          Row {{ r.row }}<span v-if="r.email"> ({{ r.email }})</span> — {{ r.ok ? "Created" : r.error }}<span v-if="r.generatedPassword"> · Password: <b>{{ r.generatedPassword }}</b> (shown once — share it now)</span>
         </div>
       </div>
     </div>

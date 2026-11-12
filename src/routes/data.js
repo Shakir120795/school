@@ -9,6 +9,7 @@ import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute } from "../utils/http.js";
 import { parseCsv, toCsv } from "../utils/csv.js";
 import { hashPassword } from "../utils/security.js";
+import { randomInt } from "node:crypto";
 
 const router = Router();
 const MANAGERS = ["SCHOOL_ADMIN", "PRINCIPAL"];
@@ -143,9 +144,16 @@ router.post("/schools/:schoolId/import/students", requireAuth, requireSchool(MAN
 // (password hashed), then a TEACHER SchoolMembership in this school.
 // A row whose email already has a membership in THIS school (or is
 // repeated inside the file) is a per-row error. Password is optional
-// per row; when blank the new login gets the default below, which the
-// Team page states in its import hint text.
-const TEACHER_DEFAULT_PASSWORD = "Welcome@123";
+// per row; when blank a RANDOM one is generated per teacher and
+// returned once in that row's import result (Phase 58, audit M3 —
+// the old fixed default "Welcome@123" was published in the UI, so
+// every imported teacher shared one publicly-known password).
+function genImportPassword() {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) out += chars[randomInt(chars.length)];
+  return out;
+}
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 router.post("/schools/:schoolId/teachers/import", requireAuth, requireSchool(MANAGERS), asyncRoute(async (req, res) => {
@@ -164,7 +172,7 @@ router.post("/schools/:schoolId/teachers/import", requireAuth, requireSchool(MAN
     rowNo++;
     const name = pick(raw, ["name", "fullName", "teacherName"]);
     const emailRaw = pick(raw, ["email", "loginId"]);
-    const email = emailRaw ? emailRaw.trim() : "";
+    const email = emailRaw ? emailRaw.trim().toLowerCase() : "";
     const fail = (error) => results.push({ row: rowNo, name: name || null, email: email || null, ok: false, error });
     if (!name) { fail("MISSING_NAME"); continue; }
     if (!email) { fail("MISSING_EMAIL"); continue; }
@@ -173,6 +181,7 @@ router.post("/schools/:schoolId/teachers/import", requireAuth, requireSchool(MAN
     if (seenInFile.has(key)) { fail("DUPLICATE_IN_FILE"); continue; }
     seenInFile.add(key);
     try {
+      let generatedPassword = null;
       let user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
       if (user) {
         const existing = await prisma.schoolMembership.findFirst({
@@ -181,18 +190,20 @@ router.post("/schools/:schoolId/teachers/import", requireAuth, requireSchool(MAN
         });
         if (existing) { fail("ALREADY_A_MEMBER"); continue; }
       } else {
+        const givenPw = pick(raw, ["password"]);
+        generatedPassword = givenPw ? null : genImportPassword();
         user = await prisma.user.create({
           data: {
             email,
             phone: pick(raw, ["phone", "mobile"]) || undefined,
             fullName: name,
-            passwordHash: await hashPassword(pick(raw, ["password"]) || TEACHER_DEFAULT_PASSWORD),
+            passwordHash: await hashPassword(givenPw || generatedPassword),
           },
         });
       }
       await prisma.schoolMembership.create({ data: { schoolId, userId: user.id, role: "TEACHER" } });
       created++;
-      results.push({ row: rowNo, name, email, ok: true });
+      results.push({ row: rowNo, name, email, ok: true, ...(generatedPassword ? { generatedPassword } : {}) });
     } catch (e) {
       fail("CREATE_FAILED");
       console.error("[import-teachers] row failed:", e?.message || e);

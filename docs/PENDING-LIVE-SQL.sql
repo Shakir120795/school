@@ -117,3 +117,6 @@ CREATE TABLE IF NOT EXISTS "HomeworkTarget" ("id" TEXT NOT NULL, "schoolId" TEXT
 CREATE UNIQUE INDEX IF NOT EXISTS "HomeworkTarget_homeworkId_studentId_key" ON "HomeworkTarget"("homeworkId", "studentId");
 CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId");
 CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId");
+
+-- Phase 58: PTM double-booking guard (partial unique index)
+CREATE UNIQUE INDEX IF NOT EXISTS "PtmBooking_slot_time_booked_key" ON "PtmBooking" ("slotId", "startTime") WHERE "status" = 'BOOKED';

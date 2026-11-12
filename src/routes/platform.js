@@ -161,6 +161,7 @@ const DB_UPDATE_STATEMENTS = [
   ["HomeworkTarget: unique index (Phase 53)", `CREATE UNIQUE INDEX IF NOT EXISTS "HomeworkTarget_homeworkId_studentId_key" ON "HomeworkTarget"("homeworkId", "studentId")`],
   ["HomeworkTarget: homework index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_homeworkId_idx" ON "HomeworkTarget"("schoolId", "homeworkId")`],
   ["HomeworkTarget: student index (Phase 53)", `CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkTarget"("schoolId", "studentId")`],
+  ["PtmBooking: one BOOKED booking per slot+time (Phase 58)", `CREATE UNIQUE INDEX IF NOT EXISTS "PtmBooking_slot_time_booked_key" ON "PtmBooking" ("slotId", "startTime") WHERE "status" = 'BOOKED'`],
 ];
 
 router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {
@@ -599,13 +600,15 @@ router.post("/platform/schools/:schoolId/members", asyncRoute(async (req, res) =
   const missing = requireFields(req.body, ["email", "fullName", "role"]);
   if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
   if (!MEMBER_ROLES.includes(req.body.role)) return res.status(400).json({ error: "INVALID_ROLE" });
-  let user = await prisma.user.findUnique({ where: { email: req.body.email } });
+  // Phase 58 (audit M6): email lowercase — login bhi lowercase dhundta hai.
+  const memberEmail = String(req.body.email || "").trim().toLowerCase();
+  let user = await prisma.user.findUnique({ where: { email: memberEmail } });
   if (!user) {
     if (!req.body.password) return res.status(400).json({ error: "PASSWORD_REQUIRED_FOR_NEW_USER" });
     if (String(req.body.password).length < 8) return res.status(400).json({ error: "PASSWORD_TOO_SHORT" });
     user = await prisma.user.create({
       data: {
-        email: req.body.email,
+        email: memberEmail,
         phone: req.body.phone,
         fullName: req.body.fullName,
         passwordHash: await hashPassword(req.body.password),

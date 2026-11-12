@@ -34,7 +34,11 @@ export function parseCsv(text) {
 }
 
 const esc = (v) => {
-  const s = v === null || v === undefined ? "" : String(v);
+  let s = v === null || v === undefined ? "" : String(v);
+  // Phase 58 (audit M2): spreadsheet formula injection — =, +, -, @
+  // (ya tab) se shuru hone wala cell Excel/Sheets me formula ban
+  // jata hai; aage ' lagakar use text bana do.
+  if (/^[=+\-@\t]/.test(s)) s = `'${s}`;
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
