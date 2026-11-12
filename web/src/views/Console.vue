@@ -115,6 +115,10 @@ const memberGroups = computed(() => {
     { key: "REMOVED", label: "Removed", items: removedList.value },
   ];
 });
+// Phase 64: pagination ka size owner khud chune (20/50/100) —
+// pehle 25 par atka tha. TabbedList ka pageSize prop ab reactive
+// hai (usePager toValue), to badalte hi list phir se kat ti hai.
+const memberPageSize = ref(25);
 const memberSearchText = (m) =>
   [
     m.fullName, m.email, m.phone, m.role, m.reason, m.note,
@@ -513,8 +517,16 @@ onMounted(async () => {
           </div>
           <p v-if="wsTab === 'members' && membersBusy" class="text-sm text-slate-400">Loading members…</p>
           <template v-else-if="wsTab === 'members' && members">
+            <div class="flex justify-end mb-1">
+              <label class="text-xs text-slate-500 flex items-center gap-1.5">Per page
+                <select v-model.number="memberPageSize" class="input !w-auto !py-1.5 !text-xs">
+                  <option :value="20">20</option><option :value="25">25</option><option :value="50">50</option><option :value="100">100</option>
+                </select>
+              </label>
+            </div>
             <TabbedList
               :groups="memberGroups"
+              :page-size="memberPageSize"
               :search-text="memberSearchText"
               :status-of="memberStatusOf"
               :reset-key="s.id"

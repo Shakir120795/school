@@ -28,6 +28,8 @@ const routes = [
   { path: "/data", component: () => import("./views/ImportExport.vue") },
   { path: "/support", component: () => import("./views/Support.vue") },
   { path: "/console", component: () => import("./views/Console.vue") },
+  { path: "/owner/schools/:id", component: () => import("./views/OwnerSchool.vue") },
+  { path: "/view-as", component: () => import("./views/ViewAs.vue"), meta: { public: true } },
   { path: "/notices", component: () => import("./views/Notices.vue") },
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
@@ -61,6 +63,9 @@ router.beforeEach((to) => {
   // The console is the platform owner's alone — every other role is
   // bounced to its own home, the page is never even rendered for them.
   if (to.path === "/console" && role !== "PLATFORM_ADMIN") return role === "PARENT" ? "/parent" : "/";
+  // Phase 64: owner ka school-wise panel bhi sirf platform
+  // owner ke liye — baaki sab apne home par.
+  if (to.path.startsWith("/owner/") && role !== "PLATFORM_ADMIN") return role === "PARENT" ? "/parent" : "/";
   if (to.path === "/parent" && role !== "PARENT") return "/";
   if (["/people", "/settings"].includes(to.path) && !["SCHOOL_ADMIN", "PRINCIPAL", "PLATFORM_ADMIN"].includes(role)) return "/";
   if (to.path === "/students" && !["TEACHER", "SCHOOL_ADMIN", "PRINCIPAL"].includes(role)) return "/";

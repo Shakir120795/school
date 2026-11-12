@@ -5,7 +5,8 @@
 // permanently delete a school with all of its data.
 import { Router } from "express";
 import { prisma } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, signAccessToken } from "../middleware/auth.js";
+import { issueSession, publicUser } from "./auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashPassword, verifyPassword } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
@@ -726,6 +727,51 @@ router.post("/platform/schools/:schoolId/members/:membershipId/reset-password", 
   });
   await revokeSessions(membership.userId);
   return res.json({ reset: true, role: membership.role });
+}));
+
+// Phase 64: owner kisi member ke account me "View as" karke ghus
+// sakta hai — koi teacher/parent atak jaye to unki asal screen
+// dekhkar madad karne ke liye (shakir ki ask). Ye nakli login
+// NAHI hai: bilkul asal login wala hi session banta hai
+// (issueSession + signAccessToken, wahi helpers), membership
+// ACTIVE aur user active hona zaroori hai, aur har view-as
+// AuditLog me darj hota hai (kaun, kiske account me, kab) —
+// chhupa hua rasta bilkul nahi.
+router.post("/platform/schools/:schoolId/members/:membershipId/view-as", asyncRoute(async (req, res) => {
+  const membership = await prisma.schoolMembership.findFirst({
+    where: { id: req.params.membershipId, schoolId: req.params.schoolId },
+    include: { user: true },
+  });
+  if (!membership) return res.status(404).json({ error: "MEMBER_NOT_FOUND" });
+  if (membership.status !== "ACTIVE" || !membership.user.isActive) {
+    return res.status(400).json({ error: "MEMBER_NOT_ACTIVE" });
+  }
+  const user = membership.user;
+  const [refreshToken, memberships] = await Promise.all([
+    issueSession(req, user),
+    prisma.schoolMembership.findMany({
+      where: { userId: user.id, status: "ACTIVE" },
+      select: { id: true, schoolId: true, role: true },
+    }),
+  ]);
+  await prisma.auditLog.create({
+    data: {
+      schoolId: req.params.schoolId,
+      actorUserId: req.user.id,
+      action: "OWNER_VIEW_AS",
+      entityType: "SchoolMembership",
+      entityId: membership.id,
+      metadata: { targetUserId: user.id, targetName: user.fullName, role: membership.role },
+      ipAddress: req.ip,
+    },
+  });
+  return res.json({
+    accessToken: signAccessToken(user),
+    refreshToken,
+    user: publicUser(user),
+    memberships,
+    viewAs: { schoolId: req.params.schoolId, role: membership.role },
+  });
 }));
 
 // Phase 29 WS2: platform-wide activity log (operator only — the

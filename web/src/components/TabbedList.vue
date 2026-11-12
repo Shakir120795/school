@@ -58,7 +58,10 @@ const filtered = computed(() => {
     return true;
   });
 });
-const { page, pageItems, total, totalPages, from, to, reset } = usePager(filtered, props.pageSize);
+// Phase 64: pageSize getter se do — Console ka per-page selector
+// (20/25/50/100) badalte hi list dobara kategi; pehle number
+// setup par hi jam jata tha.
+const { page, pageItems, total, totalPages, from, to, reset } = usePager(filtered, () => props.pageSize);
 
 watch([activeKey, query, statusFilter], reset);
 watch(

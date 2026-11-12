@@ -144,7 +144,10 @@ const hasResults = computed(
 );
 const TAB_FOR_ROLE = { TEACHER: "teachers", PARENT: "parents", STAFF: "staff", SCHOOL_ADMIN: "admins", PRINCIPAL: "admins" };
 function openSchool(id) {
-  router.push({ path: "/console", query: { school: id } });
+  // Phase 64: school kholna matlab usi school ka school-wise
+  // panel (OwnerSchool) — Console ab gehre kaamo (hisab,
+  // settings, delete) ke liye hai.
+  router.push({ path: `/owner/schools/${id}` });
 }
 function openPerson(p) {
   router.push({ path: "/console", query: { school: p.schoolId, tab: TAB_FOR_ROLE[p.role] || "admins", q: p.fullName } });
@@ -239,7 +242,7 @@ function openStudent(s) {
                 <span class="font-bold">{{ s.name }}</span>
                 <span class="text-xs text-slate-400 ml-2">{{ s.slug }}</span>
                 <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ml-2" :class="s.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'">{{ s.status }}</span>
-                <span class="block text-xs text-slate-400 mt-1">Tap to open in the Console →</span>
+                <span class="block text-xs text-slate-400 mt-1">Tap to open this school →</span>
               </button>
             </div>
           </div>
@@ -286,7 +289,7 @@ function openStudent(s) {
           :key="s.id"
           type="button"
           class="card text-left w-full hover:border-brand-300 transition"
-          @click="router.push('/console')"
+          @click="openSchool(s.id)"
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-lg font-bold">{{ s.name }}</span>
@@ -303,7 +306,7 @@ function openStudent(s) {
             Admin: <span class="font-medium text-slate-700">{{ s.adminName || "—" }}</span>
             <span v-if="s.adminEmail"> · {{ s.adminEmail }}</span>
           </div>
-          <div class="text-[11px] text-slate-400 mt-1">Since {{ String(s.createdAt).slice(0, 10) }} · Tap to manage in the Console →</div>
+          <div class="text-[11px] text-slate-400 mt-1">Since {{ String(s.createdAt).slice(0, 10) }} · Tap to open this school →</div>
         </button>
       </div>
       </template>

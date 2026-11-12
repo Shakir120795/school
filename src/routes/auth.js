@@ -25,7 +25,9 @@ const refreshLimiter = rateLimit({
 
 const router = Router();
 
-async function issueSession(req, user) {
+// Phase 64: exported taaki platform ka owner view-as bhi bilkul
+// login jaisi hi session bana sake (alag nakli rasta nahi).
+export async function issueSession(req, user) {
   const refreshToken = randomToken();
   const expiresAt = new Date(Date.now() + config.refreshTokenTtlDays * 86400_000);
   await prisma.authSession.create({
@@ -40,7 +42,7 @@ async function issueSession(req, user) {
   return refreshToken;
 }
 
-function publicUser(u) {
+export function publicUser(u) {
   return { id: u.id, email: u.email, phone: u.phone, fullName: u.fullName, isPlatformAdmin: u.isPlatformAdmin };
 }
 

@@ -23,6 +23,7 @@ export const ACTION_LABELS = {
   MEMBER_UPDATED: "Member updated",
   MEMBER_EDITED: "Member updated",
   LOGIN: "Signed in",
+  OWNER_VIEW_AS: "Owner viewed as member",
   SCHOOL_CREATED: "School created",
   SCHOOL_SUSPENDED: "School suspended",
   SCHOOL_REACTIVATED: "School reactivated",
