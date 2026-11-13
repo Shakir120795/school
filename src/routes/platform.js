@@ -16,6 +16,8 @@ import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
 import { fetchActivityPage, parsePagination } from "../utils/activity.js";
 import { localParts, dateOnly } from "../utils/time.js";
 import { studentScalars, familyFieldsReady, kitReady } from "../utils/studentCompat.js";
+import { sendNoticeCore } from "../services/notices.js";
+import { processOutboxOnce } from "../services/outbox.js";
 
 const router = Router();
 
@@ -237,6 +239,73 @@ router.post("/platform/schools/:id/payments", asyncRoute(async (req, res) => {
     });
     return res.status(201).json({ payment: { id: p.id, amountPaise: p.amountPaise, note: p.note, receivedAt: p.receivedAt } });
   } catch { return res.status(409).json({ error: "DB_UPDATE_PENDING" }); }
+}));
+
+// Phase 68: owner kisi school ko PAYMENT ALERT bhej sakta hai
+// (shakir ki ask) — school ke admin/staff ke inbox (bell) me
+// jata hai, hisab apne aap banta hai (kul charge / mila / baaki)
+// + owner ka apna note. Notice pipeline hi use hoti hai
+// (INDIVIDUAL_STAFF audience), sender ke naam par school ka hi
+// admin lagta hai (notice ko school ki membership chahiye) —
+// body me saaf likha hota hai ki ye platform owner ki taraf se
+// hai.
+router.post("/platform/schools/:id/payment-alert", asyncRoute(async (req, res) => {
+  const school = await findSchool(req.params.id);
+  if (!school) return res.status(404).json({ error: "SCHOOL_NOT_FOUND" });
+  let rate = null;
+  try {
+    const r = await prisma.$queryRaw`SELECT "perStudentRatePaise" FROM "School" WHERE "id" = ${school.id}`;
+    rate = r[0]?.perStudentRatePaise;
+  } catch { /* rate column abhi nahi — neeche 409 */ }
+  if (rate == null) return res.status(409).json({ error: "HISAB_NOT_SETUP" });
+  const students = await prisma.student.count({ where: { schoolId: school.id, status: "ACTIVE" } });
+  const payments = await prisma.ownerPayment
+    .findMany({ where: { schoolId: school.id }, select: { amountPaise: true } })
+    .catch(() => null);
+  if (!payments) return res.status(409).json({ error: "HISAB_NOT_SETUP" });
+  const members = await prisma.schoolMembership.findMany({
+    where: { schoolId: school.id, status: "ACTIVE", role: { in: ["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"] } },
+    select: { id: true, role: true },
+  });
+  if (!members.length) return res.status(409).json({ error: "NO_STAFF_TO_ALERT" });
+  const sender = members.find((m) => m.role === "SCHOOL_ADMIN")
+    || members.find((m) => m.role === "PRINCIPAL") || members[0];
+  const receivedPaise = payments.reduce((a, p) => a + p.amountPaise, 0);
+  const totalPaise = students * rate;
+  const duePaise = totalPaise - receivedPaise;
+  const inr = (p) => "₹" + Math.round(p / 100).toLocaleString("en-IN");
+  const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 300) : "";
+  const body = [
+    `Namaste ${school.name} team,`,
+    `Ye sandesh Smart School platform ke owner ki taraf se hai.`,
+    `Aapke school ka platform hisab: kul ${inr(totalPaise)} (${students} students × ${inr(rate)}/student), ab tak mila ${inr(receivedPaise)}, baaki ${inr(duePaise)}.`,
+    duePaise > 0
+      ? "Kripya baaki rakam jald bhej dein. Hisab me koi galti lage to owner se baat karein."
+      : "Aapka hisab pura saaf hai — dhanyavaad!",
+    note ? `Owner ka sandesh: ${note}` : "",
+  ].filter(Boolean).join("\n");
+  const notice = await prisma.notice.create({
+    data: {
+      schoolId: school.id,
+      senderMembershipId: sender.id,
+      type: "ANNOUNCEMENT",
+      audienceType: "INDIVIDUAL_STAFF",
+      priority: "HIGH",
+      title: "💰 Smart School — payment reminder",
+      body,
+      audienceMeta: { staffMembershipIds: members.map((m) => m.id) },
+    },
+  });
+  await sendNoticeCore(school.id, { ...notice, targets: [] });
+  if (process.env.VERCEL) await processOutboxOnce().catch(() => {});
+  await prisma.auditLog.create({
+    data: {
+      schoolId: school.id, actorUserId: req.user.id, action: "PAYMENT_ALERT_SENT",
+      entityType: "School", entityId: school.id,
+      metadata: { duePaise, sentTo: members.length },
+    },
+  });
+  return res.status(201).json({ ok: true, sentTo: members.length, duePaise });
 }));
 
 router.delete("/platform/payments/:paymentId", asyncRoute(async (req, res) => {

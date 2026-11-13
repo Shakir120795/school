@@ -13,6 +13,8 @@ const error = ref("");
 const msg = ref("");
 const payForm = ref({});   // schoolId -> { rupees, note }
 const rateForm = ref({});  // schoolId -> rupees string
+const alertForm = ref({}); // schoolId -> note (Phase 68)
+const alertBusy = ref("");
 const busyId = ref("");
 
 const totals = computed(() => ({
@@ -31,10 +33,17 @@ async function load() {
     const schools = r.json.schools || [];
     const out = [];
     for (const s of schools) {
-      const h = await api(`/platform/schools/${s.id}/hisab`, { school: false });
-      out.push({ ...s, hisab: h.ok ? h.json : null });
+      // Phase 68: ek school ka hisab atak jaye to POORA page nahi
+      // rukna chahiye — usi school ke card par note dikhega.
+      let hisab = null; let failed = false;
+      try {
+        const h = await api(`/platform/schools/${s.id}/hisab`, { school: false });
+        if (h.ok) hisab = h.json; else failed = true;
+      } catch { failed = true; }
+      out.push({ ...s, hisab, failed });
       payForm.value[s.id] = { rupees: "", note: "" };
-      rateForm.value[s.id] = h.ok && h.json.perStudentRatePaise != null ? String(Math.round(h.json.perStudentRatePaise / 100)) : "";
+      alertForm.value[s.id] = "";
+      rateForm.value[s.id] = hisab?.perStudentRatePaise != null ? String(Math.round(hisab.perStudentRatePaise / 100)) : "";
     }
     rows.value = out;
   } catch (e) { error.value = "Hisab load nahi hua — dobara try karo."; }
@@ -61,6 +70,28 @@ async function deletePayment(s, p) {
   if (r.ok) { msg.value = "Payment entry delete ho gayi."; await load(); }
   else error.value = "Delete nahi hua.";
 }
+// Phase 68: school ko payment alert — uske admin/staff ke
+// inbox (bell) me jayega, hisab server apne aap jodta hai.
+async function sendAlert(s) {
+  const dueTxt = s.hisab ? rs(s.hisab.balancePaise) : "";
+  if (!confirm(`${s.name} ko payment alert bhejun? (Baaki: ${dueTxt}) — school ke admin/staff ko bell me dikhega.`)) return;
+  alertBusy.value = s.id; error.value = ""; msg.value = "";
+  try {
+    const r = await api(`/platform/schools/${s.id}/payment-alert`, {
+      method: "POST", school: false, body: { note: alertForm.value[s.id] || undefined },
+    });
+    if (!r.ok) {
+      error.value = r.json?.error === "HISAB_NOT_SETUP"
+        ? "Is school ka hisab setup nahi hai — pehle Console se Apply database updates chalao."
+        : r.json?.error === "NO_STAFF_TO_ALERT"
+          ? "Is school me koi admin/staff hi nahi hai — alert kise bhejun?"
+          : "Alert nahi gaya — dobara try karo.";
+      return;
+    }
+    msg.value = `${s.name}: payment alert bhej diya — ${r.json.sentTo} logo ko mila.`;
+    alertForm.value[s.id] = "";
+  } finally { alertBusy.value = ""; }
+}
 async function saveRate(s) {
   const rupees = Number(rateForm.value[s.id]);
   if (!Number.isFinite(rupees) || rupees < 0) { error.value = "Rate sahi likho (₹)."; return; }
@@ -78,7 +109,10 @@ onMounted(load);
     <h1 class="text-xl font-extrabold">💰 Hisab — Payments</h1>
     <p class="text-sm text-slate-500 mt-0.5">Har school ka kul hisab ek jagah — kitna banta hai, kitna mila, kitna baaki.</p>
 
-    <div v-if="error" class="card bg-rose-50 text-rose-600 text-sm font-semibold mt-3">{{ error }}</div>
+    <div v-if="error" class="card bg-rose-50 text-rose-600 text-sm font-semibold mt-3 flex items-center gap-2">
+      <span>{{ error }}</span>
+      <button type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs ml-auto" @click="load">🔄 Dobara try karo</button>
+    </div>
     <div v-if="msg" class="card bg-emerald-50 text-emerald-700 text-sm font-semibold mt-3">{{ msg }}</div>
     <div v-if="loading" class="card text-slate-500 text-sm mt-3 animate-pulse">Loading hisab…</div>
 
@@ -100,6 +134,9 @@ onMounted(load);
           </span>
         </div>
 
+        <div v-if="s.failed" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">
+          ⚠️ Is school ka hisab abhi load nahi hua — upar wala 🔄 button dabakar dobara try karo.
+        </div>
         <div v-if="s.hisab?.setupRequired" class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">
           ⚠️ Is school ka hisab abhi setup nahi — Console se <b>Apply database updates</b> chalao.
         </div>
@@ -131,6 +168,15 @@ onMounted(load);
             <p v-if="s.hisab.payments.length > 8" class="text-xs text-slate-400 mt-1">…aur {{ s.hisab.payments.length - 8 }} purani entries (Console me poori list).</p>
           </div>
           <p v-else class="text-sm text-slate-400 mt-3">Abhi tak koi payment nahi mila.</p>
+
+          <div class="border-t border-slate-100 mt-4 pt-3">
+            <div class="font-semibold text-sm mb-2">🔔 School ko payment alert bhejo</div>
+            <div class="flex flex-wrap gap-2">
+              <input v-model="alertForm[s.id]" class="input flex-1 min-w-[200px]" type="text" placeholder="Apna note (optional) — jaise: is hafte bhej dein" />
+              <button class="btn btn-primary !w-auto !py-2 text-sm" :disabled="alertBusy === s.id" @click="sendAlert(s)">{{ alertBusy === s.id ? "Bhej raha hai…" : "🔔 Alert bhejo" }}</button>
+            </div>
+            <p class="text-xs text-slate-400 mt-1.5">Alert school ke admin/staff ke bell 🔔 me jayega — kul charge, mila aur baaki apne aap likha jayega.</p>
+          </div>
         </template>
       </div>
     </template>

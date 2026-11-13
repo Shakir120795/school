@@ -24,6 +24,7 @@ export const ACTION_LABELS = {
   MEMBER_EDITED: "Member updated",
   LOGIN: "Signed in",
   OWNER_VIEW_AS: "Owner viewed as member",
+  PAYMENT_ALERT_SENT: "Payment alert sent to school",
   SCHOOL_CREATED: "School created",
   SCHOOL_SUSPENDED: "School suspended",
   SCHOOL_REACTIVATED: "School reactivated",
