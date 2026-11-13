@@ -46,7 +46,7 @@ router.get("/platform/schools", asyncRoute(async (req, res) => {
     ]);
     const admin = await prisma.schoolMembership.findFirst({
       where: { schoolId: s.id, role: "SCHOOL_ADMIN" },
-      include: { user: { select: { email: true, fullName: true } } },
+      include: { user: { select: { email: true, fullName: true, phone: true } } },
     });
     // Phase 32 hisab: rate column / payments table may not exist
     // until the DB update runs — degrade to nulls, never 500.
@@ -64,6 +64,7 @@ router.get("/platform/schools", asyncRoute(async (req, res) => {
       id: s.id, name: s.name, slug: s.slug, status: s.status, timezone: s.timezone,
       createdAt: s.createdAt, students, teachers, classes, parents,
       adminEmail: admin?.user.email || null, adminName: admin?.user.fullName || null,
+      adminPhone: admin?.user.phone || null,
       perStudentRatePaise: rate, totalChargePaise, receivedPaise: received,
       balancePaise: totalChargePaise != null && received != null ? totalChargePaise - received : null,
     });

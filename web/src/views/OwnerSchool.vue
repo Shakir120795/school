@@ -125,6 +125,44 @@ async function deleteSchool() {
   else alert("Delete nahi hua — dobara try karo.");
 }
 
+// Phase 69: PAYMENT ALERT ab school ke is page se bhi (shakir
+// Console me dhund raha tha — alert Hisab tab me tha; ab school
+// select karke yahi se bhej sakta hai). Wahi endpoint.
+const alertNote = ref("");
+const alertBusy = ref(false);
+async function sendPaymentAlert() {
+  if (alertBusy.value) return;
+  if (!confirm(`${school.value.name} ko payment alert bhejun? School ke admin/staff ko bell me dikhega.`)) return;
+  alertBusy.value = true;
+  try {
+    const r = await api(`/platform/schools/${schoolId}/payment-alert`, {
+      method: "POST", school: false, body: { note: alertNote.value.trim() || undefined },
+    });
+    if (r.ok) {
+      msg.value = `🔔 Payment alert bhej diya — ${r.json.sentTo} logo ko mila (baaki: ${inr(r.json.duePaise)}).`;
+      alertNote.value = "";
+    } else {
+      err.value = r.json?.error === "HISAB_NOT_SETUP"
+        ? "Is school ka hisab setup nahi — Console se Apply database updates chalao."
+        : "Alert nahi gaya — dobara try karo.";
+    }
+  } finally { alertBusy.value = false; }
+}
+
+// Phase 69: school admin ko WHATSAPP — ek click me chat khule
+// (owner apne WhatsApp se baat karta hai; app bhejti nahi).
+const waHref = (phone, name) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "91" + d;
+  const text = `Namaste ${name || ""} ji, Smart School platform ke owner ki taraf se — aapke school ke hisab ke baare me baat karni thi.`;
+  return `https://wa.me/${d}?text=${encodeURIComponent(text)}`;
+};
+const adminMember = computed(() => (groups.value.SCHOOL_ADMIN || [])[0] || (groups.value.PRINCIPAL || [])[0] || null);
+const adminPhone = computed(() => listEntry.value?.adminPhone || adminMember.value?.phone || null);
+const adminWa = computed(() => waHref(adminPhone.value, listEntry.value?.adminName));
+
 onMounted(load);
 
 // --- Tabs + search + pagination (page size owner khud chune) ---
@@ -262,6 +300,7 @@ async function addMember() {
           Admin: <span class="font-medium text-slate-700">{{ listEntry?.adminName || "—" }}</span>
           <span v-if="listEntry?.adminEmail"> · Login ID: {{ listEntry.adminEmail }}</span>
           <span v-if="listEntry?.createdAt"> · Since {{ String(listEntry.createdAt).slice(0, 10) }}</span>
+          <a v-if="adminWa" :href="adminWa" target="_blank" rel="noopener" class="inline-flex items-center gap-1 ml-1 px-2.5 py-1 rounded-full bg-emerald-500 text-white text-xs font-bold">💬 WhatsApp<span v-if="adminPhone"> · {{ adminPhone }}</span></a>
         </p>
         <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3 text-center">
           <div class="rounded-2xl bg-slate-50 py-2.5"><div class="text-xl font-extrabold">🎓 {{ counts.students }}</div><div class="text-[11px] text-slate-500 font-medium">Students</div></div>
@@ -276,6 +315,11 @@ async function addMember() {
           <span class="text-rose-600">⏳ Due: <b>{{ inr(listEntry.balancePaise) }}</b></span>
           <button type="button" class="font-bold text-brand-700 ml-auto" @click="router.push({ path: '/console', query: { school: schoolId } })">Console me kholo →</button>
         </div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <input v-model="alertNote" class="input !w-auto flex-1 min-w-[200px] !py-2 text-sm" type="text" placeholder="Payment alert ke saath apna note (optional)" />
+          <button type="button" class="btn btn-primary !w-auto !py-2 text-sm" :disabled="alertBusy" @click="sendPaymentAlert">{{ alertBusy ? "Bhej raha hai…" : "🔔 Payment alert bhejo" }}</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5">Alert is school ke admin/staff ke bell 🔔 me jayega — hisab (charge / mila / baaki) apne aap likha jayega. Yehi button Hisab tab me bhi hai.</p>
       </div>
 
       <p v-if="msg" class="card text-sm text-emerald-800 !bg-emerald-50 !border-emerald-200 mb-4">{{ msg }}</p>

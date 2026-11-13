@@ -33,6 +33,17 @@ const totals = computed(() => {
   return t;
 });
 const inrShort = (paise) => "₹" + ((paise || 0) / 100).toLocaleString("en-IN");
+// Phase 69: school admin ko WhatsApp — card par ek click me
+// chat khule (owner apne WhatsApp se baat karta hai).
+const waHref = (phone, name) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "91" + d;
+  const text = `Namaste ${name || ""} ji, Smart School platform ke owner ki taraf se — aapke school ke hisab ke baare me baat karni thi.`;
+  return `https://wa.me/${d}?text=${encodeURIComponent(text)}`;
+};
+const openWa = (s) => { const h = waHref(s.adminPhone, s.adminName); if (h) window.open(h, "_blank"); };
 
 async function load() {
   loading.value = true;
@@ -305,6 +316,7 @@ function openStudent(s) {
           <div class="text-sm text-slate-500 mt-3">
             Admin: <span class="font-medium text-slate-700">{{ s.adminName || "—" }}</span>
             <span v-if="s.adminEmail"> · {{ s.adminEmail }}</span>
+            <span v-if="s.adminPhone" role="button" class="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-xs font-bold" @click.stop="openWa(s)">💬 WhatsApp</span>
           </div>
           <div class="text-[11px] text-slate-400 mt-1">Since {{ String(s.createdAt).slice(0, 10) }} · Tap to open this school →</div>
         </button>
