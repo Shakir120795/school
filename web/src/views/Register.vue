@@ -51,7 +51,7 @@ const feeText = (st) => st === "PAID" ? "✓ Paid" : st === "PARTIAL" ? "◐ Par
 async function load() {
   loading.value = true; error.value = "";
   try {
-    const sid = session.schoolId();
+    const sid = session.schoolId;
     const [r, c] = await Promise.all([
       api(`/schools/${sid}/register`),
       api(`/schools/${sid}/rollcall/classes`),
@@ -68,7 +68,7 @@ async function toggleKit(s, field) {
   const next = !s.kit[field];
   savingKey.value = s.id + field;
   try {
-    const r = await api(`/schools/${session.schoolId()}/register/${s.id}/kit`, {
+    const r = await api(`/schools/${session.schoolId}/register/${s.id}/kit`, {
       method: "PATCH", body: { field, value: next },
     });
     if (r.ok) s.kit[field] = next;

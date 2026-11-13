@@ -67,6 +67,64 @@ async function load() {
     loading.value = false;
   }
 }
+// Phase 67: REMOVE / DELETE — ye sab Console me thay, is naye
+// panel me gayab thay (shakir: "teacher ya parent ka data delete
+// krna ho to wo bhi nhi h"). Member remove = soft (login band,
+// record activity log me rehta hai); student remove = INACTIVE;
+// school delete = permanent, slug type karke confirm.
+const removeTarget = ref(null);
+const removeReason = ref("LEFT_SCHOOL");
+const removeNote = ref("");
+const removeBusy = ref(false);
+const removeError = ref("");
+const REASONS = [
+  { v: "LEFT_SCHOOL", label: "School chhod gaya" },
+  { v: "RESIGNED", label: "Resign kar diya" },
+  { v: "DUPLICATE", label: "Duplicate ID hai" },
+  { v: "OTHER", label: "Other (note zaroori)" },
+];
+function openRemove(m) {
+  removeTarget.value = m; removeReason.value = "LEFT_SCHOOL";
+  removeNote.value = ""; removeError.value = "";
+}
+async function confirmRemove() {
+  if (!removeTarget.value || removeBusy.value) return;
+  if (removeReason.value === "OTHER" && !removeNote.value.trim()) {
+    removeError.value = "Other ke liye note likhna zaroori hai.";
+    return;
+  }
+  removeBusy.value = true; removeError.value = "";
+  try {
+    const r = await api(`/platform/schools/${schoolId}/members/${removeTarget.value.membershipId}`, {
+      method: "DELETE", school: false,
+      body: { reason: removeReason.value, note: removeNote.value.trim() || undefined },
+    });
+    if (!r.ok) throw new Error(r.json.error || "failed");
+    removeTarget.value.status = "INACTIVE";
+    msg.value = `${removeTarget.value.fullName} ko remove kar diya — uski is school ki login band ho gayi hai.`;
+    removeTarget.value = null;
+  } catch (e) { removeError.value = "Remove nahi hua — dobara try karo."; }
+  removeBusy.value = false;
+}
+async function removeStudentRow(s) {
+  if (!confirm(`${s.fullName} ko is school se remove kar dun? Record rehta hai, bas list aur hisab se hat jayega.`)) return;
+  const r = await api(`/platform/schools/${schoolId}/students/${s.id}`, { method: "DELETE", school: false });
+  if (r.ok) {
+    students.value = students.value.filter((x) => x.id !== s.id);
+    msg.value = `${s.fullName} remove ho gaya.`;
+  } else err.value = "Student remove nahi hua.";
+}
+async function deleteSchool() {
+  const typed = prompt(`PERMANENTLY delete "${school.value.name}" and ALL its data (students, fees, attendance — everything)?\n\nType the school slug to confirm: ${school.value.slug}`);
+  if (typed !== school.value.slug) {
+    if (typed !== null) alert("Slug match nahi hua — school delete nahi hua.");
+    return;
+  }
+  const r = await api(`/platform/schools/${schoolId}`, { method: "DELETE", school: false });
+  if (r.ok) router.push("/");
+  else alert("Delete nahi hua — dobara try karo.");
+}
+
 onMounted(load);
 
 // --- Tabs + search + pagination (page size owner khud chune) ---
@@ -267,6 +325,7 @@ async function addMember() {
             <span class="ml-auto flex gap-1.5">
               <button type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs" :disabled="viewAsBusy === m.membershipId" @click="viewAs(m)">👁 {{ viewAsBusy === m.membershipId ? "Opening…" : "View as" }}</button>
               <button type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs" @click="resetId = resetId === m.membershipId ? '' : m.membershipId; resetPw = ''">🔑 Reset password</button>
+              <button v-if="m.status === 'ACTIVE'" type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs !text-rose-600" @click="openRemove(m)">🗑 Remove</button>
             </span>
           </div>
           <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span></div>
@@ -290,6 +349,7 @@ async function addMember() {
             <span class="ml-auto flex gap-1.5">
               <button type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs" :disabled="viewAsBusy === m.membershipId" @click="viewAs(m)">👁 {{ viewAsBusy === m.membershipId ? "Opening…" : "View as" }}</button>
               <button type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs" @click="resetId = resetId === m.membershipId ? '' : m.membershipId; resetPw = ''">🔑 Reset password</button>
+              <button v-if="m.status === 'ACTIVE'" type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs !text-rose-600" @click="openRemove(m)">🗑 Remove</button>
             </span>
           </div>
           <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span></div>
@@ -317,6 +377,7 @@ async function addMember() {
           <span v-if="s.classLabel" class="chip bg-slate-100 text-slate-600">{{ s.classLabel }}</span>
           <span class="text-xs text-slate-400">Adm. {{ s.admissionNo || "—" }}</span>
           <span class="text-sm text-slate-500 ml-auto" v-if="s.guardianName">👨‍👩‍👧 {{ s.guardianName }}<span v-if="s.guardianPhone"> · {{ s.guardianPhone }}</span></span>
+          <button type="button" class="text-xs font-bold text-rose-600 shrink-0" @click="removeStudentRow(s)">🗑 Remove</button>
         </div>
         <Pager :page="studentsPager.page.value" :total-pages="studentsPager.totalPages.value" :from="studentsPager.from.value" :to="studentsPager.to.value" :total="studentsPager.total.value" @update:page="(p) => (studentsPager.page.value = p)" />
       </div>
@@ -352,6 +413,36 @@ async function addMember() {
           </div>
         </template>
         <p v-else class="text-sm text-slate-400">Register load nahi hua.</p>
+      </div>
+
+      <!-- Phase 67: danger zone — poora school delete (permanent) -->
+      <div class="card mt-3 !border-rose-200 bg-rose-50">
+        <div class="flex flex-wrap items-center gap-2">
+          <div>
+            <div class="font-extrabold text-rose-700">⚠️ Danger zone</div>
+            <div class="text-sm text-rose-600">Poora school aur uska saara data hamesha ke liye delete ho jayega — ye wapas nahi aayega.</div>
+          </div>
+          <button type="button" class="btn !bg-rose-600 text-white !w-auto ml-auto" @click="deleteSchool">🗑 Delete this school</button>
+        </div>
+      </div>
+
+      <!-- Phase 67: member remove modal (reason zaroori hai) -->
+      <div v-if="removeTarget" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-3" @click.self="removeTarget = null">
+        <div class="bg-white rounded-2xl w-full max-w-md p-4">
+          <h2 class="font-extrabold">Remove {{ removeTarget.fullName }}?</h2>
+          <p class="text-sm text-slate-500 mt-1">{{ ROLE_LABEL[removeTarget.role] || removeTarget.role }} · Login ID: {{ removeTarget.email || "—" }}<br />Remove karte hi uski is school ki login band ho jayegi. Record activity log me rehta hai.</p>
+          <label class="label mt-3">Reason</label>
+          <select v-model="removeReason" class="input">
+            <option v-for="r in REASONS" :key="r.v" :value="r.v">{{ r.label }}</option>
+          </select>
+          <label class="label mt-2">Note <span v-if="removeReason === 'OTHER'">(zaroori)</span></label>
+          <input v-model="removeNote" class="input" type="text" placeholder="Koi note…" />
+          <p v-if="removeError" class="text-sm text-rose-600 font-semibold mt-2">{{ removeError }}</p>
+          <div class="flex gap-2 mt-4">
+            <button type="button" class="btn btn-ghost" @click="removeTarget = null">Cancel</button>
+            <button type="button" class="btn !bg-rose-600 text-white" :disabled="removeBusy" @click="confirmRemove">{{ removeBusy ? "Removing…" : "🗑 Remove kar do" }}</button>
+          </div>
+        </div>
       </div>
     </template>
   </div>

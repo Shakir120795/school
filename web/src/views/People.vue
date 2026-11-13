@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import QRCode from "qrcode";
-import { api, session, friendlyError } from "../api.js";
+import { api, session, friendlyError, myRole } from "../api.js";
 import { usePager, matchStatus } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 import StudentCard from "../components/StudentCard.vue";
@@ -143,6 +143,57 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+// Phase 67: REMOVE — school admin ke paas People page se hi
+// student / teacher / parent / staff ko remove karne ka rasta
+// (ab tak sirf owner Console me tha — shakir ki shikayat).
+// Member remove soft hai (reason darj + login band); student
+// remove = status INACTIVE (record rehta hai).
+const canManage = ["SCHOOL_ADMIN", "PRINCIPAL"].includes(myRole());
+const memberList = computed(() => memberships.value.filter((m) => m.status === "ACTIVE" && ["STAFF", "PARENT"].includes(m.role)));
+const pRemoveTarget = ref(null);
+const pRemoveReason = ref("LEFT_SCHOOL");
+const pRemoveNote = ref("");
+const pRemoveBusy = ref(false);
+const pRemoveError = ref("");
+const P_REASONS = [
+  { v: "LEFT_SCHOOL", label: "School chhod gaya" },
+  { v: "RESIGNED", label: "Resign kar diya" },
+  { v: "DUPLICATE", label: "Duplicate ID hai" },
+  { v: "OTHER", label: "Other (note zaroori)" },
+];
+function openMemberRemove(m) {
+  pRemoveTarget.value = m; pRemoveReason.value = "LEFT_SCHOOL";
+  pRemoveNote.value = ""; pRemoveError.value = "";
+}
+async function confirmMemberRemove() {
+  if (!pRemoveTarget.value || pRemoveBusy.value) return;
+  if (pRemoveReason.value === "OTHER" && !pRemoveNote.value.trim()) {
+    pRemoveError.value = "Other ke liye note zaroori hai.";
+    return;
+  }
+  pRemoveBusy.value = true; pRemoveError.value = "";
+  try {
+    const r = await api(`/schools/${sid}/users/${pRemoveTarget.value.id}`, {
+      method: "DELETE",
+      body: { reason: pRemoveReason.value, note: pRemoveNote.value.trim() || undefined },
+    });
+    if (!r.ok) {
+      pRemoveError.value = r.json?.error === "CANNOT_REMOVE_SELF" ? "Khud ko remove nahi kar sakte." : "Remove nahi hua — dobara try karo.";
+      return;
+    }
+    pRemoveTarget.value = null;
+    await load();
+  } finally { pRemoveBusy.value = false; }
+}
+function removeTeacher(t) {
+  const m = memberships.value.find((x) => x.id === t.membershipId);
+  if (m) openMemberRemove(m);
+}
+async function removeStudentRow(s) {
+  if (!confirm(`${s.fullName} ko school se remove kar dun? Record rehta hai, bas list se hat jayega.`)) return;
+  const r = await api(`/schools/${sid}/students/${s.id}`, { method: "PATCH", body: { status: "INACTIVE" } });
+  if (r.ok) await load();
 }
 const route = useRoute();
 onMounted(async () => {
@@ -366,6 +417,7 @@ const filteredTeachers = computed(() => {
           <template #actions>
             <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="issueCard({ ownerType: 'STUDENT', studentId: s.id }, s.fullName)">Issue QR card</button>
             <button type="button" class="btn btn-ghost !py-1.5 text-xs" @click="startEdit(s)">Edit details</button>
+            <button v-if="canManage" type="button" class="btn btn-ghost !py-1.5 text-xs !text-rose-600" @click="removeStudentRow(s)">Remove</button>
           </template>
         </StudentCard>
       </div>
@@ -466,6 +518,40 @@ const filteredTeachers = computed(() => {
           </div>
           <div class="text-sm text-brand-700" v-if="t.inchargeAssignments?.length">Incharge: {{ t.inchargeAssignments.map(a => className(a.classroomId)).join(", ") }}</div>
           <button class="btn btn-ghost mt-3 !py-1.5" @click="issueCard({ ownerType: 'STAFF', teacherProfileId: t.id }, t.displayName)">Issue staff QR card</button>
+          <button v-if="canManage" class="btn btn-ghost mt-3 !py-1.5 !text-rose-600 ml-2" @click="removeTeacher(t)">🗑 Remove teacher</button>
+        </div>
+      </div>
+
+      <!-- Phase 67: Staff & Parents ki logins — remove yahi se -->
+      <div v-if="canManage" class="card mt-4">
+        <div class="font-semibold mb-1">Logins — Staff &amp; Parents</div>
+        <p class="text-sm text-slate-500 mb-2">Kisi ki login band karni ho to Remove dabao — wajah darj hogi aur login turant band ho jayegi.</p>
+        <div v-for="m in memberList" :key="m.id" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+          <span class="font-semibold text-sm">{{ m.user?.fullName || "—" }}</span>
+          <span class="badge bg-slate-100 text-slate-600">{{ m.role }}</span>
+          <span class="text-sm text-slate-500">{{ m.user?.email || "" }}</span>
+          <span v-if="m.role === 'PARENT' && m.children?.length" class="text-xs text-slate-400">🎓 {{ m.children.map((c) => c.name).join(", ") }}</span>
+          <button type="button" class="btn btn-ghost !py-1.5 text-xs !text-rose-600 ml-auto" @click="openMemberRemove(m)">🗑 Remove</button>
+        </div>
+        <p v-if="!memberList.length" class="text-sm text-slate-400">Koi active staff/parent login nahi mila.</p>
+      </div>
+    </div>
+
+    <!-- Phase 67: member remove modal -->
+    <div v-if="pRemoveTarget" class="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-3" @click.self="pRemoveTarget = null">
+      <div class="bg-white rounded-2xl w-full max-w-md p-4 text-left">
+        <h2 class="font-extrabold">Remove {{ pRemoveTarget.user?.fullName || "member" }}?</h2>
+        <p class="text-sm text-slate-500 mt-1">{{ pRemoveTarget.role }} · {{ pRemoveTarget.user?.email || "" }}<br />Remove karte hi login band ho jayegi. Record rehta hai.</p>
+        <label class="label mt-3">Reason</label>
+        <select v-model="pRemoveReason" class="input">
+          <option v-for="r in P_REASONS" :key="r.v" :value="r.v">{{ r.label }}</option>
+        </select>
+        <label class="label mt-2">Note <span v-if="pRemoveReason === 'OTHER'">(zaroori)</span></label>
+        <input v-model="pRemoveNote" class="input" type="text" placeholder="Koi note…" />
+        <p v-if="pRemoveError" class="text-sm text-rose-600 font-semibold mt-2">{{ pRemoveError }}</p>
+        <div class="flex gap-2 mt-4">
+          <button type="button" class="btn btn-ghost" @click="pRemoveTarget = null">Cancel</button>
+          <button type="button" class="btn !bg-rose-600 text-white" :disabled="pRemoveBusy" @click="confirmMemberRemove">{{ pRemoveBusy ? "Removing…" : "🗑 Remove kar do" }}</button>
         </div>
       </div>
     </div>

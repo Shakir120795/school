@@ -836,6 +836,77 @@ router.get("/platform/activity", asyncRoute(async (req, res) => {
   return res.json(result);
 }));
 
+// Phase 67: owner ka SUPPORT INBOX — sab schools ke tickets ek
+// jagah (ab tak ticket sirf usi school ke andar dikhta tha, owner
+// ko kuch pata nahi chalta tha). Owner sirf padhta hai; jawab
+// school/teacher deta hai (ya owner View-as se jaakar dekhta hai).
+router.get("/platform/support-tickets", asyncRoute(async (req, res) => {
+  const { page, pageSize } = parsePagination(req.query);
+  const where = {};
+  if (req.query.schoolId) where.schoolId = String(req.query.schoolId);
+  if (req.query.status) where.status = String(req.query.status);
+  const countWhere = req.query.schoolId ? { schoolId: String(req.query.schoolId) } : {};
+  const [total, rows, counts] = await Promise.all([
+    prisma.supportTicket.count({ where }),
+    prisma.supportTicket.findMany({
+      where, orderBy: { updatedAt: "desc" },
+      skip: (page - 1) * pageSize, take: pageSize,
+      include: {
+        school: { select: { name: true } },
+        ticketMessages: { orderBy: { createdAt: "desc" }, take: 1, select: { body: true } },
+      },
+    }),
+    prisma.supportTicket.groupBy({ by: ["status"], where: countWhere, _count: { _all: true } }),
+  ]);
+  const studentIds = [...new Set(rows.map((t) => t.studentId).filter(Boolean))];
+  const students = studentIds.length
+    ? await prisma.student.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, fullName: true, classroom: { select: { name: true, section: true } } },
+      })
+    : [];
+  const stuOf = Object.fromEntries(students.map((s) => [s.id, s]));
+  const userIds = [...new Set(rows.map((t) => t.raisedByUserId))];
+  const users = userIds.length
+    ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, fullName: true } })
+    : [];
+  const nameOf = Object.fromEntries(users.map((u) => [u.id, u.fullName]));
+  return res.json({
+    page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    counts: Object.fromEntries(counts.map((c) => [c.status, c._count._all])),
+    items: rows.map((t) => ({
+      id: t.id, ticketNo: t.ticketNo, subject: t.subject, category: t.category,
+      audience: t.audience, status: t.status, createdAt: t.createdAt, updatedAt: t.updatedAt,
+      schoolId: t.schoolId, schoolName: t.school?.name || "—",
+      studentName: t.studentId ? stuOf[t.studentId]?.fullName || null : null,
+      classLabel: t.studentId && stuOf[t.studentId] ? classLabel(stuOf[t.studentId].classroom) : null,
+      raisedByName: nameOf[t.raisedByUserId] || "—",
+      lastMessage: t.ticketMessages[0]?.body || null,
+    })),
+  });
+}));
+
+router.get("/platform/support-tickets/:id", asyncRoute(async (req, res) => {
+  const t = await prisma.supportTicket.findUnique({
+    where: { id: req.params.id },
+    include: {
+      school: { select: { name: true } },
+      ticketMessages: { orderBy: { createdAt: "asc" } },
+    },
+  });
+  if (!t) return res.status(404).json({ error: "TICKET_NOT_FOUND" });
+  return res.json({
+    ticket: {
+      id: t.id, ticketNo: t.ticketNo, subject: t.subject, category: t.category,
+      audience: t.audience, status: t.status, createdAt: t.createdAt,
+      schoolName: t.school?.name || "—",
+    },
+    messages: t.ticketMessages.map((m) => ({
+      id: m.id, body: m.body, authorName: m.authorName, isStaff: m.isStaff, createdAt: m.createdAt,
+    })),
+  });
+}));
+
 // Phase 29 WS3: owner dashboard "Aaj ki halat" — TODAY's attendance
 // per school. Operator only (router-level guard above). "Today" is
 // the current calendar date IN EACH SCHOOL'S timezone
