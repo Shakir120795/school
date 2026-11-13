@@ -128,7 +128,7 @@ const NAV = [
   { to: "/timetable", label: "Timetable", icon: "calendar", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "STAFF", "PARENT"] },
   { to: "/exams", label: "Exams", icon: "file", roles: ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER", "PARENT"] },
   { to: "/data", label: "Import/Export", icon: "download", roles: ["SCHOOL_ADMIN", "PRINCIPAL"] },
-  { to: "/owner/hisab", label: "Hisab", icon: "card", roles: ["PLATFORM_ADMIN"] },
+  { to: "/owner/hisab", label: "Payment", icon: "card", roles: ["PLATFORM_ADMIN"] },
   { to: "/owner/activity", label: "Activity", icon: "file", roles: ["PLATFORM_ADMIN"] },
   { to: "/owner/support", label: "Support", icon: "chat", roles: ["PLATFORM_ADMIN"] },
   { to: "/console", label: "Super Admin", icon: "crown", roles: ["PLATFORM_ADMIN"] },

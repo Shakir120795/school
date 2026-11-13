@@ -46,7 +46,7 @@ async function load() {
       rateForm.value[s.id] = hisab?.perStudentRatePaise != null ? String(Math.round(hisab.perStudentRatePaise / 100)) : "";
     }
     rows.value = out;
-  } catch (e) { error.value = "Hisab load nahi hua — dobara try karo."; }
+  } catch (e) { error.value = "Payments load nahi hua — dobara try karo."; }
   loading.value = false;
 }
 async function addPayment(s) {
@@ -106,7 +106,7 @@ onMounted(load);
 
 <template>
   <section>
-    <h1 class="text-xl font-extrabold">💰 Hisab — Payments</h1>
+    <h1 class="text-xl font-extrabold">💰 Payments</h1>
     <p class="text-sm text-slate-500 mt-0.5">Har school ka kul hisab ek jagah — kitna banta hai, kitna mila, kitna baaki.</p>
 
     <div v-if="error" class="card bg-rose-50 text-rose-600 text-sm font-semibold mt-3 flex items-center gap-2">

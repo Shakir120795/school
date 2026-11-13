@@ -151,14 +151,18 @@ async function sendPaymentAlert() {
 
 // Phase 69: school admin ko WHATSAPP — ek click me chat khule
 // (owner apne WhatsApp se baat karta hai; app bhejti nahi).
-const waHref = (phone, name) => {
+const waHref = (phone, name, text) => {
   let d = String(phone || "").replace(/\D/g, "");
   if (!d) return null;
   if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
   if (d.length === 10) d = "91" + d;
-  const text = `Namaste ${name || ""} ji, Smart School platform ke owner ki taraf se — aapke school ke hisab ke baare me baat karni thi.`;
-  return `https://wa.me/${d}?text=${encodeURIComponent(text)}`;
+  const msg = text || `Namaste ${name || ""} ji, Smart School platform ke owner ki taraf se — aapke school ke hisab ke baare me baat karni thi.`;
+  return `https://wa.me/${d}?text=${encodeURIComponent(msg)}`;
 };
+// Phase 70: har member ke number par WhatsApp link — owner ek
+// click me kisi ko bhi message kar sake (shakir ki ask).
+const memberWa = (m) => waHref(m.phone, m.fullName,
+  `Namaste ${m.fullName || ""} ji, Smart School platform ke owner ki taraf se message hai.`);
 const adminMember = computed(() => (groups.value.SCHOOL_ADMIN || [])[0] || (groups.value.PRINCIPAL || [])[0] || null);
 const adminPhone = computed(() => listEntry.value?.adminPhone || adminMember.value?.phone || null);
 const adminWa = computed(() => waHref(adminPhone.value, listEntry.value?.adminName));
@@ -319,7 +323,7 @@ async function addMember() {
           <input v-model="alertNote" class="input !w-auto flex-1 min-w-[200px] !py-2 text-sm" type="text" placeholder="Payment alert ke saath apna note (optional)" />
           <button type="button" class="btn btn-primary !w-auto !py-2 text-sm" :disabled="alertBusy" @click="sendPaymentAlert">{{ alertBusy ? "Bhej raha hai…" : "🔔 Payment alert bhejo" }}</button>
         </div>
-        <p class="text-xs text-slate-400 mt-1.5">Alert is school ke admin/staff ke bell 🔔 me jayega — hisab (charge / mila / baaki) apne aap likha jayega. Yehi button Hisab tab me bhi hai.</p>
+        <p class="text-xs text-slate-400 mt-1.5">Alert is school ke admin/staff ke bell 🔔 me jayega — hisab (charge / mila / baaki) apne aap likha jayega. Yehi button Payment tab me bhi hai.</p>
       </div>
 
       <p v-if="msg" class="card text-sm text-emerald-800 !bg-emerald-50 !border-emerald-200 mb-4">{{ msg }}</p>
@@ -372,7 +376,7 @@ async function addMember() {
               <button v-if="m.status === 'ACTIVE'" type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs !text-rose-600" @click="openRemove(m)">🗑 Remove</button>
             </span>
           </div>
-          <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span></div>
+          <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span><a v-if="memberWa(m)" :href="memberWa(m)" target="_blank" rel="noopener" class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[11px] font-bold">💬 WhatsApp</a></div>
           <form v-if="resetId === m.membershipId" class="flex flex-wrap gap-2 mt-2" @submit.prevent="doReset(m)">
             <input v-model="resetPw" class="input !w-auto flex-1 min-w-44" type="text" placeholder="New password (min 8)" minlength="8" required />
             <button class="btn btn-primary !w-auto !py-2 text-sm" :disabled="resetBusy">{{ resetBusy ? "Setting…" : "Set password" }}</button>
@@ -396,7 +400,7 @@ async function addMember() {
               <button v-if="m.status === 'ACTIVE'" type="button" class="btn btn-ghost !w-auto !py-1.5 !px-3 text-xs !text-rose-600" @click="openRemove(m)">🗑 Remove</button>
             </span>
           </div>
-          <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span></div>
+          <div class="text-sm text-slate-500 mt-0.5">Login ID: <span class="font-medium text-slate-700">{{ m.email || "—" }}</span><span v-if="m.phone"> · 📱 {{ m.phone }}</span><a v-if="memberWa(m)" :href="memberWa(m)" target="_blank" rel="noopener" class="inline-flex items-center ml-2 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[11px] font-bold">💬 WhatsApp</a></div>
           <div v-if="m.children && m.children.length" class="flex flex-wrap gap-1.5 mt-1.5">
             <span v-for="c in m.children" :key="c.name + c.classLabel" class="chip bg-slate-100 text-slate-600">🎓 {{ c.name }} · {{ c.classLabel }}</span>
           </div>

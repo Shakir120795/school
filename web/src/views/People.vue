@@ -190,6 +190,20 @@ function removeTeacher(t) {
   const m = memberships.value.find((x) => x.id === t.membershipId);
   if (m) openMemberRemove(m);
 }
+// Phase 70: number par WhatsApp link — school admin ek click
+// me kisi ko bhi message kar sake (shakir ki ask).
+const pWaHref = (phone, name) => {
+  let d = String(phone || "").replace(/\D/g, "");
+  if (!d) return null;
+  if (d.length === 11 && d.startsWith("0")) d = d.slice(1);
+  if (d.length === 10) d = "91" + d;
+  const text = `Namaste ${name || ""} ji, aapke school ki taraf se message hai.`;
+  return `https://wa.me/${d}?text=${encodeURIComponent(text)}`;
+};
+const teacherWa = (t) => {
+  const m = memberships.value.find((x) => x.id === t.membershipId);
+  return pWaHref(m?.user?.phone, t.displayName);
+};
 async function removeStudentRow(s) {
   if (!confirm(`${s.fullName} ko school se remove kar dun? Record rehta hai, bas list se hat jayega.`)) return;
   const r = await api(`/schools/${sid}/students/${s.id}`, { method: "PATCH", body: { status: "INACTIVE" } });
@@ -519,6 +533,7 @@ const filteredTeachers = computed(() => {
           <div class="text-sm text-brand-700" v-if="t.inchargeAssignments?.length">Incharge: {{ t.inchargeAssignments.map(a => className(a.classroomId)).join(", ") }}</div>
           <button class="btn btn-ghost mt-3 !py-1.5" @click="issueCard({ ownerType: 'STAFF', teacherProfileId: t.id }, t.displayName)">Issue staff QR card</button>
           <button v-if="canManage" class="btn btn-ghost mt-3 !py-1.5 !text-rose-600 ml-2" @click="removeTeacher(t)">🗑 Remove teacher</button>
+          <a v-if="teacherWa(t)" :href="teacherWa(t)" target="_blank" rel="noopener" class="btn btn-ghost mt-3 !py-1.5 !text-emerald-600 ml-2">💬 WhatsApp</a>
         </div>
       </div>
 
@@ -531,7 +546,8 @@ const filteredTeachers = computed(() => {
           <span class="badge bg-slate-100 text-slate-600">{{ m.role }}</span>
           <span class="text-sm text-slate-500">{{ m.user?.email || "" }}</span>
           <span v-if="m.role === 'PARENT' && m.children?.length" class="text-xs text-slate-400">🎓 {{ m.children.map((c) => c.name).join(", ") }}</span>
-          <button type="button" class="btn btn-ghost !py-1.5 text-xs !text-rose-600 ml-auto" @click="openMemberRemove(m)">🗑 Remove</button>
+          <a v-if="pWaHref(m.user?.phone, m.user?.fullName)" :href="pWaHref(m.user?.phone, m.user?.fullName)" target="_blank" rel="noopener" class="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[11px] font-bold ml-auto">💬 WhatsApp</a>
+          <button type="button" class="btn btn-ghost !py-1.5 text-xs !text-rose-600" :class="pWaHref(m.user?.phone, m.user?.fullName) ? '' : 'ml-auto'" @click="openMemberRemove(m)">🗑 Remove</button>
         </div>
         <p v-if="!memberList.length" class="text-sm text-slate-400">Koi active staff/parent login nahi mila.</p>
       </div>
