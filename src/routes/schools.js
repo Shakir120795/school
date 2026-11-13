@@ -174,6 +174,36 @@ const subjects = simpleCollection("subject", ["name", "code"]);
 router.post("/:schoolId/subjects", requireAuth, requireSchool(WRITE), subjects.create);
 router.get("/:schoolId/subjects", requireAuth, requireSchool(READ), subjects.list);
 
+// Phase 71: school office apna PLATFORM DUE khud dekhe —
+// dashboard ke upar wali bar ke liye (shakir ki ask: alert ke
+// saath-saath dashboard par hamesha dikhe "aapka payment itna
+// due hai"). Sirf SCHOOL_ADMIN / PRINCIPAL / STAFF — teacher
+// aur parent ko platform ka hisab NAHI dikhta. Rate/payments
+// setup na ho to setup:false (bar chhupi rehti hai).
+router.get("/:schoolId/platform-due", requireAuth, requireSchool(READ), asyncRoute(async (req, res) => {
+  if (!["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(req.membership.role)) {
+    return res.status(403).json({ error: "OFFICE_ONLY" });
+  }
+  const schoolId = req.params.schoolId;
+  let rate;
+  try {
+    const r = await prisma.$queryRaw`SELECT "perStudentRatePaise" FROM "School" WHERE "id" = ${schoolId}`;
+    rate = r[0]?.perStudentRatePaise;
+  } catch { return res.json({ setup: false }); }
+  if (rate == null) return res.json({ setup: false });
+  let receivedPaise;
+  try {
+    const agg = await prisma.ownerPayment.aggregate({ where: { schoolId }, _sum: { amountPaise: true } });
+    receivedPaise = agg._sum.amountPaise || 0;
+  } catch { return res.json({ setup: false }); }
+  const students = await prisma.student.count({ where: { schoolId, status: "ACTIVE" } });
+  const totalChargePaise = students * rate;
+  return res.json({
+    setup: true, students, perStudentRatePaise: rate,
+    totalChargePaise, receivedPaise, duePaise: totalChargePaise - receivedPaise,
+  });
+}));
+
 // --- Users & memberships ------------------------------------------------------
 router.post(
   "/:schoolId/users",

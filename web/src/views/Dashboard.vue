@@ -183,13 +183,28 @@ async function removeHoliday(id) {
 // The operator has no school context — the school dashboard below
 // would render an empty page for them (Phase 27 complaint). They
 // get the platform overview instead; school loading is skipped.
-onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); loadSetup(); } else loading.value = false; });
+// Phase 71: platform payment due bar — sirf office roles
+// (Admin/Principal/Staff) ke dashboard par, due > 0 ho tab.
+const platformDue = ref(null);
+const inrDue = (p) => "₹" + Math.round((p || 0) / 100).toLocaleString("en-IN");
+async function loadDue() {
+  const r = await api(`/schools/${sid}/platform-due`);
+  if (r.ok && r.json?.setup) platformDue.value = r.json;
+}
+onMounted(() => { if (role !== "PARENT" && role !== "PLATFORM_ADMIN") { load(); loadSetup(); } else loading.value = false; if (["SCHOOL_ADMIN", "PRINCIPAL", "STAFF"].includes(role)) loadDue(); });
 </script>
 
 <template>
   <PlatformDashboard v-if="role === 'PLATFORM_ADMIN'" />
   <ParentView v-else-if="role === 'PARENT'" />
   <div v-else>
+    <!-- Phase 71: platform payment due bar — owner ke hisab se
+         live; due khatm hote hi apne aap gayab. -->
+    <div v-if="platformDue && platformDue.duePaise > 0" class="rounded-3xl border border-amber-300 bg-amber-50 px-4 py-3 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="text-sm">💰 <b>Platform payment due: {{ inrDue(platformDue.duePaise) }}</b></span>
+      <span class="text-xs text-slate-500">Kul {{ inrDue(platformDue.totalChargePaise) }} ({{ platformDue.students }} students × {{ inrDue(platformDue.perStudentRatePaise) }}) · Mila {{ inrDue(platformDue.receivedPaise) }}</span>
+      <span class="text-xs text-amber-700 font-medium ml-auto">Payment ke liye platform owner se sampark karein.</span>
+    </div>
     <!-- Header — Phase 44b: school ki apni band, peeche bada halka
          logo/initials watermark ke roop me (cards ke upar nahi,
          band ke andar hi dikhta hai). -->
