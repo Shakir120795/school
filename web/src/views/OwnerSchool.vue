@@ -121,14 +121,19 @@ const delOpen = ref(false);
 const delSlug = ref("");
 const delPassword = ref("");
 const delBusy = ref(false);
+// Phase 73: galat password ka error BOX KE ANDAR hi dikhe —
+// pehle wo page ke upar wale banner me jata tha jo neeche
+// scroll kiye hue user ko dikhta hi nahi tha (shakir ki report).
+const delErr = ref("");
 async function deleteSchool() {
   if (delSlug.value !== school.value.slug || !delPassword.value || delBusy.value) return;
   delBusy.value = true;
+  delErr.value = "";
   try {
     const r = await api(`/platform/schools/${schoolId}`, { method: "DELETE", school: false, body: { password: delPassword.value } });
     if (r.ok) router.push("/");
-    else if (r.json?.error === "WRONG_PASSWORD") { err.value = "Password galat hai — school delete nahi hua."; delPassword.value = ""; }
-    else err.value = "Delete nahi hua — dobara try karo.";
+    else if (r.json?.error === "WRONG_PASSWORD") { delErr.value = "❌ Password galat hai — school delete NAHI hua. Sahi owner password dalo."; delPassword.value = ""; }
+    else delErr.value = "Delete nahi hua — dobara try karo.";
   } finally { delBusy.value = false; }
 }
 
@@ -482,7 +487,8 @@ async function addMember() {
         <div v-if="delOpen" class="mt-3 max-w-md">
           <p class="text-sm text-rose-700 font-medium">Pakka delete karna hai? Pehle school ka slug type karo: <b>{{ school.slug }}</b></p>
           <input v-model="delSlug" class="input mt-2 !py-2 text-sm bg-white" type="text" :placeholder="school.slug" />
-          <input v-model="delPassword" class="input mt-2 !py-2 text-sm bg-white" type="password" placeholder="Apna owner login password" autocomplete="current-password" />
+          <input v-model="delPassword" class="input mt-2 !py-2 text-sm bg-white" type="password" placeholder="Apna owner login password" autocomplete="current-password" @input="delErr = ''" />
+          <p v-if="delErr" class="text-sm font-bold text-rose-700 bg-rose-100 border border-rose-300 rounded-xl px-3 py-2 mt-2">{{ delErr }}</p>
           <div class="flex gap-2 mt-3">
             <button type="button" class="rounded-xl bg-rose-600 text-white font-bold px-4 py-2 text-sm disabled:opacity-40" :disabled="delSlug !== school.slug || !delPassword || delBusy" @click="deleteSchool">{{ delBusy ? "Delete ho raha hai…" : "Hamesha ke liye DELETE" }}</button>
             <button type="button" class="btn btn-ghost !w-auto !py-2 text-sm" @click="delOpen = false; delSlug = ''; delPassword = ''">Cancel</button>
