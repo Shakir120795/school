@@ -1334,6 +1334,15 @@ router.delete("/platform/schools/:schoolId", asyncRoute(async (req, res) => {
   const schoolId = req.params.schoolId;
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!school) return res.status(404).json({ error: "NOT_FOUND" });
+  // Phase 72: galti se delete na ho — owner ka apna LOGIN
+  // PASSWORD dobara zaroori hai (shakir ki ask). Sahi password
+  // ke bina purge shuru hi nahi hota.
+  const password = String(req.body?.password || "");
+  if (!password) return res.status(400).json({ error: "PASSWORD_REQUIRED" });
+  const me = await prisma.user.findUnique({ where: { id: req.user.id }, select: { passwordHash: true } });
+  if (!me?.passwordHash || !(await verifyPassword(password, me.passwordHash))) {
+    return res.status(403).json({ error: "WRONG_PASSWORD" });
+  }
   // No single mega-transaction: ~46 sequential deletes over the hosted
   // pooler outlive Prisma's interactive-tx timeout (learned live,
   // Phase 21). Each deleteMany is its own implicit transaction and

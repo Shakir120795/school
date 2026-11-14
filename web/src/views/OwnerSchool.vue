@@ -114,15 +114,22 @@ async function removeStudentRow(s) {
     msg.value = `${s.fullName} remove ho gaya.`;
   } else err.value = "Student remove nahi hua.";
 }
+// Phase 72: school delete = slug + owner ka LOGIN PASSWORD
+// (inline box). Dono sahi hon tabhi button active; server bhi
+// password verify karta hai — galti se delete namumkin.
+const delOpen = ref(false);
+const delSlug = ref("");
+const delPassword = ref("");
+const delBusy = ref(false);
 async function deleteSchool() {
-  const typed = prompt(`PERMANENTLY delete "${school.value.name}" and ALL its data (students, fees, attendance — everything)?\n\nType the school slug to confirm: ${school.value.slug}`);
-  if (typed !== school.value.slug) {
-    if (typed !== null) alert("Slug match nahi hua — school delete nahi hua.");
-    return;
-  }
-  const r = await api(`/platform/schools/${schoolId}`, { method: "DELETE", school: false });
-  if (r.ok) router.push("/");
-  else alert("Delete nahi hua — dobara try karo.");
+  if (delSlug.value !== school.value.slug || !delPassword.value || delBusy.value) return;
+  delBusy.value = true;
+  try {
+    const r = await api(`/platform/schools/${schoolId}`, { method: "DELETE", school: false, body: { password: delPassword.value } });
+    if (r.ok) router.push("/");
+    else if (r.json?.error === "WRONG_PASSWORD") { err.value = "Password galat hai — school delete nahi hua."; delPassword.value = ""; }
+    else err.value = "Delete nahi hua — dobara try karo.";
+  } finally { delBusy.value = false; }
 }
 
 // Phase 69: PAYMENT ALERT ab school ke is page se bhi (shakir
@@ -470,7 +477,17 @@ async function addMember() {
             <div class="font-extrabold text-rose-700">⚠️ Danger zone</div>
             <div class="text-sm text-rose-600">Poora school aur uska saara data hamesha ke liye delete ho jayega — ye wapas nahi aayega.</div>
           </div>
-          <button type="button" class="btn !bg-rose-600 text-white !w-auto ml-auto" @click="deleteSchool">🗑 Delete this school</button>
+          <button v-if="!delOpen" type="button" class="btn !bg-rose-600 text-white !w-auto ml-auto" @click="delOpen = true">🗑 Delete this school</button>
+        </div>
+        <div v-if="delOpen" class="mt-3 max-w-md">
+          <p class="text-sm text-rose-700 font-medium">Pakka delete karna hai? Pehle school ka slug type karo: <b>{{ school.slug }}</b></p>
+          <input v-model="delSlug" class="input mt-2 !py-2 text-sm bg-white" type="text" :placeholder="school.slug" />
+          <input v-model="delPassword" class="input mt-2 !py-2 text-sm bg-white" type="password" placeholder="Apna owner login password" autocomplete="current-password" />
+          <div class="flex gap-2 mt-3">
+            <button type="button" class="rounded-xl bg-rose-600 text-white font-bold px-4 py-2 text-sm disabled:opacity-40" :disabled="delSlug !== school.slug || !delPassword || delBusy" @click="deleteSchool">{{ delBusy ? "Delete ho raha hai…" : "Hamesha ke liye DELETE" }}</button>
+            <button type="button" class="btn btn-ghost !w-auto !py-2 text-sm" @click="delOpen = false; delSlug = ''; delPassword = ''">Cancel</button>
+          </div>
+          <p class="text-xs text-rose-400 mt-2">Dono cheezein sahi hongi tabhi delete hoga — galat password par server khud delete rok dega.</p>
         </div>
       </div>
 

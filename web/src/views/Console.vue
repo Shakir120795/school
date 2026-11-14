@@ -210,8 +210,13 @@ async function resetMember(s, m) {
 async function removeSchool(s) {
   const typed = prompt(`PERMANENTLY delete "${s.name}" and ALL its data (students, fees, attendance — everything)?\n\nType the school slug to confirm: ${s.slug}`);
   if (typed !== s.slug) { if (typed !== null) err.value = "Slug did not match — school not deleted."; return; }
-  const r = await api(`/platform/schools/${s.id}`, { method: "DELETE", school: false });
+  // Phase 72: slug ke baad owner ka apna login password bhi
+  // zaroori hai — galti se delete namumkin.
+  const pw = prompt(`Confirm karne ke liye apna OWNER LOGIN PASSWORD likho ("${s.name}" delete hoga):`);
+  if (!pw) return;
+  const r = await api(`/platform/schools/${s.id}`, { method: "DELETE", school: false, body: { password: pw } });
   if (r.status === 200) { msg.value = `${s.name} and all its data have been deleted.`; await load(); }
+  else if (r.json?.error === "WRONG_PASSWORD") err.value = "Password galat hai — school delete nahi hua.";
   else err.value = r.json?.error || "Delete failed";
 }
 // Phase 29 WS2: platform activity log — every AuditLog row across
