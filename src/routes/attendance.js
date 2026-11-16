@@ -2,10 +2,10 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
-import { hashToken } from "../utils/security.js";
-import { processScan } from "../services/attendance.js";
+import { hashToken, normalizeNfcUid, nfcToken } from "../utils/security.js";
+import { processScan, resolveCard } from "../services/attendance.js";
 import { alertGuardiansForScan } from "../services/scanAlerts.js";
-import { localParts } from "../utils/time.js";
+import { localParts, dateOnly } from "../utils/time.js";
 
 const router = Router();
 const STAFF_READ = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -45,6 +45,74 @@ router.post(
     return res.status(httpStatus).json(result);
   })
 );
+
+// --- NFC reader scan (Phase 74): device-authenticated, no user session -------
+// For standalone WiFi NFC readers at the gate. Same device credentials as the
+// QR scanner (Settings → Devices), accepted as headers (X-School-Id /
+// X-Device-Key) or, for readers that cannot set headers, as body/query
+// fields (schoolId + deviceKey). Body: { uid, eventType?, idempotencyKey? }.
+// Without eventType the direction is auto: the day's first tap is ENTRY, the
+// next is EXIT. The card UID is looked up by hash — unknown or revoked cards
+// record nothing and return 422.
+async function handleNfcScan(req, res) {
+  const q = { ...(req.query || {}), ...(req.body || {}) };
+  const schoolId = req.headers["x-school-id"] || q.schoolId || q.school;
+  const deviceKey = req.headers["x-device-key"] || q.deviceKey || q.key;
+  if (!schoolId || !deviceKey) return res.status(400).json({ error: "SCHOOL_AND_DEVICE_HEADERS_REQUIRED" });
+  const device = await prisma.device.findUnique({ where: { deviceKeyHash: hashToken(deviceKey) } });
+  if (!device || device.schoolId !== schoolId || device.status !== "ACTIVE") {
+    return res.status(401).json({ error: "INVALID_DEVICE" });
+  }
+  const uid = normalizeNfcUid(q.uid || q.cardUid || q.card_id || q.cardNo);
+  if (!uid) return res.status(400).json({ error: "INVALID_NFC_UID" });
+  const token = nfcToken(uid);
+  const { card, error } = await resolveCard(schoolId, token);
+  if (error) return res.status(422).json({ outcome: "INVALID", reason: error });
+
+  const kind = card.ownerType;
+  const personId = kind === "STUDENT" ? card.studentId : card.teacherProfileId;
+  let eventType = String(q.eventType || "").toUpperCase();
+  if (!["ENTRY", "EXIT"].includes(eventType)) {
+    // Auto direction from today's record (school timezone).
+    const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { timezone: true } });
+    const parts = localParts(new Date(), school?.timezone || "Asia/Kolkata");
+    const localDate = dateOnly(parts.dateStr);
+    const day =
+      kind === "STUDENT"
+        ? await prisma.studentAttendance.findUnique({ where: { schoolId_studentId_localDate: { schoolId, studentId: personId, localDate } } })
+        : await prisma.staffAttendance.findUnique({ where: { schoolId_teacherProfileId_localDate: { schoolId, teacherProfileId: personId, localDate } } });
+    const entered = kind === "STUDENT" ? day?.entryAt : day?.checkInAt;
+    eventType = entered ? "EXIT" : "ENTRY";
+  }
+
+  await prisma.device.update({ where: { id: device.id }, data: { lastSeenAt: new Date() } });
+  const result = await processScan({
+    schoolId,
+    deviceId: device.id,
+    qrToken: token,
+    eventType,
+    source: "NFC",
+    idempotencyKey: q.idempotencyKey,
+  });
+  if (result.outcome === "RECORDED" && result.kind === "STUDENT") {
+    await alertGuardiansForScan({ schoolId, studentId: result.personId, eventType, scannedAt: new Date() });
+  }
+  // A name for readers with a display; a failure here never fails the scan.
+  let personName = null;
+  try {
+    if (kind === "STUDENT") {
+      const s = await prisma.student.findFirst({ where: { id: personId, schoolId }, select: { fullName: true } });
+      personName = s?.fullName || null;
+    } else {
+      const t = await prisma.teacherProfile.findFirst({ where: { id: personId, schoolId }, select: { displayName: true } });
+      personName = t?.displayName || null;
+    }
+  } catch { /* display only */ }
+  const httpStatus = result.outcome === "INVALID" ? 422 : 200;
+  return res.status(httpStatus).json({ ...result, eventType, personName });
+}
+router.post("/attendance/nfc-scan", asyncRoute(handleNfcScan));
+router.get("/attendance/nfc-scan", asyncRoute(handleNfcScan));
 
 // --- Policies ------------------------------------------------------------------
 router.post(

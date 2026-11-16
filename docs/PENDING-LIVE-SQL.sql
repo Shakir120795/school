@@ -120,3 +120,8 @@ CREATE INDEX IF NOT EXISTS "HomeworkTarget_schoolId_studentId_idx" ON "HomeworkT
 
 -- Phase 58: PTM double-booking guard (partial unique index)
 CREATE UNIQUE INDEX IF NOT EXISTS "PtmBooking_slot_time_booked_key" ON "PtmBooking" ("slotId", "startTime") WHERE "status" = 'BOOKED';
+
+-- Phase 74: NFC cards — CardCredential kind + uidLast4
+DO $$ BEGIN CREATE TYPE "CardKind" AS ENUM ('QR', 'NFC'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "kind" "CardKind" NOT NULL DEFAULT 'QR';
+ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "uidLast4" TEXT;

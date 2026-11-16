@@ -172,6 +172,9 @@ const DB_UPDATE_STATEMENTS = [
   ["Student: belt issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "beltIssued" BOOLEAN NOT NULL DEFAULT false`],
   ["Student: cap issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "capIssued" BOOLEAN NOT NULL DEFAULT false`],
   ["Student: bag issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bagIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["CardCredential: kind enum type (Phase 74)", `DO $$ BEGIN CREATE TYPE "CardKind" AS ENUM ('QR', 'NFC'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
+  ["CardCredential: kind column (Phase 74)", `ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "kind" "CardKind" NOT NULL DEFAULT 'QR'`],
+  ["CardCredential: uidLast4 column (Phase 74)", `ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "uidLast4" TEXT`],
 ];
 
 router.post("/platform/apply-db-updates", asyncRoute(async (req, res) => {

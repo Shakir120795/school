@@ -206,6 +206,10 @@ async function onLogoFile(e) {
         <span class="badge" :class="d.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">{{ d.status }}</span>
         <span class="text-slate-400 ml-auto">Last seen: {{ d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString("en-IN") : "never" }}</span>
       </div>
+      <div class="mt-3 text-sm bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <div class="font-semibold mb-1">📶 WiFi NFC reader (gate)</div>
+        <p class="text-slate-600">Create a device above for the reader and note its key (it is shown only once). In the reader's own settings, set it to send every card tap as an HTTP POST to <code class="font-mono break-all">https://school.thedigitalwork.in/attendance/nfc-scan</code> with headers <code class="font-mono">X-School-Id</code> (your School ID, shown above) and <code class="font-mono">X-Device-Key</code> (that device key), and JSON body <code class="font-mono">{"uid":"CARD-UID"}</code>. If the reader cannot set headers, it can send <code class="font-mono">schoolId</code> and <code class="font-mono">deviceKey</code> in the same body instead. The first tap of the day counts as entry, the next as exit. Link each student's card number in People → NFC cards.</p>
+      </div>
     </div>
   </div>
 </template>

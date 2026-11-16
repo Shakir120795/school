@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import QRCode from "qrcode";
-import { api, session, friendlyError, myRole } from "../api.js";
+import { api, session, friendlyError, fmtDate, myRole } from "../api.js";
 import { usePager, matchStatus } from "../composables/usePager.js";
 import Pager from "../components/Pager.vue";
 import StudentCard from "../components/StudentCard.vue";
@@ -297,6 +297,37 @@ function printSheet() { window.print(); }
 async function revokeCard(id) {
   note(await api(`/schools/${sid}/cards/${id}/revoke`, { method: "POST", body: { reason: "from web" } }), "Card revoked.");
 }
+// NFC cards (Phase 74): the student's printed ID card can be an NFC card.
+// The office types the card UID once; the gate reader then taps it for
+// entry/exit and parents get the in-app alert, exactly like a QR scan.
+const nfcStudentId = ref("");
+const nfcUid = ref("");
+const nfcCards = ref([]);
+const nfcMsg = ref("");
+async function loadNfcCards() {
+  nfcCards.value = [];
+  if (!nfcStudentId.value) return;
+  const r = await api(`/schools/${sid}/students/${nfcStudentId.value}/cards`);
+  if (r.status === 200) nfcCards.value = (r.json.cards || []).filter((c) => c.kind === "NFC");
+}
+async function linkNfc() {
+  nfcMsg.value = "";
+  const r = await api(`/schools/${sid}/nfc-cards`, { method: "POST", body: { studentId: nfcStudentId.value, uid: nfcUid.value } });
+  if (r.status === 201 || r.status === 200) {
+    nfcMsg.value = r.json.alreadyLinked
+      ? "This card is already linked to this student."
+      : `NFC card ••••${r.json.card.uidLast4} linked. Any older NFC card of this student is now replaced and will not work.`;
+    nfcUid.value = "";
+    loadNfcCards();
+  } else {
+    nfcMsg.value = friendlyError(r.json?.error) || `Could not link the card (${r.json?.error || r.status}).`;
+  }
+}
+async function revokeNfc(id) {
+  await api(`/schools/${sid}/cards/${id}/revoke`, { method: "POST", body: { reason: "nfc lost/revoked from web" } });
+  nfcMsg.value = "NFC card revoked — it will no longer work at the gate.";
+  loadNfcCards();
+}
 function className(id) {
   const c = classrooms.value.find((x) => x.id === id);
   return c ? `${c.name}${c.section ? "-" + c.section : ""}` : "—";
@@ -460,6 +491,29 @@ const filteredTeachers = computed(() => {
           </div>
         </div>
       </div>
+      <div class="card mb-4">
+        <div class="font-semibold text-sm mb-1">📶 NFC cards — link a student's card</div>
+        <p class="text-sm text-slate-500 mb-2">The student's printed ID card can also be an NFC card. Type the card number (UID) once here — after that, the student just taps the card on the gate reader for entry &amp; exit, and parents get the alert in the app. Linking a new card replaces the student's old NFC card.</p>
+        <div class="flex flex-wrap gap-2 items-center">
+          <select v-model="nfcStudentId" class="input !w-64" @change="loadNfcCards">
+            <option value="">— Select student —</option>
+            <option v-for="s in students" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option>
+          </select>
+          <input v-model="nfcUid" class="input !w-56" placeholder="Card UID e.g. 04A1B2C3D4" />
+          <button type="button" class="btn btn-primary" :disabled="!nfcStudentId || !nfcUid" @click="linkNfc">Link NFC card</button>
+        </div>
+        <p v-if="nfcMsg" class="text-sm mt-2">{{ nfcMsg }}</p>
+        <div v-if="nfcStudentId && nfcCards.length" class="mt-2 space-y-1">
+          <div v-for="c in nfcCards" :key="c.id" class="flex flex-wrap gap-2 items-center text-sm border rounded-lg px-3 py-2">
+            <span class="font-medium">NFC ••••{{ c.uidLast4 || "????" }}</span>
+            <span class="badge" :class="c.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'">{{ c.status }}</span>
+            <span class="text-slate-500">Issued {{ fmtDate(c.issuedAt) }}<span v-if="c.lastUsedAt"> · Last used {{ fmtDate(c.lastUsedAt) }}</span></span>
+            <button v-if="c.status === 'ACTIVE'" type="button" class="btn btn-ghost !py-1 ml-auto" @click="revokeNfc(c.id)">Revoke (lost)</button>
+          </div>
+        </div>
+        <p v-else-if="nfcStudentId" class="text-sm text-slate-400 mt-2">No NFC card linked to this student yet.</p>
+      </div>
+
       <h2 class="font-bold mt-6 mb-1">👨‍👩‍👧 Parents — add or link with a student</h2>
       <p class="text-sm text-slate-500 mb-3">Parents are not a separate list — a parent is always shown with their child above. Add a new parent here, then link them to their student; the parent's name and mobile then appear on that student's card.</p>
       <form class="card grid md:grid-cols-3 gap-3 mb-4 !border-brand-300" @submit.prevent="quickAdmission">

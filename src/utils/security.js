@@ -26,3 +26,16 @@ export function randomToken(bytes = 32) {
 export function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
+
+// NFC cards (Phase 74): a card's factory UID is the credential. It is stored
+// only as the hash of a namespaced token — the same at-rest pattern as QR
+// tokens — so the raw UID never sits in the database and an unknown UID
+// resolves to nothing. UID format: 4–10 bytes hex (8–20 chars).
+export function normalizeNfcUid(raw) {
+  const uid = String(raw || "").toUpperCase().replace(/[^0-9A-F]/g, "");
+  return /^[0-9A-F]{8,20}$/.test(uid) ? uid : null;
+}
+
+export function nfcToken(uid) {
+  return `nfc:${uid}`;
+}

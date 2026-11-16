@@ -2,7 +2,7 @@ import { Router } from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
-import { hashPassword, randomToken, hashToken } from "../utils/security.js";
+import { hashPassword, randomToken, hashToken, normalizeNfcUid, nfcToken } from "../utils/security.js";
 import { normalizePhone } from "../services/otp.js";
 import { parseRemoval, softRemoveMember, removedMembers } from "../utils/memberRemoval.js";
 import { childrenByParentUser, classLabel } from "../utils/parentChildren.js";
@@ -1224,6 +1224,71 @@ router.post(
       }),
     ]).then((r) => [r[1]]);
     return res.status(201).json({ card: { id: card.id, status: card.status }, qrToken: token });
+  })
+);
+
+// --- NFC cards (Phase 74) -------------------------------------------------------------
+// A student's NFC card is a CardCredential of kind NFC whose token is the
+// hash of "nfc:<UID>". One row per physical card, forever: re-issuing a found
+// card reactivates its row; linking a NEW card replaces the student's other
+// active NFC cards. The UID itself is never stored — only its hash + last 4.
+router.post(
+  "/:schoolId/nfc-cards",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const missing = requireFields(req.body, ["studentId", "uid"]);
+    if (missing) return res.status(400).json({ error: "MISSING_FIELDS", missing });
+    const uid = normalizeNfcUid(req.body.uid);
+    if (!uid) return res.status(400).json({ error: "INVALID_NFC_UID" });
+    const schoolId = req.params.schoolId;
+    const student = await prisma.student.findFirst({ where: { id: req.body.studentId, schoolId } });
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const tokenHash = hashToken(nfcToken(uid));
+    const existing = await prisma.cardCredential.findUnique({ where: { tokenHash } });
+    if (existing && existing.schoolId !== schoolId) return res.status(409).json({ error: "NFC_CARD_IN_USE" });
+    if (existing && existing.status === "ACTIVE") {
+      if (existing.studentId !== student.id) return res.status(409).json({ error: "NFC_CARD_IN_USE" });
+      return res.json({ card: { id: existing.id, kind: "NFC", status: existing.status, uidLast4: existing.uidLast4, issuedAt: existing.issuedAt }, alreadyLinked: true });
+    }
+    // Resolve the student's other active NFC cards BEFORE the transaction
+    // (pooler rule: no global queries inside a tx callback).
+    const others = await prisma.cardCredential.findMany({
+      where: { schoolId, studentId: student.id, kind: "NFC", status: "ACTIVE", ...(existing ? { NOT: { id: existing.id } } : {}) },
+      select: { id: true },
+    });
+    const card = await prisma.$transaction(async (tx) => {
+      if (others.length) {
+        await tx.cardCredential.updateMany({
+          where: { id: { in: others.map((c) => c.id) } },
+          data: { status: "REPLACED", revokedAt: new Date(), revokeReason: "replaced by a new NFC card" },
+        });
+      }
+      if (existing) {
+        return tx.cardCredential.update({
+          where: { id: existing.id },
+          data: { studentId: student.id, teacherProfileId: null, ownerType: "STUDENT", status: "ACTIVE", issuedAt: new Date(), revokedAt: null, revokeReason: null, uidLast4: uid.slice(-4) },
+        });
+      }
+      return tx.cardCredential.create({
+        data: { schoolId, ownerType: "STUDENT", studentId: student.id, tokenHash, kind: "NFC", uidLast4: uid.slice(-4) },
+      });
+    });
+    return res.status(201).json({ card: { id: card.id, kind: "NFC", status: card.status, uidLast4: card.uidLast4, issuedAt: card.issuedAt } });
+  })
+);
+
+router.get(
+  "/:schoolId/students/:studentId/cards",
+  requireAuth,
+  requireSchool(WRITE),
+  asyncRoute(async (req, res) => {
+    const cards = await prisma.cardCredential.findMany({
+      where: { schoolId: req.params.schoolId, studentId: req.params.studentId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, kind: true, status: true, uidLast4: true, issuedAt: true, lastUsedAt: true, revokedAt: true },
+    });
+    return res.json({ cards });
   })
 );
 

@@ -62,6 +62,11 @@ enum CardCredentialStatus {
   LOST
 }
 
+enum CardKind {
+  QR
+  NFC
+}
+
 enum ScanEventType {
   ENTRY
   EXIT
@@ -557,6 +562,8 @@ model CardCredential {
   studentId        String?
   teacherProfileId String?
   tokenHash        String               @unique // global: hash of a high-entropy token
+  kind             CardKind             @default(QR) // Phase 74: QR (printed token) or NFC (card UID)
+  uidLast4         String? // Phase 74: last 4 of the NFC UID, for display only (UID itself is never stored)
   status           CardCredentialStatus @default(ACTIVE)
   issuedAt         DateTime             @default(now())
   revokedAt        DateTime?
