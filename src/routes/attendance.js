@@ -698,7 +698,7 @@ router.get(
         select: { homeworkId: true },
       });
       const orClauses = [{ id: { in: targetRows.map((t) => t.homeworkId) } }];
-      if (student.classroomId) orClauses.push({ classroomId: student.classroomId, targets: { none: {} } });
+      if (student.classroomId) orClauses.push({ classroomId: student.classroomId, homeworkTargets: { none: {} } });
       const assigned = await prisma.homework.findMany({
         where: { schoolId, dueDate: { gte: fromD, lte: dateOnly(today) }, OR: orClauses },
         select: { id: true },
