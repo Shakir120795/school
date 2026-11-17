@@ -287,6 +287,7 @@ watch(() => route.query.open, (v) => { if (v) scrollToSection(String(v)); });
         </div>
 
         <router-link :to="`/parent/attendance/${child.id}`" class="mt-3 w-full rounded-xl bg-brand-50 border border-brand-100 py-2.5 text-sm font-bold text-brand-700 flex items-center justify-center gap-2">📅 Full attendance history — month by month, or pick your dates</router-link>
+        <router-link :to="`/parent/record/${child.id}`" class="mt-2 w-full rounded-xl bg-amber-50 border border-amber-100 py-2.5 text-sm font-bold text-amber-700 flex items-center justify-center gap-2">🏆 Full record — exams, rank, homework, achievements</router-link>
 
         <!-- Phase 48: parent khud bacche ki jaankari bhare/badle -->
         <button v-if="editingId !== child.id" type="button" class="mt-3 w-full rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-brand-700 inline-flex items-center justify-center gap-2" @click="openEdit(child)">

@@ -226,6 +226,8 @@ model School {
   supportTickets         SupportTicket[]
   ptmSlots               PtmSlot[]
   subscriptions          SchoolSubscription[]
+  achievements           Achievement[]
+  eventAttendances       EventAttendance[]
 
   @@index([status])
 }
@@ -434,6 +436,8 @@ model Student {
   feeInvoices         FeeInvoice[]
   examMarks           ExamMark[]
   ptmBookings         PtmBooking[]
+  achievements        Achievement[]
+  eventAttendances    EventAttendance[]
 
   @@unique([schoolId, id])
   @@unique([schoolId, admissionNo])
@@ -1267,7 +1271,8 @@ model CalendarEvent {
   createdByMembershipId String
   createdAt             DateTime  @default(now())
 
-  school School @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  school      School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  attendances EventAttendance[]
 
   @@index([schoolId, eventDate])
 }
@@ -1464,4 +1469,40 @@ model OwnerPayment {
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
+}
+
+// Phase 76: student record — achievements awarded to a student and
+// per-student attendance at school functions (CalendarEvent rows).
+model Achievement {
+  id                    String   @id @default(cuid())
+  schoolId              String
+  studentId             String
+  title                 String
+  note                  String?
+  awardedOn             DateTime @db.Date
+  createdByMembershipId String
+  createdAt             DateTime @default(now())
+
+  school  School  @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([schoolId, studentId])
+}
+
+model EventAttendance {
+  id                   String   @id @default(cuid())
+  schoolId             String
+  eventId              String
+  studentId            String
+  present              Boolean  @default(true)
+  markedByMembershipId String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  school  School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  student Student       @relation(fields: [schoolId, studentId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([eventId, studentId])
+  @@index([schoolId, studentId])
 }

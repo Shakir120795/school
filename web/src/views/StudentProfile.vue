@@ -148,8 +148,77 @@ async function load() {
     loading.value = false;
   }
 }
+// Phase 76: full record — current year in detail + previous
+// years as one line each. Loads separately so a record failure
+// never breaks the main profile. Writes (achievement add/remove,
+// function attendance) are staff-side; the API enforces scope.
+const record = ref(null);
+const recLoading = ref(true);
+const achForm = ref({ title: "", note: "", awardedOn: "" });
+const achBusy = ref(false);
+const achMsg = ref("");
+const achErr = ref("");
+const fnBusyId = ref("");
+
+async function loadRecord() {
+  recLoading.value = true;
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}/record`);
+    if (r.status === 200) record.value = r.json;
+  } catch {
+    record.value = null;
+  } finally {
+    recLoading.value = false;
+  }
+}
+
+async function addAchievement() {
+  achMsg.value = "";
+  achErr.value = "";
+  if (!achForm.value.title.trim()) { achErr.value = "Achievement title is required."; return; }
+  achBusy.value = true;
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}/achievements`, {
+      method: "POST",
+      body: { title: achForm.value.title.trim(), note: achForm.value.note.trim(), awardedOn: achForm.value.awardedOn || undefined },
+    });
+    if (r.status === 201) {
+      achMsg.value = "Achievement added.";
+      achForm.value = { title: "", note: "", awardedOn: "" };
+      await loadRecord();
+    } else {
+      achErr.value = r.json?.error || `Could not add (${r.status})`;
+    }
+  } catch {
+    achErr.value = "Could not add. Please try again.";
+  } finally {
+    achBusy.value = false;
+  }
+}
+
+async function removeAchievement(id) {
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}/achievements/${id}`, { method: "DELETE" });
+    if (r.status === 200) await loadRecord();
+  } catch { /* list stays as-is */ }
+}
+
+async function toggleFunction(ev) {
+  fnBusyId.value = ev.id;
+  try {
+    const r = await api(`/schools/${sid}/students/${studentId}/event-attendance`, {
+      method: "POST",
+      body: { eventId: ev.id, present: !ev.attended },
+    });
+    if (r.status === 200) await loadRecord();
+  } catch { /* list stays as-is */ } finally {
+    fnBusyId.value = "";
+  }
+}
+
 onMounted(() => {
   load();
+  loadRecord();
   if (isManager) loadClassrooms();
 });
 </script>
@@ -293,6 +362,67 @@ onMounted(() => {
             </div>
           </div>
           <p v-else class="text-sm text-slate-400">No fee invoices for this student yet.</p>
+        </div>
+
+        <!-- Full record (Phase 76) -->
+        <div class="card lg:col-span-2">
+          <h2 class="font-bold mb-3">📜 Full record<span v-if="record?.currentYear"> — {{ record.currentYear.name }}</span></h2>
+          <p v-if="recLoading" class="text-sm text-slate-400">Loading record…</p>
+          <template v-else-if="record">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4 text-center">
+              <div class="rounded-2xl bg-emerald-50 py-3 px-1"><div class="text-lg font-extrabold text-emerald-700">{{ record.currentYear?.attendance.percentage ?? "–" }}%</div><div class="text-[11px] text-slate-500 font-medium">ATTENDANCE</div></div>
+              <div class="rounded-2xl bg-sky-50 py-3 px-1"><div class="text-lg font-extrabold text-sky-700">{{ record.currentYear?.exams.averagePct ?? "–" }}%<span v-if="record.currentYear?.exams.rank" class="text-xs font-bold text-slate-500"> · Rank {{ record.currentYear.exams.rank }}/{{ record.currentYear.exams.classSize }}</span></div><div class="text-[11px] text-slate-500 font-medium">EXAM AVERAGE</div></div>
+              <div class="rounded-2xl bg-violet-50 py-3 px-1"><div class="text-lg font-extrabold text-violet-700">{{ record.currentYear?.homework.done ?? 0 }}/{{ record.currentYear?.homework.assigned ?? 0 }}</div><div class="text-[11px] text-slate-500 font-medium">HOMEWORK DONE<span v-if="record.currentYear?.homework.missed"> · {{ record.currentYear.homework.missed }} MISSED</span></div></div>
+              <div class="rounded-2xl bg-amber-50 py-3 px-1"><div class="text-lg font-extrabold text-amber-700">{{ record.currentYear?.ptm.attended ?? 0 }}</div><div class="text-[11px] text-slate-500 font-medium">PTM ATTENDED<span v-if="record.currentYear?.ptm.upcoming"> · {{ record.currentYear.ptm.upcoming }} UPCOMING</span></div></div>
+              <div class="rounded-2xl bg-rose-50 py-3 px-1"><div class="text-lg font-extrabold text-rose-700">{{ record.currentYear?.functions.attended ?? 0 }}/{{ record.currentYear?.functions.total ?? 0 }}</div><div class="text-[11px] text-slate-500 font-medium">FUNCTIONS ATTENDED</div></div>
+            </div>
+
+            <h3 class="font-semibold text-sm mb-2">🏆 Achievements</h3>
+            <div v-if="record.currentYear?.achievements.length" class="mb-3">
+              <div v-for="a in record.currentYear.achievements" :key="a.id" class="flex items-start gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
+                <div class="min-w-0 flex-1">
+                  <span class="font-semibold">{{ a.title }}</span>
+                  <span class="text-slate-400 text-xs ml-2">{{ dateText(a.awardedOn) }}</span>
+                  <p v-if="a.note" class="text-slate-500">{{ a.note }}</p>
+                </div>
+                <button type="button" class="text-xs font-semibold text-rose-600 shrink-0" @click="removeAchievement(a.id)">Remove</button>
+              </div>
+            </div>
+            <p v-else class="text-sm text-slate-400 mb-3">No achievements recorded this year yet.</p>
+            <template v-if="record.tablesReady">
+              <div class="flex flex-wrap gap-2 mb-1">
+                <input v-model="achForm.title" class="input flex-1 min-w-40" placeholder="Achievement title — e.g. First in class race" :disabled="achBusy" />
+                <input v-model="achForm.awardedOn" type="date" class="input !w-40" :disabled="achBusy" />
+                <button type="button" class="btn btn-primary" :disabled="achBusy || !achForm.title.trim()" @click="addAchievement">{{ achBusy ? "Adding…" : "Add" }}</button>
+              </div>
+              <input v-model="achForm.note" class="input w-full mb-2" placeholder="Note (optional)" :disabled="achBusy" />
+              <p v-if="achErr" class="text-sm text-red-700">{{ achErr }}</p>
+              <p v-else-if="achMsg" class="text-sm text-emerald-700">{{ achMsg }}</p>
+            </template>
+
+            <h3 class="font-semibold text-sm mt-4 mb-2">🎉 School functions</h3>
+            <div v-if="record.currentYear?.functions.items.length">
+              <div v-for="f in record.currentYear.functions.items" :key="f.id" class="flex flex-wrap items-center gap-2 py-2 border-b border-slate-100 last:border-0 text-sm">
+                <span class="font-medium">{{ f.title }}</span>
+                <span class="text-slate-400 text-xs">{{ dateText(f.date) }} · {{ f.type }}</span>
+                <span v-if="!f.past" class="chip bg-slate-100 text-slate-500 ml-auto">Upcoming</span>
+                <button v-else-if="record.tablesReady" type="button" class="chip ml-auto" :class="f.attended ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'" :disabled="fnBusyId === f.id" @click="toggleFunction(f)">{{ f.attended ? "✓ Attended" : "Mark attended" }}</button>
+                <span v-else class="chip ml-auto" :class="f.attended ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'">{{ f.attended ? "✓ Attended" : "Not marked" }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-slate-400">No school functions this year yet.</p>
+
+            <p v-if="!record.tablesReady" class="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-3">Achievements & function attendance will start once the platform owner runs the database updates — attendance, exams, homework and PTM above are already live.</p>
+
+            <template v-if="record.previousYears.length">
+              <h3 class="font-semibold text-sm mt-4 mb-2">Previous years</h3>
+              <div v-for="y in record.previousYears" :key="y.name" class="text-sm py-1.5 border-b border-slate-100 last:border-0">
+                <span class="font-semibold">{{ y.name }}</span>
+                <span class="text-slate-500"> — Attendance {{ y.attendancePct ?? "–" }}% · Exam average {{ y.examAvgPct ?? "–" }}% · {{ y.achievements }} achievement{{ y.achievements === 1 ? "" : "s" }}</span>
+              </div>
+            </template>
+          </template>
+          <p v-else class="text-sm text-slate-400">Record could not be loaded.</p>
         </div>
 
         <!-- Notices (targeted) -->

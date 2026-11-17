@@ -7,6 +7,7 @@ import { processScan, resolveCard } from "../services/attendance.js";
 import { teacherClassIds } from "../services/teacherClasses.js";
 import { alertGuardiansForScan } from "../services/scanAlerts.js";
 import { localParts, dateOnly } from "../utils/time.js";
+import { recordTablesReady } from "../utils/studentCompat.js";
 
 const router = Router();
 const STAFF_READ = ["SCHOOL_ADMIN", "PRINCIPAL", "TEACHER"];
@@ -553,6 +554,301 @@ router.get(
       take: 200,
     });
     return res.json({ audit: rows });
+  })
+);
+
+
+// --- Student full record (Phase 76) ---------------------------------------------
+// Shakir's rule: previous years = ONE line each (attendance %, exam
+// average, achievement count — no detail); the current year = full
+// detail (attendance, exam average + class rank, homework done /
+// missed, PTM attended, functions attended, achievements list).
+// Scope mirrors attendance-history: a parent sees only a
+// guardian-linked child (404 otherwise); a teacher only her own
+// classes. Achievement / EventAttendance tables arrive via
+// apply-db-updates — until then the record serves without them
+// (tablesReady=false), never a 500.
+async function scopedStudent(req) {
+  const schoolId = req.params.schoolId;
+  const student = await prisma.student.findFirst({
+    where: { id: req.params.studentId, schoolId },
+    select: { id: true, fullName: true, admissionNo: true, classroomId: true, classroom: { select: { name: true, section: true } } },
+  });
+  if (!student) return null;
+  const role = req.membership.role;
+  if (role === "PARENT") {
+    const link = await prisma.studentGuardian.findFirst({
+      where: { schoolId, studentId: student.id, guardian: { userId: req.user.id } },
+      select: { id: true },
+    });
+    if (!link) return null;
+  } else if (role === "TEACHER") {
+    const ids = await teacherClassIds(schoolId, req.membership.id);
+    if (!student.classroomId || !ids.includes(student.classroomId)) return null;
+  }
+  return student;
+}
+
+router.get(
+  "/schools/:schoolId/students/:studentId/record",
+  requireAuth,
+  requireSchool([...STAFF_READ, "PARENT"]),
+  asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
+    const student = await scopedStudent(req);
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const role = req.membership.role;
+    const tz = req.school.timezone || "Asia/Kolkata";
+    const today = localParts(new Date(), tz).dateStr;
+    const dstr = (d) => d.toISOString().slice(0, 10);
+
+    const years = await prisma.academicYear.findMany({ where: { schoolId }, orderBy: { startsOn: "desc" } });
+    const cur =
+      years.find((y) => y.isCurrent) ||
+      years.find((y) => dstr(y.startsOn) <= today && today <= dstr(y.endsOn)) ||
+      years[0] ||
+      null;
+
+    const blank = () => ({ marked: 0, present: 0, late: 0, absent: 0, onLeave: 0, halfDay: 0 });
+    const pctOf = (a) => (a.marked ? Math.round(((a.present + a.late + 0.5 * a.halfDay) / a.marked) * 1000) / 10 : null);
+    async function attSummary(fromD, toD) {
+      const rows = await prisma.studentAttendance.findMany({
+        where: { schoolId, studentId: student.id, localDate: { gte: fromD, lte: toD } },
+        select: { status: true },
+      });
+      const a = blank();
+      for (const r of rows) {
+        a.marked++;
+        if (r.status === "PRESENT") a.present++;
+        else if (r.status === "LATE") a.late++;
+        else if (r.status === "ABSENT") a.absent++;
+        else if (r.status === "ON_LEAVE") a.onLeave++;
+        else if (r.status === "HALF_DAY") a.halfDay++;
+      }
+      return { ...a, percentage: pctOf(a) };
+    }
+    async function examAvg(fromD, toD) {
+      const marks = await prisma.examMark.findMany({
+        where: {
+          schoolId,
+          studentId: student.id,
+          exam: { examDate: { gte: fromD, lte: toD }, ...(role === "PARENT" ? { resultsPublished: true } : {}) },
+        },
+        select: { marksObtained: true, exam: { select: { maxMarks: true } } },
+      });
+      const pcts = marks.filter((m) => m.exam.maxMarks > 0).map((m) => (m.marksObtained / m.exam.maxMarks) * 100);
+      return {
+        count: pcts.length,
+        averagePct: pcts.length ? Math.round((pcts.reduce((x, y) => x + y, 0) / pcts.length) * 10) / 10 : null,
+      };
+    }
+
+    const tablesReady = await recordTablesReady();
+    let allAchievements = [];
+    let eventMarks = [];
+    if (tablesReady) {
+      allAchievements = await prisma.achievement.findMany({
+        where: { schoolId, studentId: student.id },
+        orderBy: { awardedOn: "desc" },
+        select: { id: true, title: true, note: true, awardedOn: true },
+      });
+      eventMarks = await prisma.eventAttendance.findMany({
+        where: { schoolId, studentId: student.id },
+        select: { eventId: true, present: true },
+      });
+    }
+    const achIn = (from, to) => allAchievements.filter((a) => dstr(a.awardedOn) >= from && dstr(a.awardedOn) <= to);
+
+    let currentYear = null;
+    if (cur) {
+      const from = dstr(cur.startsOn);
+      const to = dstr(cur.endsOn);
+      const fromD = dateOnly(from);
+      const toD = dateOnly(to);
+      const attendance = await attSummary(fromD, toD);
+      const exams = await examAvg(fromD, toD);
+
+      // Class rank: classmates' average % over the same exams window.
+      let rank = null;
+      let classSize = 0;
+      if (student.classroomId) {
+        const classMarks = await prisma.examMark.findMany({
+          where: {
+            schoolId,
+            exam: { classroomId: student.classroomId, examDate: { gte: fromD, lte: toD }, ...(role === "PARENT" ? { resultsPublished: true } : {}) },
+          },
+          select: { studentId: true, marksObtained: true, exam: { select: { maxMarks: true } } },
+        });
+        const byStudent = new Map();
+        for (const m of classMarks) {
+          if (!m.exam.maxMarks) continue;
+          const arr = byStudent.get(m.studentId) || [];
+          arr.push((m.marksObtained / m.exam.maxMarks) * 100);
+          byStudent.set(m.studentId, arr);
+        }
+        const avgs = [...byStudent.values()].map((arr) => arr.reduce((x, y) => x + y, 0) / arr.length);
+        classSize = avgs.length;
+        if (exams.averagePct != null) rank = avgs.filter((a) => a > exams.averagePct).length + 1;
+      }
+
+      // Homework: class homework (untargeted) + homework targeted at
+      // this student, due within the year and already due by today.
+      const targetRows = await prisma.homeworkTarget.findMany({
+        where: { schoolId, studentId: student.id },
+        select: { homeworkId: true },
+      });
+      const orClauses = [{ id: { in: targetRows.map((t) => t.homeworkId) } }];
+      if (student.classroomId) orClauses.push({ classroomId: student.classroomId, targets: { none: {} } });
+      const assigned = await prisma.homework.findMany({
+        where: { schoolId, dueDate: { gte: fromD, lte: dateOnly(today) }, OR: orClauses },
+        select: { id: true },
+      });
+      const doneRows = assigned.length
+        ? await prisma.homeworkCompletion.findMany({
+            where: { schoolId, studentId: student.id, homeworkId: { in: assigned.map((h) => h.id) } },
+            select: { homeworkId: true },
+          })
+        : [];
+      const homework = { assigned: assigned.length, done: doneRows.length, missed: assigned.length - doneRows.length };
+
+      // PTM: bookings on slots inside the year; a past slot counts attended.
+      const bookings = await prisma.ptmBooking.findMany({
+        where: { schoolId, studentId: student.id, status: "BOOKED" },
+        select: { id: true, slot: { select: { date: true } } },
+      });
+      let ptmAttended = 0;
+      let ptmUpcoming = 0;
+      for (const b of bookings) {
+        const d = dstr(b.slot.date);
+        if (d < from || d > to) continue;
+        if (d < today) ptmAttended++;
+        else ptmUpcoming++;
+      }
+
+      // Functions: school events (not exams/PTM) inside the year.
+      const events = await prisma.calendarEvent.findMany({
+        where: { schoolId, eventDate: { gte: fromD, lte: toD }, type: { in: ["EVENT", "SPORTS", "CULTURAL"] } },
+        orderBy: { eventDate: "desc" },
+        select: { id: true, title: true, type: true, eventDate: true },
+      });
+      const markByEvent = new Map(eventMarks.map((m) => [m.eventId, m.present]));
+      const fnItems = events.map((e) => ({
+        id: e.id,
+        title: e.title,
+        type: e.type,
+        date: dstr(e.eventDate),
+        past: dstr(e.eventDate) < today,
+        attended: markByEvent.get(e.id) === true,
+      }));
+      const fnPast = fnItems.filter((f) => f.past);
+      const functions = { total: fnPast.length, attended: fnPast.filter((f) => f.attended).length, items: fnItems };
+
+      currentYear = {
+        name: cur.name,
+        attendance,
+        exams: { ...exams, rank, classSize },
+        homework,
+        ptm: { attended: ptmAttended, upcoming: ptmUpcoming },
+        functions,
+        achievements: achIn(from, to).map((a) => ({ id: a.id, title: a.title, note: a.note, awardedOn: dstr(a.awardedOn) })),
+      };
+    }
+
+    const previousYears = [];
+    for (const y of years) {
+      if (cur && y.id === cur.id) continue;
+      const from = dstr(y.startsOn);
+      const to = dstr(y.endsOn);
+      const att = await attSummary(dateOnly(from), dateOnly(to));
+      const ex = await examAvg(dateOnly(from), dateOnly(to));
+      const achCount = achIn(from, to).length;
+      if (!att.marked && !ex.count && !achCount) continue;
+      previousYears.push({ name: y.name, attendancePct: att.percentage, examAvgPct: ex.averagePct, achievements: achCount });
+    }
+
+    return res.json({
+      student: {
+        id: student.id,
+        fullName: student.fullName,
+        admissionNo: student.admissionNo,
+        classLabel: student.classroom ? `${student.classroom.name}${student.classroom.section ? "-" + student.classroom.section : ""}` : "",
+      },
+      tablesReady,
+      currentYear,
+      previousYears,
+    });
+  })
+);
+
+router.post(
+  "/schools/:schoolId/students/:studentId/achievements",
+  requireAuth,
+  requireSchool([...STAFF_READ]),
+  asyncRoute(async (req, res) => {
+    if (!(await recordTablesReady())) return res.status(503).json({ error: "RECORD_TABLES_NOT_READY" });
+    const student = await scopedStudent(req);
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const title = String(req.body?.title || "").trim().slice(0, 120);
+    if (!title) return res.status(400).json({ error: "TITLE_REQUIRED" });
+    const note = String(req.body?.note || "").trim().slice(0, 300) || null;
+    const tz = req.school.timezone || "Asia/Kolkata";
+    const today = localParts(new Date(), tz).dateStr;
+    let awardedOn = /^\d{4}-\d{2}-\d{2}$/.test(req.body?.awardedOn || "") ? req.body.awardedOn : today;
+    if (awardedOn > today) awardedOn = today;
+    const created = await prisma.achievement.create({
+      data: {
+        schoolId: req.params.schoolId,
+        studentId: student.id,
+        title,
+        note,
+        awardedOn: dateOnly(awardedOn),
+        createdByMembershipId: req.membership.id,
+      },
+      select: { id: true, title: true, note: true, awardedOn: true },
+    });
+    return res.status(201).json({ achievement: { ...created, awardedOn: created.awardedOn.toISOString().slice(0, 10) } });
+  })
+);
+
+router.delete(
+  "/schools/:schoolId/students/:studentId/achievements/:achievementId",
+  requireAuth,
+  requireSchool([...STAFF_READ]),
+  asyncRoute(async (req, res) => {
+    if (!(await recordTablesReady())) return res.status(503).json({ error: "RECORD_TABLES_NOT_READY" });
+    const student = await scopedStudent(req);
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const row = await prisma.achievement.findFirst({
+      where: { id: req.params.achievementId, schoolId: req.params.schoolId, studentId: student.id },
+      select: { id: true },
+    });
+    if (!row) return res.status(404).json({ error: "ACHIEVEMENT_NOT_FOUND" });
+    await prisma.achievement.delete({ where: { id: row.id } });
+    return res.json({ ok: true });
+  })
+);
+
+router.post(
+  "/schools/:schoolId/students/:studentId/event-attendance",
+  requireAuth,
+  requireSchool([...STAFF_READ]),
+  asyncRoute(async (req, res) => {
+    if (!(await recordTablesReady())) return res.status(503).json({ error: "RECORD_TABLES_NOT_READY" });
+    const student = await scopedStudent(req);
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const eventId = String(req.body?.eventId || "");
+    const present = req.body?.present === true;
+    const event = await prisma.calendarEvent.findFirst({
+      where: { id: eventId, schoolId: req.params.schoolId },
+      select: { id: true },
+    });
+    if (!event) return res.status(404).json({ error: "EVENT_NOT_FOUND" });
+    await prisma.eventAttendance.upsert({
+      where: { eventId_studentId: { eventId: event.id, studentId: student.id } },
+      create: { schoolId: req.params.schoolId, eventId: event.id, studentId: student.id, present, markedByMembershipId: req.membership.id },
+      update: { present, markedByMembershipId: req.membership.id },
+    });
+    return res.json({ ok: true, present });
   })
 );
 

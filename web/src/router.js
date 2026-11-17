@@ -38,6 +38,7 @@ const routes = [
   { path: "/notifications", component: () => import("./views/Notifications.vue") },
   { path: "/parent", component: () => import("./views/Parent.vue") },
   { path: "/parent/attendance/:studentId", component: () => import("./views/ParentHistory.vue") },
+  { path: "/parent/record/:studentId", component: () => import("./views/ParentRecord.vue") },
   { path: "/team", component: () => import("./views/Team.vue") },
   { path: "/settings", component: () => import("./views/Settings.vue") },
   { path: "/:pathMatch(.*)*", redirect: "/" },

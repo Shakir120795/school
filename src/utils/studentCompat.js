@@ -83,3 +83,17 @@ export async function studentScalars() {
   Object.assign(base, await familySelect(), await bloodGroupSelect());
   return base;
 }
+
+// Phase 76: Achievement + EventAttendance tables — wahi probe
+// pattern; tables live hone se pehle record endpoint inhe khali
+// dikhata hai, 500 nahi deta.
+let recCached = null;
+export function recordTablesReady() {
+  if (!recCached) {
+    recCached = Promise.all([
+      prisma.$queryRaw`SELECT "id" FROM "Achievement" LIMIT 1`,
+      prisma.$queryRaw`SELECT "id" FROM "EventAttendance" LIMIT 1`,
+    ]).then(() => true).catch(() => false);
+  }
+  return recCached;
+}
