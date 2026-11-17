@@ -4,6 +4,7 @@ import { requireAuth, requireSchool, ADMIN_ROLES } from "../middleware/auth.js";
 import { asyncRoute, requireFields } from "../utils/http.js";
 import { hashToken, normalizeNfcUid, nfcToken } from "../utils/security.js";
 import { processScan, resolveCard } from "../services/attendance.js";
+import { teacherClassIds } from "../services/teacherClasses.js";
 import { alertGuardiansForScan } from "../services/scanAlerts.js";
 import { localParts, dateOnly } from "../utils/time.js";
 
@@ -228,6 +229,103 @@ router.get(
         notArrived: totalStudents - rows.length,
       },
       students: list,
+    });
+  })
+);
+
+// --- Student attendance history (Phase 75) --------------------------------------
+// One student's record over a range — monthwise totals + every day — up to a
+// full year back. Staff stay in their scope (a teacher only her own classes);
+// a parent sees only a guardian-linked child.
+router.get(
+  "/schools/:schoolId/students/:studentId/attendance-history",
+  requireAuth,
+  requireSchool([...STAFF_READ, "PARENT"]),
+  asyncRoute(async (req, res) => {
+    const schoolId = req.params.schoolId;
+    const student = await prisma.student.findFirst({
+      where: { id: req.params.studentId, schoolId },
+      select: { id: true, fullName: true, admissionNo: true, classroomId: true, classroom: { select: { name: true, section: true } } },
+    });
+    if (!student) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    const role = req.membership.role;
+    if (role === "PARENT") {
+      const link = await prisma.studentGuardian.findFirst({
+        where: { schoolId, studentId: student.id, guardian: { userId: req.user.id } },
+        select: { id: true },
+      });
+      if (!link) return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    } else if (role === "TEACHER") {
+      const ids = await teacherClassIds(schoolId, req.membership.id);
+      if (!student.classroomId || !ids.includes(student.classroomId))
+        return res.status(404).json({ error: "STUDENT_NOT_FOUND" });
+    }
+    // Range: default = the last 12 months to today (school timezone); a wider
+    // custom range is clamped to 366 days.
+    const tz = req.school.timezone || "Asia/Kolkata";
+    const today = localParts(new Date(), tz).dateStr;
+    const isDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || "");
+    let to = isDate(req.query.to) ? req.query.to : today;
+    if (to > today) to = today;
+    let from = isDate(req.query.from) ? req.query.from : null;
+    const toD = dateOnly(to);
+    if (!from) {
+      const d = new Date(toD);
+      d.setUTCFullYear(d.getUTCFullYear() - 1);
+      from = d.toISOString().slice(0, 10);
+    }
+    if (from > to) [from, to] = [to, from];
+    let fromD = dateOnly(from);
+    if ((dateOnly(to) - fromD) / 86400000 > 366) {
+      fromD = new Date(dateOnly(to).getTime() - 366 * 86400000);
+      from = fromD.toISOString().slice(0, 10);
+    }
+    const rows = await prisma.studentAttendance.findMany({
+      where: { schoolId, studentId: student.id, localDate: { gte: fromD, lte: dateOnly(to) } },
+      orderBy: { localDate: "desc" },
+      select: { localDate: true, status: true, entryAt: true, exitAt: true, isLate: true, isEarlyExit: true },
+    });
+    const blank = () => ({ marked: 0, present: 0, late: 0, absent: 0, onLeave: 0, halfDay: 0 });
+    const tally = (acc, st) => {
+      acc.marked++;
+      if (st === "PRESENT") acc.present++;
+      else if (st === "LATE") acc.late++;
+      else if (st === "ABSENT") acc.absent++;
+      else if (st === "ON_LEAVE") acc.onLeave++;
+      else if (st === "HALF_DAY") acc.halfDay++;
+    };
+    // Late counts as attended; a half day counts as half.
+    const pct = (a) => (a.marked ? Math.round(((a.present + a.late + 0.5 * a.halfDay) / a.marked) * 1000) / 10 : null);
+    const summary = blank();
+    const byMonth = new Map();
+    for (const r of rows) {
+      tally(summary, r.status);
+      const key = r.localDate.toISOString().slice(0, 7);
+      if (!byMonth.has(key)) byMonth.set(key, { month: key, ...blank() });
+      tally(byMonth.get(key), r.status);
+    }
+    const months = [...byMonth.values()]
+      .sort((a, b) => (a.month < b.month ? 1 : -1))
+      .map((m) => ({ ...m, percentage: pct(m) }));
+    return res.json({
+      student: {
+        id: student.id,
+        fullName: student.fullName,
+        admissionNo: student.admissionNo,
+        classLabel: student.classroom ? `${student.classroom.name}${student.classroom.section ? "-" + student.classroom.section : ""}` : "",
+      },
+      from,
+      to,
+      summary: { ...summary, percentage: pct(summary) },
+      months,
+      days: rows.map((r) => ({
+        localDate: r.localDate.toISOString().slice(0, 10),
+        status: r.status,
+        entryAt: r.entryAt,
+        exitAt: r.exitAt,
+        isLate: r.isLate,
+        isEarlyExit: r.isEarlyExit,
+      })),
     });
   })
 );

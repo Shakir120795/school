@@ -103,6 +103,50 @@ function statusBadge(s) {
     HALF_DAY: "bg-purple-100 text-purple-700",
   }[s] || "bg-slate-100 text-slate-600";
 }
+// Student history (Phase 75): one student's record — monthwise or custom
+// dates, up to a full year.
+const histStudents = ref([]);
+const histStudentId = ref("");
+const histFrom = ref("");
+const histTo = ref("");
+const hist = ref(null);
+const histMsg = ref("");
+onMounted(async () => {
+  const r = await api(`/schools/${sid}/students`).catch(() => null);
+  histStudents.value = r?.json?.students || [];
+});
+function dayStr(d) { return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); }
+async function loadHist() {
+  histMsg.value = "";
+  hist.value = null;
+  if (!histStudentId.value) { histMsg.value = "Select a student first."; return; }
+  const q = new URLSearchParams();
+  if (histFrom.value) q.set("from", histFrom.value);
+  if (histTo.value) q.set("to", histTo.value);
+  const r = await api(`/schools/${sid}/students/${histStudentId.value}/attendance-history?${q}`);
+  if (r.status !== 200) { histMsg.value = friendlyError(r.json?.error) || "History could not be loaded."; return; }
+  hist.value = r.json;
+  histFrom.value = r.json.from;
+  histTo.value = r.json.to;
+}
+function histQuick(kind) {
+  const now = new Date();
+  histTo.value = dayStr(now);
+  if (kind === "month") {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    histFrom.value = d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  } else if (kind === "3m") {
+    const d = new Date(now); d.setMonth(d.getMonth() - 3);
+    histFrom.value = dayStr(d);
+  } else {
+    const d = new Date(now); d.setFullYear(d.getFullYear() - 1);
+    histFrom.value = dayStr(d);
+  }
+  loadHist();
+}
+function monthLabel(m) {
+  return new Date(`${m}-02T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+}
 </script>
 
 <template>
@@ -210,6 +254,54 @@ function statusBadge(s) {
         {{ a.action }} · {{ a.entityType }} · {{ a.reason || "" }}
         <span class="text-slate-400">{{ new Date(a.createdAt).toLocaleString("en-IN") }}</span>
       </div>
+    </div>
+
+    <div class="card mt-4">
+      <div class="font-semibold mb-1">📅 Student attendance history</div>
+      <p class="text-sm text-slate-500 mb-3">One student's full record — pick a month, or your own dates, up to one year back.</p>
+      <div class="flex flex-wrap gap-2 items-center mb-3">
+        <select v-model="histStudentId" class="input !w-64">
+          <option value="">— Select student —</option>
+          <option v-for="s in histStudents" :key="s.id" :value="s.id">{{ s.fullName }} ({{ s.admissionNo }})</option>
+        </select>
+        <button type="button" class="btn btn-ghost !py-1.5" @click="histQuick('month')">This month</button>
+        <button type="button" class="btn btn-ghost !py-1.5" @click="histQuick('3m')">Last 3 months</button>
+        <button type="button" class="btn btn-ghost !py-1.5" @click="histQuick('year')">Full year</button>
+        <input v-model="histFrom" type="date" class="input !w-40" />
+        <span class="text-slate-400 text-sm">to</span>
+        <input v-model="histTo" type="date" class="input !w-40" />
+        <button type="button" class="btn btn-primary !py-1.5" @click="loadHist">Show</button>
+      </div>
+      <p v-if="histMsg" class="text-sm text-rose-600 mb-2">{{ histMsg }}</p>
+      <template v-if="hist">
+        <div class="flex flex-wrap gap-2 mb-3">
+          <span class="chip bg-slate-100 text-slate-700">{{ hist.student.fullName }} · {{ hist.student.classLabel || "—" }}</span>
+          <span class="chip bg-brand-50 text-brand-700 font-bold">{{ hist.summary.percentage ?? "–" }}% attendance</span>
+          <span class="chip bg-green-100 text-green-700">Present {{ hist.summary.present }}</span>
+          <span class="chip bg-amber-100 text-amber-700">Late {{ hist.summary.late }}</span>
+          <span class="chip bg-red-100 text-red-700">Absent {{ hist.summary.absent }}</span>
+          <span class="chip bg-blue-100 text-blue-700">Leave {{ hist.summary.onLeave }}</span>
+          <span class="chip bg-purple-100 text-purple-700">Half day {{ hist.summary.halfDay }}</span>
+          <span class="chip bg-slate-100 text-slate-500">{{ hist.summary.marked }} days marked</span>
+        </div>
+        <div v-if="hist.months.length" class="mb-3">
+          <div v-for="m in hist.months" :key="m.month" class="flex flex-wrap gap-2 items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
+            <span class="font-semibold w-24">{{ monthLabel(m.month) }}</span>
+            <span class="font-bold" :class="m.percentage >= 75 ? 'text-emerald-600' : 'text-rose-600'">{{ m.percentage ?? "–" }}%</span>
+            <span class="text-slate-500">Present {{ m.present }} · Late {{ m.late }} · Absent {{ m.absent }} · Leave {{ m.onLeave }} · Half {{ m.halfDay }}</span>
+          </div>
+        </div>
+        <div class="max-h-80 overflow-y-auto">
+          <div v-for="d in hist.days" :key="d.localDate" class="flex flex-wrap gap-2 items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
+            <span class="w-28">{{ fmtDate(d.localDate) }}</span>
+            <span class="badge" :class="statusBadge(d.status)">{{ statusLabel(d.status) }}</span>
+            <span v-if="d.entryAt" class="text-slate-500">In {{ fmt(d.entryAt) }}</span>
+            <span v-if="d.exitAt" class="text-slate-500">Out {{ fmt(d.exitAt) }}</span>
+            <span v-if="d.isEarlyExit" class="text-xs text-amber-600">early exit</span>
+          </div>
+          <p v-if="!hist.days.length" class="text-sm text-slate-400 py-2">No attendance marked in this period.</p>
+        </div>
+      </template>
     </div>
   </div>
 </template>
