@@ -172,6 +172,8 @@ const DB_UPDATE_STATEMENTS = [
   ["Student: belt issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "beltIssued" BOOLEAN NOT NULL DEFAULT false`],
   ["Student: cap issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "capIssued" BOOLEAN NOT NULL DEFAULT false`],
   ["Student: bag issued column (Phase 66)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "bagIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: books issued column (Phase 77)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "booksIssued" BOOLEAN NOT NULL DEFAULT false`],
+  ["Student: dress issued column (Phase 77)", `ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "dressIssued" BOOLEAN NOT NULL DEFAULT false`],
   ["CardCredential: kind enum type (Phase 74)", `DO $$ BEGIN CREATE TYPE "CardKind" AS ENUM ('QR', 'NFC'); EXCEPTION WHEN duplicate_object THEN NULL; END $$`],
   ["CardCredential: kind column (Phase 74)", `ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "kind" "CardKind" NOT NULL DEFAULT 'QR'`],
   ["CardCredential: uidLast4 column (Phase 74)", `ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "uidLast4" TEXT`],
@@ -832,7 +834,7 @@ router.get("/platform/schools/:schoolId/register-summary", requirePlatform, asyn
     const label = classLabel(s.classroom);
     let c = byClass.get(label);
     if (!c) {
-      c = { classLabel: label, students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0 };
+      c = { classLabel: label, students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0, booksPending: 0, dressPending: 0 };
       byClass.set(label, c);
     }
     c.students += 1;
@@ -846,6 +848,8 @@ router.get("/platform/schools/:schoolId/register-summary", requirePlatform, asyn
       if (!k?.belt) c.beltPending += 1;
       if (!k?.cap) c.capPending += 1;
       if (!k?.bag) c.bagPending += 1;
+      if (!k?.books) c.booksPending += 1;
+      if (!k?.dress) c.dressPending += 1;
     }
   }
   const classes = [...byClass.values()].sort((a, b) =>

@@ -11,7 +11,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireSchool } from "../middleware/auth.js";
 import { asyncRoute } from "../utils/http.js";
 import { teacherClassIds } from "../services/teacherClasses.js";
-import { kitReady, KIT_FIELDS } from "../utils/studentCompat.js";
+import { kitReady, kitExtraReady, KIT_FIELDS, KIT_EXTRA_FIELDS } from "../utils/studentCompat.js";
 import { classLabel } from "../utils/parentChildren.js";
 
 const router = Router();
@@ -67,14 +67,19 @@ export async function feeRollups(schoolId, studentIds) {
 }
 
 const NO_FEES = { status: "NONE", balancePaise: 0, tuitionStatus: "NONE", examStatus: "NONE" };
-const NO_KIT = { idCard: false, tie: false, belt: false, cap: false, bag: false };
+const NO_KIT = { idCard: false, tie: false, belt: false, cap: false, bag: false, books: false, dress: false };
 
-// Kit ki haalat raw SQL se; columns live na hon to null.
+// Kit ki haalat raw SQL se; columns live na hon to null. Phase 77:
+// Books/Dress ke columns alag probe se — wo na lage hon to sirf wahi
+// do false rahte hain, purane 5 chalte rahte hain.
 export async function kitMap(studentIds) {
   if (!studentIds.length || !(await kitReady())) return null;
+  const extra = await kitExtraReady();
+  const cols = ['"idCardIssued"', '"tieIssued"', '"beltIssued"', '"capIssued"', '"bagIssued"'];
+  if (extra) cols.push('"booksIssued"', '"dressIssued"');
   const ph = studentIds.map((_, i) => `$${i + 1}`).join(",");
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT "id", "idCardIssued", "tieIssued", "beltIssued", "capIssued", "bagIssued" FROM "Student" WHERE "id" IN (${ph})`,
+    `SELECT "id", ${cols.join(", ")} FROM "Student" WHERE "id" IN (${ph})`,
     ...studentIds
   );
   const m = new Map();
@@ -82,9 +87,20 @@ export async function kitMap(studentIds) {
     m.set(r.id, {
       idCard: !!r.idCardIssued, tie: !!r.tieIssued, belt: !!r.beltIssued,
       cap: !!r.capIssued, bag: !!r.bagIssued,
+      books: !!r.booksIssued, dress: !!r.dressIssued,
     });
   }
   return m;
+}
+
+// Kit field dhoondho — purane 5 ya naye 2; naye wala ho aur uske
+// columns live na hon to caller ko 503 dena hai.
+async function kitField(key) {
+  const core = KIT_FIELDS.find((f) => f.key === key);
+  if (core) return { field: core, blocked: false };
+  const extra = KIT_EXTRA_FIELDS.find((f) => f.key === key);
+  if (extra) return { field: extra, blocked: !(await kitExtraReady()) };
+  return { field: null, blocked: false };
 }
 
 // --- Office + teacher: poora register -----------------------------------------
@@ -123,10 +139,11 @@ router.get("/schools/:schoolId/register", requireAuth, requireSchool(VIEW), asyn
 // --- Kit tick lagana / hatana ---------------------------------------------------
 router.patch("/schools/:schoolId/register/:studentId/kit", requireAuth, requireSchool(VIEW), asyncRoute(async (req, res) => {
   if (!(await kitReady())) return res.status(503).json({ error: "KIT_NOT_READY" });
-  const field = KIT_FIELDS.find((f) => f.key === String(req.body?.field || ""));
+  const { field, blocked } = await kitField(String(req.body?.field || ""));
   if (!field || typeof req.body?.value !== "boolean") {
     return res.status(400).json({ error: "BAD_KIT_FIELD" });
   }
+  if (blocked) return res.status(503).json({ error: "KIT_NOT_READY" });
   const schoolId = req.params.schoolId;
   const student = await prisma.student.findFirst({
     where: { schoolId, id: req.params.studentId },
@@ -144,6 +161,58 @@ router.patch("/schools/:schoolId/register/:studentId/kit", requireAuth, requireS
     req.body.value, student.id, schoolId
   );
   return res.json({ ok: true, field: field.key, value: req.body.value });
+}));
+
+// --- Kit page (Phase 77): sirf kit ki mapping — kisko kya mila, kisko nahi ------
+router.get("/schools/:schoolId/kit", requireAuth, requireSchool(VIEW), asyncRoute(async (req, res) => {
+  const schoolId = req.params.schoolId;
+  const where = { schoolId, status: "ACTIVE" };
+  if (req.membership.role === "TEACHER") {
+    const ids = await teacherClassIds(schoolId, req.membership.id);
+    where.classroomId = req.query.classroomId && ids.includes(req.query.classroomId)
+      ? req.query.classroomId : { in: ids };
+  } else if (req.query.classroomId) {
+    where.classroomId = req.query.classroomId;
+  }
+  const students = await prisma.student.findMany({
+    where,
+    select: {
+      id: true, fullName: true, admissionNo: true, classroomId: true,
+      classroom: { select: { name: true, section: true } },
+    },
+    orderBy: [{ fullName: "asc" }],
+    take: 1000,
+  });
+  const kit = await kitMap(students.map((s) => s.id));
+  return res.json({
+    kitReady: kit !== null,
+    students: students.map((s) => ({
+      id: s.id, fullName: s.fullName, admissionNo: s.admissionNo,
+      classroomId: s.classroomId, classLabel: classLabel(s.classroom),
+      kit: kit ? kit.get(s.id) || NO_KIT : null,
+    })),
+  });
+}));
+
+// --- Kit bulk (Phase 77): ek class ke sab baccho ko ek item de diya / wapas -----
+router.patch("/schools/:schoolId/kit/bulk", requireAuth, requireSchool(VIEW), asyncRoute(async (req, res) => {
+  if (!(await kitReady())) return res.status(503).json({ error: "KIT_NOT_READY" });
+  const { field, blocked } = await kitField(String(req.body?.field || ""));
+  const classroomId = String(req.body?.classroomId || "");
+  if (!field || !classroomId || typeof req.body?.value !== "boolean") {
+    return res.status(400).json({ error: "BAD_KIT_BULK" });
+  }
+  if (blocked) return res.status(503).json({ error: "KIT_NOT_READY" });
+  const schoolId = req.params.schoolId;
+  if (req.membership.role === "TEACHER") {
+    const ids = await teacherClassIds(schoolId, req.membership.id);
+    if (!ids.includes(classroomId)) return res.status(403).json({ error: "NOT_YOUR_CLASS" });
+  }
+  const updated = await prisma.$executeRawUnsafe(
+    `UPDATE "Student" SET "${field.column}" = $1, "updatedAt" = NOW() WHERE "schoolId" = $2 AND "classroomId" = $3 AND "status" = 'ACTIVE'`,
+    req.body.value, schoolId, classroomId
+  );
+  return res.json({ ok: true, field: field.key, value: req.body.value, updated });
 }));
 
 // --- Parent: sirf apne bacche ---------------------------------------------------

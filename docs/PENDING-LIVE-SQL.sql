@@ -125,3 +125,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "PtmBooking_slot_time_booked_key" ON "PtmBooki
 DO $$ BEGIN CREATE TYPE "CardKind" AS ENUM ('QR', 'NFC'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "kind" "CardKind" NOT NULL DEFAULT 'QR';
 ALTER TABLE "CardCredential" ADD COLUMN IF NOT EXISTS "uidLast4" TEXT;
+
+-- Phase 77: school kit — Books + Dress (Uniform) columns
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "booksIssued" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Student" ADD COLUMN IF NOT EXISTS "dressIssued" BOOLEAN NOT NULL DEFAULT false;

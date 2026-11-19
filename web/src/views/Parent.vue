@@ -45,6 +45,8 @@ const KIT_LIST = [
   { key: "belt", label: "Belt", emoji: "🎗️" },
   { key: "cap", label: "Cap", emoji: "🧢" },
   { key: "bag", label: "Bag", emoji: "🎒" },
+  { key: "books", label: "Books", emoji: "📚" },
+  { key: "dress", label: "Dress", emoji: "👕" },
 ];
 const regFeeChip = (st) => st === "PAID" ? "bg-emerald-100 text-emerald-700"
   : st === "PARTIAL" ? "bg-amber-100 text-amber-700"

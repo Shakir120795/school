@@ -16,6 +16,7 @@ const PATHS = {
   shield: '<path d="M12 3 5 5.8v5.4c0 4.6 3 7.7 7 9.3 4-1.6 7-4.7 7-9.3V5.8L12 3Z"/><path d="m9 11.6 2.2 2.2 4-4.2"/>',
   clipboard: '<rect x="5" y="4.5" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="4" rx="1"/><path d="M9 11.5h6"/><path d="M9 15.5h4"/>',
   book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  bag: '<path d="M5.5 8h13l-1.1 12.2A2 2 0 0 1 15.4 22H8.6a2 2 0 0 1-2-1.8L5.5 8Z"/><path d="M9 10.5V6.5a3 3 0 0 1 6 0v4"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',
   card: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/><path d="M6 15h4"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9.5h18"/><path d="M8 3v4"/><path d="M16 3v4"/>',

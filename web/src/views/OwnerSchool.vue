@@ -196,11 +196,12 @@ async function loadRegister() {
   } finally { regLoading.value = false; }
 }
 const regTotals = computed(() => {
-  const t = { students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0 };
+  const t = { students: 0, feesDue: 0, examDue: 0, cardPending: 0, tiePending: 0, beltPending: 0, capPending: 0, bagPending: 0, booksPending: 0, dressPending: 0 };
   for (const c of regSummary.value?.classes || []) {
     t.students += c.students; t.feesDue += c.feesDue; t.examDue += c.examDue;
     t.cardPending += c.cardPending; t.tiePending += c.tiePending; t.beltPending += c.beltPending;
     t.capPending += c.capPending; t.bagPending += c.bagPending;
+    t.booksPending += c.booksPending || 0; t.dressPending += c.dressPending || 0;
   }
   return t;
 });
@@ -468,7 +469,9 @@ async function addMember() {
               <span>👔 Tie: <b class="text-slate-700">{{ c.tiePending }}</b></span>·
               <span>🎗️ Belt: <b class="text-slate-700">{{ c.beltPending }}</b></span>·
               <span>🧢 Cap: <b class="text-slate-700">{{ c.capPending }}</b></span>·
-              <span>🎒 Bag: <b class="text-slate-700">{{ c.bagPending }}</b></span>
+              <span>🎒 Bag: <b class="text-slate-700">{{ c.bagPending }}</b></span>·
+              <span>📚 Books: <b class="text-slate-700">{{ c.booksPending || 0 }}</b></span>·
+              <span>👕 Dress: <b class="text-slate-700">{{ c.dressPending || 0 }}</b></span>
             </div>
           </div>
         </template>

@@ -70,6 +70,25 @@ export const KIT_FIELDS = [
   { key: "bag", column: "bagIssued" },
 ];
 
+// Phase 77: kit ke do naye items — Books aur Dress (Uniform). Inka
+// ALAG probe hai, taaki ye columns lagne se pehle purane 5 items ka
+// kit bina ruke chalta rahe; ye do tab tak "not given" jaise dikhte
+// hain aur inpar tick lagane par saaf 503 aata hai.
+let kitExtraCached = null;
+export function kitExtraReady() {
+  if (!kitExtraCached) {
+    kitExtraCached = prisma
+      .$queryRaw`SELECT "booksIssued", "dressIssued" FROM "Student" LIMIT 1`
+      .then(() => true)
+      .catch(() => false);
+  }
+  return kitExtraCached;
+}
+export const KIT_EXTRA_FIELDS = [
+  { key: "books", column: "booksIssued" },
+  { key: "dress", column: "dressIssued" },
+];
+
 // Every Student scalar EXCEPT the family fields (+ family fields
 // when ready) — for list reads that previously used a bare include
 // and therefore selected the whole model.

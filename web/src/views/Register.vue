@@ -14,6 +14,8 @@ const KIT = [
   { key: "belt", label: "Belt", emoji: "🎗️" },
   { key: "cap", label: "Cap", emoji: "🧢" },
   { key: "bag", label: "Bag", emoji: "🎒" },
+  { key: "books", label: "Books", emoji: "📚" },
+  { key: "dress", label: "Dress", emoji: "👕" },
 ];
 const students = ref([]);
 const classes = ref([]);
